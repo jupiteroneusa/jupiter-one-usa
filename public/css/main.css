@@ -646,3 +646,17 @@ input, select, textarea, button { font-family: inherit; }
   .topbar-right { display: none; }
   .footer-grid { grid-template-columns: 1fr; }
 }
+
+
+/* === MOBILE FIX === */
+@media (max-width: 900px) {
+  .nav-cta { display: none; }
+  #nav-user-area .btn-sm { font-size: 0.72rem; padding: 6px 12px; }
+}
+@media (max-width: 600px) {
+  .topbar-right { display: none; }
+  .nav { padding: 0 4vw; height: 56px; }
+  .nav-logo { font-size: 1.1rem; }
+  #nav-user-area { gap: 6px; }
+  #nav-user-area .btn-sm { font-size: 0.65rem; padding: 5px 8px; }
+}

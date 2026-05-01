@@ -641,7 +641,7 @@ async function doSearch(q, type, offset = 0) {
       const partsHtml = row.parts?.slice(0,3).map(p => `<span style="display:block;">${p.cage ? p.cage + ' — ' : ''}${p.partNumber}</span>`).join('') || '—';
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="td-nsn">${row.nsn}</td>
+        <td class="td-nsn"><a href="/pages/nsn-detail.html?nsn=${row.nsn}" style="color:var(--gold)">${row.nsn}</a></td>
         <td class="td-name">${row.item_name || '—'}</td>
         <td class="td-parts">${partsHtml}</td>
         <td class="td-fsc">${row.fsc || '—'}<br/><span style="font-size:0.68rem;color:var(--muted2);">${row.fsc_title || ''}</span></td>
