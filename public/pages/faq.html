@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>FAQ — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+<style>
+.faq-page { max-width:820px; margin:0 auto; padding:60px 5vw; }
+.faq-section { margin-bottom:40px; }
+.faq-section-title { font-family:var(--font-display); font-weight:700; font-size:1.1rem; letter-spacing:.06em; color:var(--white); padding:12px 16px; background:var(--navy3); border-left:3px solid var(--gold); margin-bottom:2px; }
+.faq-item { background:var(--card); border:1px solid var(--border); border-top:none; }
+.faq-item:first-of-type { border-top:1px solid var(--border); }
+.faq-q { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px 18px; cursor:pointer; font-size:.95rem; color:var(--white); font-weight:400; transition:background var(--transition); }
+.faq-q:hover { background:var(--gold-dim); }
+.faq-q span { color:var(--gold); font-size:1.1rem; flex-shrink:0; transition:transform .25s; }
+.faq-item.open .faq-q span { transform:rotate(45deg); }
+.faq-a { font-size:.88rem; color:var(--muted); line-height:1.75; max-height:0; overflow:hidden; transition:max-height .35s ease, padding .25s; padding:0 18px; }
+.faq-item.open .faq-a { max-height:300px; padding:0 18px 16px; }
+</style>
+</head>
+<body>
+<div id="nav-container"></div>
+<div style="background:var(--navy2);border-bottom:1px solid var(--border);padding:40px 5vw;">
+  <div class="section-label">Support</div>
+  <div class="section-title">Frequently Asked Questions</div>
+  <p style="color:var(--muted);font-size:.9rem;">Can't find your answer? <a href="/pages/contact.html" style="color:var(--gold);">Contact us</a> or call +1 (347) 821-7412.</p>
+</div>
+
+<div class="faq-page">
+  ${[
+    { section: 'Website & Account', items: [
+      ['What is the cost of registration?', 'Jupiter One USA offers free account registration and a free-to-use procurement sourcing service. Creating an account allows you to submit RFQs and track your orders.'],
+      ['Is every NSN in your database actually in stock?', 'Jupiter One USA works with a global network of verified distributors and manufacturers. Parts listed in our catalog are sourced through our supplier community and are not necessarily held in our physical inventory. When you submit an RFQ, we go out and source the part on your behalf.'],
+      ['How do I request a quote?', 'Once registered and logged in, search for any NSN or part number and click "Add to RFQ" on any result. Parts are added to your Pending RFQ — nothing is submitted yet. You can add as many parts as needed, set quantities and target prices, then click "Submit RFQ" when ready. Your representative will respond with pricing and availability shortly.'],
+    ]},
+    { section: 'Purchasing & Delivery', items: [
+      ['How long before delivery from the point I place an order?', 'Domestic supplier orders are typically delivered within 3 business days of order confirmation. International suppliers require 7–10 business days. Exact lead times are confirmed at time of quote.'],
+      ['How do I know the parts will be correct?', 'All parts sourced by Jupiter One USA are verified against your order specifications. Applicable traceability documentation including Certificates of Conformance and FAA 8130-3 forms are provided where available. Any discrepancies are resolved with the supplier at no cost to you.'],
+      ['What condition are the parts in?', 'Part condition is specified on every quote — New (NE), New Surplus (NS), Overhauled (OH), Serviceable (SV), or As Removed (AR). You can also specify your required condition when submitting your RFQ.'],
+      ['What is the warranty on parts?', 'In most cases the original manufacturer\'s warranty applies. Parts described as overhauled or serviceable carry warranties appropriate to their condition and will be specified in your quote.'],
+    ]},
+    { section: 'Payment', items: [
+      ['How do I pay for parts?', 'Initial orders are payable by Credit Card, COD, or Wire Transfer. Contact your representative for details on payment methods that work best for your organization.'],
+      ['Can I get payment terms?', 'Payment terms may be extended to repeat customers following a successful payment history with Jupiter One USA. Contact your representative to discuss eligibility.'],
+      ['Are there any hidden fees?', 'No. We provide transparent, all-inclusive pricing in every quote. The price you see is the price you pay — no hidden fees, surcharges, or surprise costs.'],
+    ]},
+    { section: 'Export & Compliance', items: [
+      ['Does Jupiter One USA comply with export regulations?', 'Yes. Jupiter One USA complies with all applicable US export control laws and regulations including ITAR and EAR. In cases involving controlled items or denied entities, information may be disclosed to the US Departments of State, Commerce, or Homeland Security as required by law. We use IP addresses and registration information to validate country of origin for Homeland Security compliance purposes.'],
+      ['Can you ship internationally?', 'Yes, we ship worldwide. International shipments are subject to applicable export control regulations. Lead times for international orders are typically 7–10 business days.'],
+    ]},
+  ].map(({ section, items }) => `
+    <div class="faq-section">
+      <div class="faq-section-title">${section}</div>
+      ${items.map(([q, a]) => `
+        <div class="faq-item">
+          <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">${q}<span>+</span></div>
+          <div class="faq-a">${a}</div>
+        </div>`).join('')}
+    </div>`).join('')}
+</div>
+
+<div id="footer-container"></div>
+<script type="module">
+import { renderNav, getNavHTML, getFooterHTML, initNavToggle } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+renderNav(); initNavToggle();
+</script>
+</body>
+</html>

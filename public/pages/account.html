@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>My Account — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+<style>
+.account-layout { display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 130px); }
+.account-sidebar {
+  background:var(--navy2); border-right:1px solid var(--border); padding:28px 16px;
+}
+.account-nav-link {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; font-size:.9rem; color:var(--muted);
+  border-left:2px solid transparent; transition:all var(--transition); cursor:pointer;
+  background:none; border-top:none; border-right:none; border-bottom:none;
+  width:100%; text-align:left; font-family:var(--font-body);
+}
+.account-nav-link:hover,
+.account-nav-link.active { color:var(--gold); border-left-color:var(--gold); background:var(--gold-dim); padding-left:18px; }
+.account-main { padding:36px 40px; }
+.data-table { width:100%; border-collapse:collapse; }
+.data-table th {
+  background:#060e1a; padding:10px 14px; text-align:left;
+  font-family:var(--font-mono); font-size:.62rem; letter-spacing:.15em;
+  text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border);
+}
+.data-table td { padding:12px 14px; border-bottom:1px solid var(--border); font-size:.88rem; background:var(--card); }
+.data-table tr:hover td { background:var(--gold-dim); }
+.account-welcome { margin-bottom:32px; }
+@media(max-width:900px) {
+  .account-layout { grid-template-columns:1fr; }
+  .account-sidebar { padding:16px 5vw; display:flex; gap:8px; flex-wrap:wrap; border-right:none; border-bottom:1px solid var(--border); }
+  .account-main { padding:24px 5vw; }
+}
+</style>
+</head>
+<body>
+<div id="nav-container"></div>
+<div class="account-layout">
+  <aside class="account-sidebar">
+    <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:16px;padding:0 14px;">My Account</div>
+    <button class="account-nav-link active" data-tab="rfqs">📋 My RFQs</button>
+    <button class="account-nav-link" data-tab="quotes">💰 My Quotes</button>
+    <button class="account-nav-link" data-tab="orders">📦 My Orders</button>
+    <button class="account-nav-link" data-tab="invoices">🧾 Invoices</button>
+    <button class="account-nav-link" data-tab="profile">👤 Profile</button>
+  </aside>
+  <main class="account-main">
+    <div class="account-welcome">
+      <div class="section-label">Dashboard</div>
+      <div class="section-title" style="font-size:1.6rem;" id="welcome-text">Welcome Back</div>
+    </div>
+    <div id="tab-content"><div class="results-loading">Loading...</div></div>
+  </main>
+</div>
+<div id="footer-container"></div>
+
+<script type="module">
+import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, formatDate, formatMoney, statusBadge } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+
+if (!auth.isLoggedIn()) { window.location.href = '/pages/login.html?redirect=/pages/account.html'; }
+
+renderNav(); initNavToggle();
+
+const user = auth.getUser();
+if (user) document.getElementById('welcome-text').textContent = `Welcome, ${user.first_name}`;
+
+let activeTab = 'rfqs';
+
+async function loadTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.account-nav-link').forEach(l => l.classList.toggle('active', l.dataset.tab === tab));
+  const content = document.getElementById('tab-content');
+  content.innerHTML = '<div class="results-loading">Loading...</div>';
+
+  try {
+    if (tab === 'rfqs') {
+      const data = await api.myRfqs();
+      if (!data.length) { content.innerHTML = emptyState('No RFQs yet', 'Submit your first RFQ by searching for parts.', '/pages/parts.html', 'Search Parts'); return; }
+      content.innerHTML = `
+        <table class="data-table">
+          <thead><tr><th>RFQ Number</th><th>Lines</th><th>Priority</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+          <tbody>${data.map(r => `<tr>
+            <td style="font-family:var(--font-mono);color:var(--gold);">${r.rfq_number}</td>
+            <td>${r.line_count}</td>
+            <td>${statusBadge(r.priority)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td>${formatDate(r.submitted_at)}</td>
+            <td><a href="/pages/rfq-detail.html?id=${r.id}" class="btn btn-outline btn-sm">View</a></td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+
+    } else if (tab === 'quotes') {
+      const data = await api.myQuotes();
+      if (!data.length) { content.innerHTML = emptyState('No quotes yet', 'Once you submit an RFQ, we\'ll send you a quote within 24 hours.'); return; }
+      content.innerHTML = `
+        <table class="data-table">
+          <thead><tr><th>Quote #</th><th>RFQ Ref</th><th>Total</th><th>Status</th><th>Valid Until</th><th></th></tr></thead>
+          <tbody>${data.map(q => `<tr>
+            <td style="font-family:var(--font-mono);color:var(--gold);">${q.quote_number}</td>
+            <td style="font-family:var(--font-mono);font-size:.78rem;">${q.rfq_number}</td>
+            <td style="font-weight:600;">${formatMoney(q.total_amount)}</td>
+            <td>${statusBadge(q.status)}</td>
+            <td>${formatDate(q.valid_until)}</td>
+            <td style="display:flex;gap:6px;">
+              ${q.pdf_url ? `<a href="${q.pdf_url}" target="_blank" class="btn btn-outline btn-sm">PDF</a>` : ''}
+              ${q.status === 'Sent' ? `<a href="/pages/quote-detail.html?id=${q.id}" class="btn btn-primary btn-sm">View & Accept</a>` : `<a href="/pages/quote-detail.html?id=${q.id}" class="btn btn-outline btn-sm">View</a>`}
+            </td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+
+    } else if (tab === 'orders') {
+      const data = await api.myOrders();
+      if (!data.length) { content.innerHTML = emptyState('No orders yet', 'Accept a quote to place your first order.'); return; }
+      content.innerHTML = `
+        <table class="data-table">
+          <thead><tr><th>Order #</th><th>Customer PO</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody>${data.map(o => `<tr>
+            <td style="font-family:var(--font-mono);color:var(--gold);">${o.order_number}</td>
+            <td style="font-family:var(--font-mono);font-size:.78rem;">${o.customer_po||'—'}</td>
+            <td style="font-weight:600;">${formatMoney(o.total_amount)}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>${formatDate(o.confirmed_at)}</td>
+            <td><a href="/pages/order-detail.html?id=${o.id}" class="btn btn-outline btn-sm">Track</a></td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+
+    } else if (tab === 'invoices') {
+      const data = await api.myInvoices();
+      if (!data.length) { content.innerHTML = emptyState('No invoices yet', 'Invoices will appear here after your first order ships.'); return; }
+      content.innerHTML = `
+        <table class="data-table">
+          <thead><tr><th>Invoice #</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th><th></th></tr></thead>
+          <tbody>${data.map(inv => `<tr>
+            <td style="font-family:var(--font-mono);color:var(--gold);">${inv.invoice_number}</td>
+            <td>${formatMoney(inv.total_amount)}</td>
+            <td style="font-weight:600;${parseFloat(inv.balance_due)>0?'color:#e05050;':''}">${formatMoney(inv.balance_due)}</td>
+            <td>${statusBadge(inv.status)}</td>
+            <td>${formatDate(inv.due_date)}</td>
+            <td>${inv.pdf_url ? `<a href="${inv.pdf_url}" target="_blank" class="btn btn-outline btn-sm">Download</a>` : '—'}</td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+
+    } else if (tab === 'profile') {
+      const data = await api.me();
+      content.innerHTML = `
+        <div style="max-width:520px;">
+          <div class="card" style="margin-bottom:20px;">
+            <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:16px;">Account Information</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Name</div><div>${data.first_name} ${data.last_name}</div></div>
+              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Company</div><div>${data.company||'—'}</div></div>
+              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Email</div><div>${data.email}</div></div>
+              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Phone</div><div>${data.phone||'—'}</div></div>
+              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Member Since</div><div>${formatDate(data.created_at)}</div></div>
+              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Status</div><div>${statusBadge(data.status)}</div></div>
+            </div>
+          </div>
+          <a href="/pages/contact.html" class="btn btn-outline">Contact Support</a>
+        </div>`;
+    }
+  } catch(err) {
+    content.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+  }
+}
+
+function emptyState(title, desc, href, btnText) {
+  return `<div style="text-align:center;padding:60px 20px;color:var(--muted);">
+    <div style="font-family:var(--font-display);font-size:1.2rem;letter-spacing:.06em;color:var(--white);margin-bottom:8px;">${title}</div>
+    <div style="font-size:.88rem;margin-bottom:${href?'24px':'0'}">${desc}</div>
+    ${href ? `<a href="${href}" class="btn btn-primary">${btnText}</a>` : ''}
+  </div>`;
+}
+
+document.querySelectorAll('.account-nav-link').forEach(link => {
+  link.addEventListener('click', () => loadTab(link.dataset.tab));
+});
+
+loadTab('rfqs');
+</script>
+</body>
+</html>

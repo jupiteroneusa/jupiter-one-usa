@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Quote — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+</head>
+<body>
+<div id="nav-container"></div>
+<div style="max-width:900px;margin:0 auto;padding:40px 5vw;">
+  <div id="content"><div class="results-loading">Loading quote...</div></div>
+</div>
+<div id="footer-container"></div>
+<script type="module">
+import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, formatDate, formatMoney, statusBadge, showAlert, setLoading } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+if (!auth.isLoggedIn()) window.location.href = '/pages/login.html';
+renderNav(); initNavToggle();
+
+const id = new URLSearchParams(window.location.search).get('id');
+if (!id) window.location.href = '/pages/account.html';
+
+try {
+  const q = await api.quoteDetail(id);
+  const canAccept = q.status === 'Sent';
+  const expired = q.valid_until && new Date(q.valid_until) < new Date();
+
+  document.getElementById('content').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px;">
+      <div>
+        <div class="section-label">Quote</div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:1.8rem;letter-spacing:.06em;">${q.quote_number}</div>
+        <div style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin-top:4px;">RFQ Ref: ${q.rfq_number}</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        ${statusBadge(q.status)}
+        ${q.pdf_url ? `<a href="${q.pdf_url}" target="_blank" class="btn btn-outline btn-sm">📄 Download PDF</a>` : ''}
+        ${canAccept && !expired ? `<button class="btn btn-primary" id="accept-btn">Accept Quote →</button>` : ''}
+      </div>
+    </div>
+
+    ${expired && canAccept ? `<div class="alert alert-warning">This quote expired on ${formatDate(q.valid_until)}. Contact us for an updated quote.</div>` : ''}
+    <div id="accept-message"></div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:24px;">
+      ${[
+        ['Quote Date', formatDate(q.sent_at)],
+        ['Valid Until', formatDate(q.valid_until)],
+        ['Total', formatMoney(q.total_amount)],
+        ['Status', q.status],
+      ].map(([l,v]) => `<div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
+        <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
+        <div style="font-size:.92rem;color:var(--white);">${v}</div>
+      </div>`).join('')}
+    </div>
+
+    <div style="background:var(--card);border:1px solid var(--border);border-top:2px solid var(--gold);overflow:auto;margin-bottom:20px;">
+      <table class="results-table" style="width:100%;">
+        <thead><tr><th>#</th><th>NSN / Part #</th><th>Description</th><th>Cond</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
+        <tbody>
+          ${q.lines?.map(l => `<tr>
+            <td style="color:var(--muted);font-family:var(--font-mono);font-size:.75rem;">${l.line_number}</td>
+            <td class="td-nsn">${l.nsn||l.part_number||'—'}</td>
+            <td class="td-name">${l.item_name||'—'}</td>
+            <td><span class="badge badge-gray">${l.condition_code||'—'}</span></td>
+            <td>${l.quantity}</td>
+            <td style="text-align:right;">${formatMoney(l.unit_price)}</td>
+            <td style="text-align:right;font-weight:600;">${formatMoney(l.line_total)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--border);">
+            <td colspan="6" style="text-align:right;font-family:var(--font-display);font-weight:700;font-size:.95rem;letter-spacing:.06em;color:var(--white);background:var(--card);padding:14px;">TOTAL</td>
+            <td style="text-align:right;font-weight:700;font-size:1.05rem;color:var(--gold);background:var(--card);padding:14px;">${formatMoney(q.total_amount)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    ${q.payment_terms ? `<div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;"><strong style="color:var(--white);">Payment Terms:</strong> ${q.payment_terms}</div>` : ''}
+    ${q.notes ? `<div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--gold);padding:16px 18px;margin:16px 0;font-size:.85rem;color:var(--muted);line-height:1.7;">${q.notes}</div>` : ''}
+
+    <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
+      <a href="/pages/account.html" class="btn btn-outline">← My Account</a>
+      <a href="/pages/contact.html" class="btn btn-outline">Contact Us</a>
+    </div>`;
+
+  document.getElementById('accept-btn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('accept-btn');
+    setLoading(btn, true, 'Accepting...');
+    try {
+      await api.acceptQuote(id);
+      showAlert(document.getElementById('accept-message'), 'Quote accepted! We will confirm your order shortly.', 'success');
+      btn.remove();
+    } catch(err) {
+      setLoading(btn, false);
+      showAlert(document.getElementById('accept-message'), err.message, 'error');
+    }
+  });
+} catch(err) {
+  document.getElementById('content').innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+}
+</script>
+</body>
+</html>

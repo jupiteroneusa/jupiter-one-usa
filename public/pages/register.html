@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Register — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+<style>
+.auth-page { min-height:calc(100vh - 130px); display:flex; align-items:center; justify-content:center; padding:40px 5vw; }
+.auth-card { background:var(--card); border:1px solid var(--border); border-top:3px solid var(--gold); width:100%; max-width:520px; padding:36px; }
+.auth-title { font-family:var(--font-display); font-weight:700; font-size:1.6rem; letter-spacing:.06em; color:var(--white); margin-bottom:6px; }
+.auth-sub { font-size:.88rem; color:var(--muted); margin-bottom:28px; }
+</style>
+</head>
+<body>
+<div id="nav-container"></div>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-title">Create an Account</div>
+    <div class="auth-sub">Free account — search parts, submit RFQs, track orders</div>
+    <div id="auth-message"></div>
+    <form id="register-form" style="display:flex;flex-direction:column;gap:14px;">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input class="form-input" id="first_name" type="text" placeholder="John" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input class="form-input" id="last_name" type="text" placeholder="Smith" required/>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Company</label>
+        <input class="form-input" id="company" type="text" placeholder="Acme Aerospace"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Job Title</label>
+        <input class="form-input" id="job_title" type="text" placeholder="Procurement Manager"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email Address *</label>
+        <input class="form-input" id="email" type="email" placeholder="you@company.com" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input class="form-input" id="phone" type="tel" placeholder="+1 (555) 000-0000"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password * (min 8 characters)</label>
+        <input class="form-input" id="password" type="password" placeholder="••••••••" required/>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="register-btn" style="margin-top:4px;">Create Account →</button>
+      <div style="text-align:center;font-size:.82rem;color:var(--muted);">
+        Already have an account? <a href="/pages/login.html" style="color:var(--gold);">Log in</a>
+      </div>
+    </form>
+  </div>
+</div>
+<div id="footer-container"></div>
+<script type="module">
+import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, showAlert, setLoading } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+renderNav(); initNavToggle();
+
+document.getElementById('register-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('register-btn');
+  setLoading(btn, true, 'Creating account...');
+  try {
+    await api.register({
+      first_name:  document.getElementById('first_name').value,
+      last_name:   document.getElementById('last_name').value,
+      company:     document.getElementById('company').value,
+      job_title:   document.getElementById('job_title').value,
+      email:       document.getElementById('email').value,
+      phone:       document.getElementById('phone').value,
+      password:    document.getElementById('password').value,
+    });
+    document.getElementById('register-form').style.display = 'none';
+    showAlert(document.getElementById('auth-message'),
+      'Account created! Please check your email to verify your address, then log in.', 'success');
+  } catch(err) {
+    setLoading(btn, false);
+    showAlert(document.getElementById('auth-message'), err.message, 'error');
+  }
+});
+</script>
+</body>
+</html>

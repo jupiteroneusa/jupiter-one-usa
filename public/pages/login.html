@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Login — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+<style>
+.auth-page { min-height: calc(100vh - 130px); display:flex; align-items:center; justify-content:center; padding: 40px 5vw; }
+.auth-card { background:var(--card); border:1px solid var(--border); border-top:3px solid var(--gold); width:100%; max-width:440px; padding:36px; }
+.auth-title { font-family:var(--font-display); font-weight:700; font-size:1.6rem; letter-spacing:.06em; color:var(--white); margin-bottom:6px; }
+.auth-sub { font-size:.88rem; color:var(--muted); margin-bottom:28px; }
+.auth-form { display:flex; flex-direction:column; gap:16px; }
+.auth-divider { text-align:center; font-size:.8rem; color:var(--muted); margin:8px 0; }
+</style>
+</head>
+<body>
+<div id="nav-container"></div>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-title">Welcome Back</div>
+    <div class="auth-sub">Log in to your Jupiter One USA account</div>
+    <div id="auth-message"></div>
+    <form class="auth-form" id="login-form">
+      <div class="form-group">
+        <label class="form-label">Email Address</label>
+        <input class="form-input" id="email" type="email" placeholder="you@company.com" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Password</label>
+        <input class="form-input" id="password" type="password" placeholder="••••••••" required/>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="login-btn">Log In →</button>
+    </form>
+    <div class="auth-divider">— or —</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <a href="/pages/register.html" class="btn btn-outline btn-full" style="text-align:center;">Create an Account</a>
+      <a href="/pages/forgot-password.html" style="text-align:center;font-size:.82rem;color:var(--muted);">Forgot your password?</a>
+    </div>
+  </div>
+</div>
+<div id="footer-container"></div>
+<script type="module">
+import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, showAlert, setLoading } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+if (auth.isLoggedIn()) window.location.href = '/pages/account.html';
+renderNav(); initNavToggle();
+
+document.getElementById('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  setLoading(btn, true, 'Logging in...');
+  try {
+    const result = await api.login({
+      email: document.getElementById('email').value,
+      password: document.getElementById('password').value,
+    });
+    auth.setToken(result.token);
+    auth.setUser(result.customer);
+    const redirect = new URLSearchParams(window.location.search).get('redirect') || '/pages/account.html';
+    window.location.href = redirect;
+  } catch(err) {
+    setLoading(btn, false);
+    showAlert(document.getElementById('auth-message'), err.message, 'error');
+  }
+});
+</script>
+</body>
+</html>

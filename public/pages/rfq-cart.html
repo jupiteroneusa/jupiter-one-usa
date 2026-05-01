@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Pending RFQ — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+<style>
+.rfq-page { max-width: 1000px; margin: 0 auto; padding: 40px 5vw; }
+.rfq-empty { text-align:center; padding: 80px 20px; color: var(--muted); }
+.rfq-table { width:100%; border-collapse:collapse; margin-bottom:24px; }
+.rfq-table th {
+  background: #060e1a;
+  padding: 10px 14px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.rfq-table td { padding: 14px; border-bottom: 1px solid var(--border); vertical-align: top; background: var(--card); }
+.rfq-table tr:hover td { background: var(--gold-dim); }
+.rfq-input-sm {
+  background: var(--navy2);
+  border: 1px solid var(--border2);
+  color: var(--white);
+  padding: 6px 10px;
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  width: 80px;
+  outline: none;
+}
+.rfq-input-sm:focus { border-color: var(--gold); }
+.rfq-select-sm {
+  background: var(--navy2);
+  border: 1px solid var(--border2);
+  color: var(--white);
+  padding: 6px 10px;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  outline: none;
+  width: 140px;
+  appearance: none;
+}
+.remove-btn {
+  background: none; border: none;
+  color: var(--muted2); cursor: pointer;
+  font-size: 1.1rem;
+  transition: color var(--transition);
+}
+.remove-btn:hover { color: #e05050; }
+.rfq-summary {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--gold);
+  padding: 28px;
+  margin-bottom: 24px;
+}
+.rfq-notes-section {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+</style>
+</head>
+<body>
+<div id="nav-container"></div>
+<div class="rfq-page">
+  <div class="section-label">RFQ</div>
+  <div class="section-title" style="font-size:1.8rem;margin-bottom:8px;">Pending RFQ</div>
+  <p style="color:var(--muted);font-size:0.9rem;margin-bottom:28px;">
+    Review your parts below. Add quantities and target prices, then submit your RFQ to our sourcing team.
+    We'll respond within 24 hours with pricing and availability.
+  </p>
+  <div id="rfq-content"></div>
+</div>
+<div id="footer-container"></div>
+
+<script type="module">
+import { api, auth, cart, renderNav, getNavHTML, getFooterHTML, initNavToggle, showAlert } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+renderNav(); initNavToggle();
+
+const content = document.getElementById('rfq-content');
+
+function render() {
+  const items = cart.get();
+
+  if (!items.length) {
+    content.innerHTML = `
+      <div class="rfq-empty">
+        <div style="font-size:3rem;margin-bottom:16px;">📋</div>
+        <div style="font-family:var(--font-display);font-size:1.3rem;letter-spacing:.06em;margin-bottom:8px;">Your RFQ Cart is Empty</div>
+        <div style="font-size:0.9rem;margin-bottom:24px;">Search for parts and click "Add to RFQ" to get started.</div>
+        <a href="/pages/parts.html" class="btn btn-primary">Search Parts</a>
+      </div>`;
+    return;
+  }
+
+  let tableRows = '';
+  items.forEach((item, i) => {
+    tableRows += `
+      <tr>
+        <td style="font-family:var(--font-mono);font-weight:bold;font-size:.85rem;color:var(--white);">${item.nsn || item.part_number || '—'}</td>
+        <td style="color:var(--white);font-size:.88rem;">${item.item_name || '—'}</td>
+        <td>
+          <input class="rfq-input-sm" type="number" min="1" value="${item.quantity}" data-idx="${i}" data-field="quantity"/>
+        </td>
+        <td>
+          <select class="rfq-select-sm" data-idx="${i}" data-field="condition_code">
+            ${['NE','NS','OH','SV','AR'].map(c => `<option value="${c}"${c===item.condition_code?' selected':''}>${c}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <input class="rfq-input-sm" type="number" step="0.01" placeholder="0.00" value="${item.target_price||''}" data-idx="${i}" data-field="target_price" style="width:100px;"/>
+        </td>
+        <td>
+          <input class="rfq-input-sm" type="text" placeholder="Optional" value="${item.notes||''}" data-idx="${i}" data-field="notes" style="width:160px;"/>
+        </td>
+        <td>
+          <button class="remove-btn" data-idx="${i}">✕</button>
+        </td>
+      </tr>`;
+  });
+
+  content.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--border);border-top:2px solid var(--gold);overflow:auto;margin-bottom:24px;">
+      <table class="rfq-table">
+        <thead><tr>
+          <th>NSN / Part #</th><th>Description</th><th>Qty</th>
+          <th>Condition</th><th>Target Price</th><th>Notes</th><th></th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+
+    <div class="rfq-notes-section">
+      <div class="form-group">
+        <label class="form-label">Priority</label>
+        <select class="form-select" id="rfq-priority" style="max-width:200px;">
+          <option value="Standard">Standard</option>
+          <option value="Urgent">Urgent</option>
+          <option value="AOG">AOG — Aircraft on Ground</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-top:14px;">
+        <label class="form-label">Additional Notes for Our Team (optional)</label>
+        <textarea class="form-textarea" id="rfq-global-notes" placeholder="Any special instructions, delivery requirements, or additional context..."></textarea>
+      </div>
+    </div>
+
+    <div class="rfq-summary">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;letter-spacing:.06em;color:var(--white);">
+            ${items.length} Line Item${items.length !== 1 ? 's' : ''}
+          </div>
+          <div style="font-size:.85rem;color:var(--muted);margin-top:4px;">
+            We will respond within 24 hours with pricing and availability.
+            Initial orders are payable by Credit Card, COD, or Wire Transfer.
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <button class="btn btn-outline" id="clear-cart">Clear All</button>
+          <button class="btn btn-primary btn-lg" id="submit-rfq">Submit RFQ Now →</button>
+        </div>
+      </div>
+    </div>
+    <div id="rfq-message"></div>`;
+
+  // Edit inline
+  content.querySelectorAll('[data-idx][data-field]').forEach(input => {
+    input.addEventListener('change', () => {
+      const items = cart.get();
+      const idx = parseInt(input.dataset.idx);
+      const field = input.dataset.field;
+      let val = input.value;
+      if (field === 'quantity') val = parseInt(val) || 1;
+      if (field === 'target_price') val = parseFloat(val) || null;
+      items[idx][field] = val;
+      cart.set(items);
+    });
+  });
+
+  // Remove buttons
+  content.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      cart.remove(parseInt(btn.dataset.idx));
+      renderNav();
+      render();
+    });
+  });
+
+  // Clear all
+  document.getElementById('clear-cart').addEventListener('click', () => {
+    if (confirm('Remove all items from your RFQ?')) {
+      cart.clear(); renderNav(); render();
+    }
+  });
+
+  // Submit
+  document.getElementById('submit-rfq').addEventListener('click', async () => {
+    if (!auth.isLoggedIn()) {
+      window.location.href = '/pages/login.html?redirect=/pages/rfq-cart.html';
+      return;
+    }
+
+    const btn = document.getElementById('submit-rfq');
+    btn.disabled = true; btn.textContent = 'Submitting...';
+
+    try {
+      const items = cart.get();
+      const result = await api.submitRfq({
+        lines: items.map(item => ({
+          nsn:            item.nsn || null,
+          part_number:    item.part_number || null,
+          item_name:      item.item_name || null,
+          condition_code: item.condition_code || 'NE',
+          quantity:       item.quantity || 1,
+          target_price:   item.target_price || null,
+          notes:          item.notes || null,
+        })),
+        priority: document.getElementById('rfq-priority').value,
+        notes: document.getElementById('rfq-global-notes').value || null,
+      });
+
+      cart.clear();
+      renderNav();
+
+      content.innerHTML = `
+        <div style="text-align:center;padding:60px 20px;">
+          <div style="font-size:3rem;margin-bottom:16px;">✅</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:1.6rem;letter-spacing:.06em;color:var(--white);margin-bottom:8px;">RFQ Submitted Successfully</div>
+          <div style="font-size:.95rem;color:var(--muted);margin-bottom:8px;">${result.message}</div>
+          <div style="font-family:var(--font-mono);font-size:.8rem;color:var(--gold);margin-bottom:28px;">Reference: ${result.rfq_number}</div>
+          <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+            <a href="/pages/account.html" class="btn btn-primary">View My RFQs</a>
+            <a href="/pages/parts.html" class="btn btn-outline">Search More Parts</a>
+          </div>
+        </div>`;
+    } catch(err) {
+      btn.disabled = false; btn.textContent = 'Submit RFQ Now →';
+      const msg = document.getElementById('rfq-message');
+      msg.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    }
+  });
+}
+
+render();
+</script>
+</body>
+</html>

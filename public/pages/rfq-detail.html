@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>RFQ Detail — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+</head>
+<body>
+<div id="nav-container"></div>
+<div style="max-width:900px;margin:0 auto;padding:40px 5vw;">
+  <div id="content"><div class="results-loading">Loading RFQ...</div></div>
+</div>
+<div id="footer-container"></div>
+<script type="module">
+import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, formatDate, formatMoney, statusBadge } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+if (!auth.isLoggedIn()) window.location.href = '/pages/login.html';
+renderNav(); initNavToggle();
+
+const id = new URLSearchParams(window.location.search).get('id');
+if (!id) window.location.href = '/pages/account.html';
+
+try {
+  const rfq = await api.rfqDetail(id);
+  document.getElementById('content').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px;">
+      <div>
+        <div class="section-label">RFQ</div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:1.8rem;letter-spacing:.06em;">${rfq.rfq_number}</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        ${statusBadge(rfq.priority)} ${statusBadge(rfq.status)}
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin-bottom:28px;">
+      ${[
+        ['Submitted', formatDate(rfq.submitted_at)],
+        ['Lines', rfq.lines?.length || 0],
+        ['Priority', rfq.priority],
+      ].map(([l,v]) => `<div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
+        <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
+        <div style="font-size:.95rem;color:var(--white);">${v}</div>
+      </div>`).join('')}
+    </div>
+
+    ${rfq.notes ? `<div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--gold);padding:16px 18px;margin-bottom:24px;font-size:.88rem;color:var(--muted);">${rfq.notes}</div>` : ''}
+
+    <div style="background:var(--card);border:1px solid var(--border);border-top:2px solid var(--gold);overflow:auto;margin-bottom:24px;">
+      <table class="results-table" style="width:100%;">
+        <thead><tr><th>#</th><th>NSN / Part #</th><th>Description</th><th>Qty</th><th>Condition</th><th>Target Price</th><th>Status</th></tr></thead>
+        <tbody>${rfq.lines?.map(l => `<tr>
+          <td style="color:var(--muted);font-family:var(--font-mono);font-size:.75rem;">${l.line_number}</td>
+          <td class="td-nsn">${l.nsn||l.part_number||'—'}</td>
+          <td class="td-name">${l.item_name||'—'}</td>
+          <td>${l.quantity}</td>
+          <td><span class="badge badge-gray">${l.condition_code||'—'}</span></td>
+          <td>${l.target_price ? formatMoney(l.target_price) : '—'}</td>
+          <td>${statusBadge(l.status)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+
+    <div style="margin-bottom:24px;">
+      <div style="font-family:var(--font-mono);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;">Status History</div>
+      ${rfq.status_log?.map(s => `
+        <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:8px;font-size:.85rem;">
+          <div style="color:var(--muted);font-family:var(--font-mono);font-size:.7rem;white-space:nowrap;">${formatDate(s.created_at)}</div>
+          <div>${statusBadge(s.new_status)}</div>
+          ${s.note ? `<div style="color:var(--muted);">${s.note}</div>` : ''}
+        </div>`).join('')}
+    </div>
+
+    <a href="/pages/account.html" class="btn btn-outline">← Back to My Account</a>`;
+} catch(err) {
+  document.getElementById('content').innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+}
+</script>
+</body>
+</html>

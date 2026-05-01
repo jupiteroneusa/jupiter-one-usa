@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Order — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+</head>
+<body>
+<div id="nav-container"></div>
+<div style="max-width:900px;margin:0 auto;padding:40px 5vw;">
+  <div id="content"><div class="results-loading">Loading order...</div></div>
+</div>
+<div id="footer-container"></div>
+<script type="module">
+import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, formatDate, formatMoney, statusBadge } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+if (!auth.isLoggedIn()) window.location.href = '/pages/login.html';
+renderNav(); initNavToggle();
+
+const id = new URLSearchParams(window.location.search).get('id');
+if (!id) window.location.href = '/pages/account.html';
+
+try {
+  const order = await api.orderDetail(id);
+  document.getElementById('content').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px;">
+      <div>
+        <div class="section-label">Order</div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:1.8rem;letter-spacing:.06em;">${order.order_number}</div>
+        ${order.customer_po ? `<div style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin-top:4px;">Your PO: ${order.customer_po}</div>` : ''}
+      </div>
+      <div>${statusBadge(order.status)}</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:24px;">
+      ${[
+        ['Order Date', formatDate(order.confirmed_at)],
+        ['Total', formatMoney(order.total_amount)],
+        ['Payment', order.payment_terms||'—'],
+        ['Status', order.status],
+      ].map(([l,v]) => `<div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
+        <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
+        <div style="font-size:.88rem;color:var(--white);">${v}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- Line Items -->
+    <div style="margin-bottom:24px;">
+      <div style="font-family:var(--font-mono);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;">Order Lines</div>
+      <div style="background:var(--card);border:1px solid var(--border);overflow:auto;">
+        <table class="results-table" style="width:100%;">
+          <thead><tr><th>#</th><th>NSN / Part #</th><th>Description</th><th>Qty Ordered</th><th>Qty Shipped</th><th>Unit Price</th><th>Status</th></tr></thead>
+          <tbody>${order.lines?.map(l => `<tr>
+            <td style="color:var(--muted);font-family:var(--font-mono);font-size:.75rem;">${l.line_number}</td>
+            <td class="td-nsn">${l.nsn||l.part_number||'—'}</td>
+            <td class="td-name">${l.item_name||'—'}</td>
+            <td>${l.quantity_ordered}</td>
+            <td>${l.quantity_shipped}</td>
+            <td>${formatMoney(l.unit_price)}</td>
+            <td>${statusBadge(l.status)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Shipments -->
+    ${order.shipments?.length ? `
+    <div style="margin-bottom:24px;">
+      <div style="font-family:var(--font-mono);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;">Shipments</div>
+      ${order.shipments.map(s => `
+        <div style="background:var(--card);border:1px solid var(--border);padding:18px 20px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-family:var(--font-mono);font-weight:bold;font-size:.82rem;color:var(--white);margin-bottom:4px;">${s.shipment_number}</div>
+            <div style="font-size:.82rem;color:var(--muted);">${s.carrier||'—'} ${s.tracking_number ? '· ' + s.tracking_number : ''}</div>
+            <div style="font-size:.78rem;color:var(--muted);margin-top:2px;">Est. Delivery: ${s.estimated_delivery ? formatDate(s.estimated_delivery) : 'TBD'}</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            ${statusBadge(s.status)}
+            ${s.tracking_number ? `<a href="https://www.google.com/search?q=${s.carrier}+tracking+${s.tracking_number}" target="_blank" class="btn btn-outline btn-sm">Track →</a>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <!-- Invoices -->
+    ${order.invoices?.length ? `
+    <div style="margin-bottom:24px;">
+      <div style="font-family:var(--font-mono);font-size:.65rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;">Invoices</div>
+      ${order.invoices.map(inv => `
+        <div style="background:var(--card);border:1px solid var(--border);padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+          <div>
+            <span style="font-family:var(--font-mono);font-weight:bold;font-size:.82rem;color:var(--gold);">${inv.invoice_number}</span>
+            <span style="font-size:.82rem;color:var(--muted);margin-left:16px;">Due: ${formatDate(inv.due_date)}</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <strong style="color:var(--white);">${formatMoney(inv.total_amount)}</strong>
+            ${statusBadge(inv.status)}
+            ${inv.pdf_url ? `<a href="${inv.pdf_url}" target="_blank" class="btn btn-outline btn-sm">PDF</a>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    <a href="/pages/account.html" class="btn btn-outline">← My Account</a>`;
+} catch(err) {
+  document.getElementById('content').innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Jupiter One USA LLC — NSN & Aerospace Component Sourcing</title>
+<meta name="description" content="Jupiter One USA provides specialized sourcing support for NSN and aerospace components. Fast response, verified suppliers, quote to delivery."/>
+<link rel="stylesheet" href="/css/main.css"/>
+<style>
+/* ── HERO CAROUSEL ──────────────────────────────────────────── */
+#hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 520px;
+  position: relative;
+  overflow: hidden;
+}
+.hero-slides {
+  position: relative;
+  overflow: hidden;
+  background: var(--navy2);
+}
+.slide {
+  position: absolute; inset: 0;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  background-size: cover;
+  background-position: center;
+}
+.slide.active { opacity: 1; }
+.slide-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(10,22,40,0.7) 0%, rgba(10,22,40,0.3) 100%);
+}
+.slide-caption {
+  position: absolute;
+  bottom: 28px; left: 28px;
+  background: rgba(10,22,40,0.9);
+  border-left: 3px solid var(--gold);
+  padding: 10px 16px;
+}
+.slide-caption-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  color: var(--white);
+  text-transform: uppercase;
+}
+.slide-caption-sub {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+.slide-dots {
+  position: absolute;
+  bottom: 28px; right: 28px;
+  display: flex; gap: 8px;
+  z-index: 10;
+}
+.slide-dot {
+  width: 8px; height: 8px;
+  border: 1px solid var(--white);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.slide-dot.active { background: var(--gold); border-color: var(--gold); }
+.slide-arrows {
+  position: absolute;
+  top: 50%; transform: translateY(-50%);
+  right: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 10;
+}
+.slide-arrow {
+  width: 32px; height: 32px;
+  background: rgba(10,22,40,0.8);
+  border: 1px solid var(--border2);
+  color: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all var(--transition);
+}
+.slide-arrow:hover { background: var(--gold); color: var(--navy); border-color: var(--gold); }
+
+/* Slide backgrounds using CSS gradients (real site would use actual images) */
+.slide-1 { background: linear-gradient(135deg, #0a1628 0%, #1a3a5c 50%, #0d2240 100%); }
+.slide-2 { background: linear-gradient(135deg, #1a1628 0%, #2a1a3c 50%, #0d1a30 100%); }
+.slide-3 { background: linear-gradient(135deg, #0a2428 0%, #1a3a3c 50%, #0d2830 100%); }
+.slide-4 { background: linear-gradient(135deg, #28180a 0%, #3c2a1a 50%, #200d0a 100%); }
+
+.slide-graphic {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0.15;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 10rem;
+  color: var(--gold);
+  letter-spacing: -0.02em;
+}
+
+/* Hero right */
+.hero-right {
+  background: var(--navy2);
+  border-left: 1px solid var(--border);
+  padding: 40px 40px 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+}
+.hero-sector-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+.sector-tab {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 7px 14px;
+  border: 1px solid var(--border2);
+  border-right: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all var(--transition);
+  background: transparent;
+}
+.sector-tab:last-child { border-right: 1px solid var(--border2); }
+.sector-tab.active { background: var(--gold); color: var(--navy); border-color: var(--gold); font-weight: bold; }
+.sector-tab:hover:not(.active) { color: var(--gold); border-color: var(--gold); }
+
+.hero-headline {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2.2rem, 4vw, 3.2rem);
+  line-height: 1.0;
+  letter-spacing: 0.02em;
+  color: var(--white);
+  margin-bottom: 12px;
+}
+.hero-headline span { color: var(--gold); }
+.hero-sub {
+  font-size: 0.92rem;
+  color: var(--muted);
+  line-height: 1.75;
+  margin-bottom: 24px;
+  max-width: 380px;
+}
+.search-label-text {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 6px;
+}
+
+/* ── RESULTS (below hero full width) ────────────────────────── */
+#search-results-container {
+  display: none;
+  border-top: 1px solid var(--border);
+}
+#search-results-container.show { display: block; }
+
+/* ── SECTOR STRIP ───────────────────────────────────────────── */
+.sector-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--navy3);
+}
+.sector-cell {
+  padding: 22px 20px;
+  border-right: 1px solid var(--border);
+  display: flex; align-items: center; gap: 14px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.sector-cell:last-child { border-right: none; }
+.sector-cell:hover { background: var(--gold-dim); }
+.sector-icon { font-size: 1.6rem; flex-shrink: 0; }
+.sector-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--white);
+}
+.sector-desc { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+/* ── WHO WE ARE ─────────────────────────────────────────────── */
+#about-strip {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  background: var(--navy2);
+  border-bottom: 1px solid var(--border);
+}
+.mvv-cell {
+  padding: 40px 32px;
+  border-right: 1px solid var(--border);
+  border-top: 3px solid transparent;
+  transition: border-color var(--transition);
+}
+.mvv-cell:last-child { border-right: none; }
+.mvv-cell:hover { border-top-color: var(--gold); }
+.mvv-num {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+  margin-bottom: 12px;
+}
+.mvv-cell h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: 0.06em;
+  color: var(--white);
+  margin-bottom: 8px;
+}
+.mvv-cell p { font-size: 0.9rem; color: var(--muted); line-height: 1.7; }
+
+/* ── DIRECTORY CARDS ────────────────────────────────────────── */
+#directory { padding: 60px 5vw; }
+.dir-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.dir-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 32px 28px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--transition), transform var(--transition);
+  text-decoration: none;
+  display: block;
+  color: inherit;
+}
+.dir-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: var(--gold);
+  transform: scaleX(0); transform-origin: left;
+  transition: transform 0.3s;
+}
+.dir-card:hover { border-color: var(--gold); transform: translateY(-3px); }
+.dir-card:hover::before { transform: scaleX(1); }
+.dir-bg-code {
+  position: absolute; top: 12px; right: 16px;
+  font-family: var(--font-display);
+  font-size: 3.5rem;
+  font-weight: 700;
+  color: rgba(200,147,42,0.08);
+  line-height: 1;
+}
+.dir-icon { font-size: 1.8rem; margin-bottom: 16px; }
+.dir-card h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: 0.06em;
+  color: var(--white);
+  margin-bottom: 8px;
+}
+.dir-card p { font-size: 0.88rem; color: var(--muted); line-height: 1.7; margin-bottom: 18px; }
+.dir-link {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* ── CTA BAND ───────────────────────────────────────────────── */
+#cta-band {
+  background: var(--gold);
+  padding: 60px 5vw;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+#cta-band h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(1.6rem, 3vw, 2.4rem);
+  color: var(--navy);
+  max-width: 500px;
+}
+#cta-band p { font-size: 0.95rem; color: rgba(10,22,40,0.65); margin-top: 6px; }
+
+@media (max-width: 900px) {
+  #hero { grid-template-columns: 1fr; }
+  .hero-slides { min-height: 280px; }
+  .hero-right { padding: 28px 5vw; }
+  .sector-strip { grid-template-columns: 1fr 1fr; }
+  #about-strip { grid-template-columns: 1fr; }
+  .dir-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div id="nav-container"></div>
+
+<!-- ── HERO ─────────────────────────────────────────────────── -->
+<section id="hero">
+  <!-- LEFT: Image Carousel -->
+  <div class="hero-slides">
+    <div class="slide slide-1 active">
+      <div class="slide-graphic">✈</div>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <div class="slide-caption-title">Commercial Aviation</div>
+        <div class="slide-caption-sub">Airframe · Engines · Avionics</div>
+      </div>
+    </div>
+    <div class="slide slide-2">
+      <div class="slide-graphic">🎖</div>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <div class="slide-caption-title">Military Aviation</div>
+        <div class="slide-caption-sub">Mission-Critical Defense Parts</div>
+      </div>
+    </div>
+    <div class="slide slide-3">
+      <div class="slide-graphic">⚓</div>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <div class="slide-caption-title">Naval &amp; Maritime</div>
+        <div class="slide-caption-sub">Fleet Support Components</div>
+      </div>
+    </div>
+    <div class="slide slide-4">
+      <div class="slide-graphic">🚛</div>
+      <div class="slide-overlay"></div>
+      <div class="slide-caption">
+        <div class="slide-caption-title">Ground Support Equipment</div>
+        <div class="slide-caption-sub">GSE Components &amp; Hardware</div>
+      </div>
+    </div>
+    <div class="slide-dots" id="slide-dots"></div>
+    <div class="slide-arrows">
+      <div class="slide-arrow" id="prev-slide">▲</div>
+      <div class="slide-arrow" id="next-slide">▼</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Headline + Search -->
+  <div class="hero-right">
+    <div class="hero-sector-tabs" id="sector-tabs">
+      <button class="sector-tab active" data-sector="all">All</button>
+      <button class="sector-tab" data-sector="commercial">Commercial</button>
+      <button class="sector-tab" data-sector="military">Military</button>
+      <button class="sector-tab" data-sector="ground">Ground</button>
+      <button class="sector-tab" data-sector="maritime">Maritime</button>
+    </div>
+
+    <h1 class="hero-headline">
+      We Source<br/>The Right<br/><span>Part. Fast.</span>
+    </h1>
+    <p class="hero-sub">
+      Jupiter One USA — specialized NSN and aerospace component sourcing.
+      Verified suppliers, transparent pricing, quote to delivery.
+    </p>
+
+    <div class="search-label-text">// Search by NSN or Part Number</div>
+    <div class="search-bar" id="main-search-bar">
+      <select class="search-select" id="search-type">
+        <option value="nsn">NSN</option>
+        <option value="part">Part No.</option>
+        <option value="description">Description</option>
+      </select>
+      <input class="search-input" id="search-input" type="text"
+             placeholder="e.g. 1560-00-082-4545 or MS21044N4"/>
+      <button class="search-btn" id="search-btn">Search →</button>
+    </div>
+    <p style="font-family:var(--font-mono);font-size:0.62rem;color:var(--muted2);margin-top:6px;letter-spacing:0.08em;">
+      Search over 14 million NSN records &nbsp;·&nbsp; Results shown below
+    </p>
+  </div>
+</section>
+
+<!-- ── SEARCH RESULTS ─────────────────────────────────────────── -->
+<div id="search-results-container">
+  <div class="results-panel">
+    <div class="results-header">
+      <span>Results for: <strong id="results-query"></strong></span>
+      <span id="results-count"></span>
+    </div>
+    <div id="results-body">
+      <div class="results-loading" id="results-loading" style="display:none;">
+        Searching catalog...
+      </div>
+      <table class="results-table" id="results-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>NSN</th>
+            <th>Item Name</th>
+            <th>Mfr Part Numbers</th>
+            <th>FSC</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="results-tbody"></tbody>
+      </table>
+      <div id="results-empty" style="display:none;" class="results-loading">
+        No results found. Try a different search term or
+        <a href="/pages/contact.html" style="color:var(--gold);">submit an RFQ</a> and we'll source it for you.
+      </div>
+    </div>
+    <div class="results-footer" id="results-footer" style="display:none;">
+      <span id="results-footer-text"></span>
+      <a href="/pages/contact.html" style="color:var(--gold);font-family:var(--font-mono);font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;">
+        Can't find it? Request a Quote →
+      </a>
+    </div>
+  </div>
+  <div id="results-pagination" class="pagination" style="padding: 16px 5vw;"></div>
+</div>
+
+<!-- ── SECTOR STRIP ───────────────────────────────────────────── -->
+<div class="sector-strip">
+  <div class="sector-cell" onclick="location.href='/pages/parts.html?sector=commercial'">
+    <div class="sector-icon">✈️</div>
+    <div>
+      <div class="sector-name">Commercial Aviation</div>
+      <div class="sector-desc">Airframe, engines &amp; avionics</div>
+    </div>
+  </div>
+  <div class="sector-cell" onclick="location.href='/pages/parts.html?sector=military'">
+    <div class="sector-icon">🎖️</div>
+    <div>
+      <div class="sector-name">Military Aviation</div>
+      <div class="sector-desc">Mission-critical defense parts</div>
+    </div>
+  </div>
+  <div class="sector-cell" onclick="location.href='/pages/parts.html?sector=ground'">
+    <div class="sector-icon">🚛</div>
+    <div>
+      <div class="sector-name">Ground Support</div>
+      <div class="sector-desc">GSE components &amp; hardware</div>
+    </div>
+  </div>
+  <div class="sector-cell" onclick="location.href='/pages/parts.html?sector=maritime'">
+    <div class="sector-icon">⚓</div>
+    <div>
+      <div class="sector-name">Maritime</div>
+      <div class="sector-desc">Naval &amp; fleet support parts</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── WHO WE ARE ─────────────────────────────────────────────── -->
+<div id="about-strip">
+  <div class="mvv-cell fade-up">
+    <div class="mvv-num">01 / MISSION</div>
+    <h3>Customer First</h3>
+    <p>Fast response times, transparent communication, reliable sourcing from initial quote through final delivery.</p>
+  </div>
+  <div class="mvv-cell fade-up" style="transition-delay:0.1s">
+    <div class="mvv-num">02 / VISION</div>
+    <h3>Built to Source</h3>
+    <p>Your go-to partner for NSN and aerospace components — from routine requests to hard-to-find parts.</p>
+  </div>
+  <div class="mvv-cell fade-up" style="transition-delay:0.2s">
+    <div class="mvv-num">03 / VALUES</div>
+    <h3>Integrity &amp; Speed</h3>
+    <p>Honest pricing, no hidden fees, certified suppliers. We work with your timeline — not against it.</p>
+  </div>
+</div>
+
+<!-- ── PART DIRECTORY ─────────────────────────────────────────── -->
+<section id="directory">
+  <div class="section-label fade-up">Parts Directory</div>
+  <div class="section-title fade-up">Browse Our Catalogs</div>
+  <p class="section-lead fade-up">Navigate by Federal Supply Group, classification code, or browse our commercial parts catalog — then submit an RFQ directly.</p>
+  <div class="dir-grid">
+    <a href="/pages/directory.html?type=fsg" class="dir-card fade-up">
+      <div class="dir-bg-code">FSG</div>
+      <div class="dir-icon">🗂️</div>
+      <h3>Federal Supply Group</h3>
+      <p>Browse all 78 commodity groups. The first two digits of any NSN identify its Federal Supply Group.</p>
+      <div class="dir-link">View FSG Directory →</div>
+    </a>
+    <a href="/pages/directory.html?type=fsc" class="dir-card fade-up" style="transition-delay:0.1s">
+      <div class="dir-bg-code">FSC</div>
+      <div class="dir-icon">🔢</div>
+      <h3>Federal Supply Class</h3>
+      <p>Drill down by 4-digit FSC code across 645 classes for precise component identification.</p>
+      <div class="dir-link">View FSC Directory →</div>
+    </a>
+    <a href="/pages/directory.html?type=commercial" class="dir-card fade-up" style="transition-delay:0.2s">
+      <div class="dir-bg-code">CML</div>
+      <div class="dir-icon">🔩</div>
+      <h3>Commercial Parts</h3>
+      <p>Mil-standard hardware, fasteners, structural components and LRUs without associated NSNs.</p>
+      <div class="dir-link">View Commercial Directory →</div>
+    </a>
+  </div>
+</section>
+
+<!-- ── CTA BAND ───────────────────────────────────────────────── -->
+<div id="cta-band" class="fade-up">
+  <div>
+    <h2>Can't Find Your Part?</h2>
+    <p>Submit an RFQ and our team will respond within 24 hours with sourcing options and a clear quote.</p>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    <a href="/pages/contact.html" class="btn btn-dark btn-lg">Request a Quote</a>
+    <a href="/pages/parts.html" class="btn btn-outline-gold btn-lg">Search Parts</a>
+  </div>
+</div>
+
+<div id="footer-container"></div>
+
+<!-- ── RFQ ADD MODAL ─────────────────────────────────────────── -->
+<div id="rfq-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center;">
+  <div style="background:var(--navy2);border:1px solid var(--border);border-top:3px solid var(--gold);max-width:480px;width:90%;padding:28px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;letter-spacing:0.06em;">Add to RFQ</div>
+      <button onclick="document.getElementById('rfq-modal').style.display='none'" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;">✕</button>
+    </div>
+    <div id="rfq-modal-part" style="background:var(--navy3);padding:12px 14px;margin-bottom:18px;font-family:var(--font-mono);font-size:0.82rem;color:var(--gold);"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+      <div class="form-group">
+        <label class="form-label">Quantity</label>
+        <input class="form-input" id="rfq-qty" type="number" value="1" min="1"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Condition</label>
+        <select class="form-select" id="rfq-condition">
+          <option value="NE">NE — New</option>
+          <option value="NS">NS — New Surplus</option>
+          <option value="OH">OH — Overhauled</option>
+          <option value="SV">SV — Serviceable</option>
+          <option value="AR">AR — As Removed</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label class="form-label">Target Price (per unit, optional)</label>
+      <input class="form-input" id="rfq-target" type="number" step="0.01" placeholder="0.00"/>
+    </div>
+    <div class="form-group" style="margin-bottom:20px;">
+      <label class="form-label">Notes (optional)</label>
+      <input class="form-input" id="rfq-notes" type="text" placeholder="Any special requirements"/>
+    </div>
+    <button class="btn btn-primary btn-full" id="rfq-modal-confirm">Add to RFQ Cart →</button>
+  </div>
+</div>
+
+<script type="module">
+import { api, auth, cart, renderNav, getNavHTML, getFooterHTML, initScrollReveal, initNavToggle, showAlert } from '/js/api.js';
+
+// Inject nav and footer
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+renderNav();
+initNavToggle();
+initScrollReveal();
+
+// ── Image Carousel ────────────────────────────────────────────
+const slides = document.querySelectorAll('.slide');
+let current = 0;
+let autoPlay;
+
+function goTo(n) {
+  slides[current].classList.remove('active');
+  current = (n + slides.length) % slides.length;
+  slides[current].classList.add('active');
+  document.querySelectorAll('.slide-dot').forEach((d,i) => d.classList.toggle('active', i === current));
+}
+
+function buildDots() {
+  const container = document.getElementById('slide-dots');
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'slide-dot' + (i === 0 ? ' active' : '');
+    d.addEventListener('click', () => { clearInterval(autoPlay); goTo(i); autoPlay = setInterval(() => goTo(current + 1), 4500); });
+    container.appendChild(d);
+  });
+}
+buildDots();
+autoPlay = setInterval(() => goTo(current + 1), 4500);
+document.getElementById('prev-slide').addEventListener('click', () => { clearInterval(autoPlay); goTo(current - 1); autoPlay = setInterval(() => goTo(current + 1), 4500); });
+document.getElementById('next-slide').addEventListener('click', () => { clearInterval(autoPlay); goTo(current + 1); autoPlay = setInterval(() => goTo(current + 1), 4500); });
+
+// Sync tabs with slides
+document.querySelectorAll('.sector-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.sector-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+  });
+});
+
+// ── Search ────────────────────────────────────────────────────
+const searchInput = document.getElementById('search-input');
+const searchBtn   = document.getElementById('search-btn');
+const resultsContainer = document.getElementById('search-results-container');
+let currentOffset = 0;
+const LIMIT = 25;
+let lastQuery = '', lastType = 'nsn';
+
+async function doSearch(q, type, offset = 0) {
+  if (!q.trim()) return;
+  lastQuery = q; lastType = type; currentOffset = offset;
+
+  document.getElementById('results-query').textContent = `"${q}"`;
+  document.getElementById('results-count').textContent = '';
+  document.getElementById('results-loading').style.display = 'block';
+  document.getElementById('results-table').style.display = 'none';
+  document.getElementById('results-empty').style.display = 'none';
+  document.getElementById('results-footer').style.display = 'none';
+  resultsContainer.classList.add('show');
+  resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const data = await api.search(q, type, LIMIT, offset);
+    document.getElementById('results-loading').style.display = 'none';
+
+    if (!data.results?.length) {
+      document.getElementById('results-empty').style.display = 'block';
+      return;
+    }
+
+    document.getElementById('results-count').textContent = `${data.count} result${data.count !== 1 ? 's' : ''}`;
+    const tbody = document.getElementById('results-tbody');
+    tbody.innerHTML = '';
+
+    data.results.forEach(row => {
+      const partsHtml = row.parts?.slice(0,3).map(p => `<span style="display:block;">${p.cage ? p.cage + ' — ' : ''}${p.partNumber}</span>`).join('') || '—';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="td-nsn">${row.nsn}</td>
+        <td class="td-name">${row.item_name || '—'}</td>
+        <td class="td-parts">${partsHtml}</td>
+        <td class="td-fsc">${row.fsc || '—'}<br/><span style="font-size:0.68rem;color:var(--muted2);">${row.fsc_title || ''}</span></td>
+        <td class="${row.status === 'A' ? 'td-status-active' : 'td-status-inactive'}">
+          ${row.status === 'A' ? '● Active' : '○ Inactive'}
+        </td>
+        <td>
+          <button class="btn btn-primary btn-sm add-rfq-btn"
+            data-nsn="${row.nsn}"
+            data-name="${(row.item_name || '').replace(/"/g,"'")}"
+            data-pn="${row.parts?.[0]?.partNumber || ''}">
+            + Add to RFQ
+          </button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('results-table').style.display = 'table';
+    document.getElementById('results-footer').style.display = 'flex';
+    document.getElementById('results-footer-text').textContent = `Showing ${offset + 1}–${Math.min(offset + data.results.length, data.total)} of ${data.total}`;
+
+    // Pagination
+    buildPagination(data.total, offset, LIMIT);
+
+    // Add to RFQ buttons
+    document.querySelectorAll('.add-rfq-btn').forEach(btn => {
+      btn.addEventListener('click', () => openRfqModal({
+        nsn: btn.dataset.nsn,
+        item_name: btn.dataset.name,
+        part_number: btn.dataset.pn,
+      }));
+    });
+
+  } catch (err) {
+    document.getElementById('results-loading').style.display = 'none';
+    document.getElementById('results-empty').style.display = 'block';
+    document.getElementById('results-empty').textContent = 'Search failed: ' + err.message;
+  }
+}
+
+function buildPagination(total, offset, limit) {
+  const container = document.getElementById('results-pagination');
+  const pages = Math.ceil(total / limit);
+  const current = Math.floor(offset / limit);
+  if (pages <= 1) { container.innerHTML = ''; return; }
+
+  let html = '';
+  if (current > 0) html += `<button class="page-btn" data-offset="${(current-1)*limit}">← Prev</button>`;
+  for (let i = Math.max(0, current-2); i <= Math.min(pages-1, current+2); i++) {
+    html += `<button class="page-btn${i===current?' active':''}" data-offset="${i*limit}">${i+1}</button>`;
+  }
+  if (current < pages-1) html += `<button class="page-btn" data-offset="${(current+1)*limit}">Next →</button>`;
+  container.innerHTML = html;
+  container.querySelectorAll('.page-btn').forEach(btn => {
+    btn.addEventListener('click', () => doSearch(lastQuery, lastType, parseInt(btn.dataset.offset)));
+  });
+}
+
+searchBtn.addEventListener('click', () => doSearch(searchInput.value.trim(), document.getElementById('search-type').value));
+searchInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchBtn.click(); });
+
+// Check URL params for pre-filled search
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('q')) {
+  searchInput.value = urlParams.get('q');
+  if (urlParams.get('type')) document.getElementById('search-type').value = urlParams.get('type');
+  setTimeout(() => searchBtn.click(), 300);
+}
+
+// ── RFQ Modal ─────────────────────────────────────────────────
+let currentPart = null;
+const modal = document.getElementById('rfq-modal');
+
+function openRfqModal(part) {
+  currentPart = part;
+  document.getElementById('rfq-modal-part').textContent = `NSN: ${part.nsn}  ·  ${part.item_name || part.part_number}`;
+  document.getElementById('rfq-qty').value = 1;
+  document.getElementById('rfq-target').value = '';
+  document.getElementById('rfq-notes').value = '';
+  modal.style.display = 'flex';
+}
+
+modal.addEventListener('click', e => { if (e.target === modal) modal.style.display = 'none'; });
+
+document.getElementById('rfq-modal-confirm').addEventListener('click', () => {
+  if (!currentPart) return;
+  cart.add({
+    nsn:           currentPart.nsn,
+    part_number:   currentPart.part_number,
+    item_name:     currentPart.item_name,
+    quantity:      parseInt(document.getElementById('rfq-qty').value) || 1,
+    condition_code:document.getElementById('rfq-condition').value,
+    target_price:  parseFloat(document.getElementById('rfq-target').value) || null,
+    notes:         document.getElementById('rfq-notes').value || null,
+  });
+  modal.style.display = 'none';
+  renderNav();
+
+  // Show toast
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:var(--gold);color:var(--navy);font-family:var(--font-display);font-weight:700;font-size:0.85rem;padding:14px 22px;letter-spacing:0.08em;z-index:1000;';
+  toast.textContent = `Added to RFQ Cart (${cart.count()} items)`;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3000);
+});
+</script>
+</body>
+</html>
