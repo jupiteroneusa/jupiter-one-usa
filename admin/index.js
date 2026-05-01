@@ -250,7 +250,7 @@ export async function buildAdminRouter() {
         .query(`SELECT * FROM rfq_status_log WHERE rfq_id=@id ORDER BY created_at ASC`);
       const lineRows = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
-        <td class="mono text-gold">${l.nsn||l.part_number||'—'}</td>
+        <td class="mono text-gold"><a href="/pages/nsn-detail.html?nsn=${l.nsn||l.part_number}" target="_blank" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</a></td>
         <td>${l.item_name||'—'}</td>
         <td>${l.quantity}</td>
         <td>${statusBadge(l.condition_code||'—')}</td>
