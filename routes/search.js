@@ -104,7 +104,7 @@ router.get('/', optionalCustomer, async (req, res) => {
       parts_raw: undefined,
     }));
 
-    res.json({ query: q, type, count: rows.length, results: rows });
+    res.json({ query: q, type, total: rows.length, count: rows.length, results: rows });
 
   } catch (err) {
     console.error('Search error:', err);
