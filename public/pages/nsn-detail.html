@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>NSN Detail — Jupiter One USA</title>
+<link rel="stylesheet" href="/css/main.css"/>
+</head>
+<body>
+<div id="nav-container"></div>
+<div style="max-width:1100px;margin:0 auto;padding:40px 5vw;">
+  <div id="content"><div class="results-loading">Loading NSN data...</div></div>
+</div>
+<div id="footer-container"></div>
+<script type="module">
+import { api, cart, renderNav, getNavHTML, getFooterHTML, initNavToggle } from '/js/api.js';
+document.getElementById('nav-container').innerHTML = getNavHTML();
+document.getElementById('footer-container').innerHTML = getFooterHTML();
+renderNav(); initNavToggle();
+
+const nsn = new URLSearchParams(window.location.search).get('nsn');
+if (!nsn) window.location.href = '/pages/parts.html';
+
+try {
+  const data = await api.nsnDetail(nsn);
+  document.title = `NSN ${data.nsn} — ${data.item_name} | Jupiter One USA`;
+
+  document.getElementById('content').innerHTML = `
+    <div style="margin-bottom:8px;">
+      <a href="/pages/parts.html" style="color:var(--gold);font-family:var(--font-mono);font-size:.72rem;">← Back to Search</a>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px;">
+      <div>
+        <div class="section-label">NSN</div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:2rem;letter-spacing:.06em;color:var(--white);">${data.nsn}</div>
+        <div style="font-size:1.1rem;color:var(--gold);margin-top:4px;">${data.item_name||'—'}</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span class="${data.status==='A'?'badge badge-green':'badge badge-gray'}">${data.status==='A'?'● Active':'○ Inactive'}</span>
+      </div>
+    </div>
+
+    <!-- Key Details -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:24px;">
+      ${[
+        ['NSN', data.nsn],
+        ['NIIN', data.niin||'—'],
+        ['FSC', data.fsc||'—'],
+        ['Unit of Issue', data.ui||'—'],
+      ].map(([l,v]) => `<div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
+        <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
+        <div style="font-size:.92rem;color:var(--white);font-family:var(--font-mono);">${v}</div>
+      </div>`).join('')}
+    </div>
+
+    <!-- FSC Category -->
+    <div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--gold);padding:16px 20px;margin-bottom:24px;">
+      <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">Category</div>
+      <div style="font-size:.92rem;color:var(--white);">${data.fsg_title||''} ${data.fsc_title ? '› ' + data.fsc_title : ''}</div>
+    </div>
+
+    <!-- Part Alternates / Cross Reference -->
+    ${data.parts?.length ? `
+    <div style="background:var(--card);border:1px solid var(--border);border-top:2px solid var(--gold);margin-bottom:24px;">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);">
+        <div style="font-family:var(--font-display);font-weight:700;font-size:.95rem;letter-spacing:.06em;">Cross Reference / Manufacturer Part Numbers</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="background:#060e1a;padding:10px 14px;text-align:left;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);">Part Number</th>
+          <th style="background:#060e1a;padding:10px 14px;text-align:left;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);">CAGE Code</th>
+          <th style="background:#060e1a;padding:10px 14px;text-align:left;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);">Manufacturer</th>
+        </tr></thead>
+        <tbody>${data.parts.map(p => `<tr>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font-mono);color:var(--gold);font-weight:bold;">${p.part_number||'—'}</td>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font-mono);color:var(--muted);">${p.cage_code||'—'}</td>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:var(--white);">${p.company_name||'—'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>` : ''}
+
+    <!-- Request a Quote -->
+    <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid var(--gold);padding:28px;margin-bottom:24px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:1.1rem;letter-spacing:.06em;margin-bottom:4px;">Need This Part?</div>
+          <div style="font-size:.88rem;color:var(--muted);">Submit an RFQ and we'll respond within 24 hours with pricing and availability.</div>
+        </div>
+        <button class="btn btn-primary btn-lg" id="add-rfq-btn">+ Add to RFQ →</button>
+      </div>
+    </div>`;
+
+  document.getElementById('add-rfq-btn').addEventListener('click', () => {
+    cart.add({ nsn: data.nsn, item_name: data.item_name, quantity: 1 });
+    renderNav();
+    document.getElementById('add-rfq-btn').textContent = '✅ Added to RFQ';
+    document.getElementById('add-rfq-btn').disabled = true;
+  });
+
+} catch(err) {
+  document.getElementById('content').innerHTML = `
+    <div style="text-align:center;padding:60px 20px;">
+      <div style="font-size:2rem;margin-bottom:12px;">🔍</div>
+      <div style="font-family:var(--font-display);font-size:1.2rem;margin-bottom:8px;">NSN Not Found</div>
+      <div style="color:var(--muted);margin-bottom:24px;">We couldn't find data for NSN ${nsn}</div>
+      <a href="/pages/contact.html?part=${nsn}" class="btn btn-primary">Submit an RFQ for This Part</a>
+    </div>`;
+}
+</script>
+</body>
+</html>
