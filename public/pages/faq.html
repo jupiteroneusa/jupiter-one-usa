@@ -28,35 +28,30 @@
 </div>
 
 <div class="faq-page">
-  ${[
-    { section: 'Website & Account', items: [
-      ['What is the cost of registration?', 'Jupiter One USA offers free account registration and a free-to-use procurement sourcing service. Creating an account allows you to submit RFQs and track your orders.'],
-      ['Is every NSN in your database actually in stock?', 'Jupiter One USA works with a global network of verified distributors and manufacturers. Parts listed in our catalog are sourced through our supplier community and are not necessarily held in our physical inventory. When you submit an RFQ, we go out and source the part on your behalf.'],
-      ['How do I request a quote?', 'Once registered and logged in, search for any NSN or part number and click "Add to RFQ" on any result. Parts are added to your Pending RFQ — nothing is submitted yet. You can add as many parts as needed, set quantities and target prices, then click "Submit RFQ" when ready. Your representative will respond with pricing and availability shortly.'],
-    ]},
-    { section: 'Purchasing & Delivery', items: [
-      ['How long before delivery from the point I place an order?', 'Domestic supplier orders are typically delivered within 3 business days of order confirmation. International suppliers require 7–10 business days. Exact lead times are confirmed at time of quote.'],
-      ['How do I know the parts will be correct?', 'All parts sourced by Jupiter One USA are verified against your order specifications. Applicable traceability documentation including Certificates of Conformance and FAA 8130-3 forms are provided where available. Any discrepancies are resolved with the supplier at no cost to you.'],
-      ['What condition are the parts in?', 'Part condition is specified on every quote — New (NE), New Surplus (NS), Overhauled (OH), Serviceable (SV), or As Removed (AR). You can also specify your required condition when submitting your RFQ.'],
-      ['What is the warranty on parts?', 'In most cases the original manufacturer\'s warranty applies. Parts described as overhauled or serviceable carry warranties appropriate to their condition and will be specified in your quote.'],
-    ]},
-    { section: 'Payment', items: [
-      ['How do I pay for parts?', 'Initial orders are payable by Credit Card, COD, or Wire Transfer. Contact your representative for details on payment methods that work best for your organization.'],
-      ['Can I get payment terms?', 'Payment terms may be extended to repeat customers following a successful payment history with Jupiter One USA. Contact your representative to discuss eligibility.'],
-      ['Are there any hidden fees?', 'No. We provide transparent, all-inclusive pricing in every quote. The price you see is the price you pay — no hidden fees, surcharges, or surprise costs.'],
-    ]},
-    { section: 'Export & Compliance', items: [
-      ['Does Jupiter One USA comply with export regulations?', 'Yes. Jupiter One USA complies with all applicable US export control laws and regulations including ITAR and EAR. In cases involving controlled items or denied entities, information may be disclosed to the US Departments of State, Commerce, or Homeland Security as required by law. We use IP addresses and registration information to validate country of origin for Homeland Security compliance purposes.'],
-      ['Can you ship internationally?', 'Yes, we ship worldwide. International shipments are subject to applicable export control regulations. Lead times for international orders are typically 7–10 business days.'],
-    ]},
-  ].map(({ section, items }) => `
-    <div class="faq-section">
-      <div class="faq-section-title">${section}</div>
-      ${items.map(([q, a]) => `
-        <div class="faq-item">
-          <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">${q}<span>+</span></div>
-          <div class="faq-a">${a}</div>
-        </div>`).join('')}
+  <div class="faq-section">
+    <div class="faq-section-title">Website &amp; Account</div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">What is the cost of registration?<span>+</span></div><div class="faq-a">Jupiter One USA offers free account registration and a free-to-use procurement sourcing service.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Is every NSN in your database actually in stock?<span>+</span></div><div class="faq-a">Parts listed in our catalog are sourced through our supplier community and are not necessarily held in our physical inventory. When you submit an RFQ, we source the part on your behalf.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">How do I request a quote?<span>+</span></div><div class="faq-a">Search for any NSN or part number, click Add to RFQ, set quantities and target prices, then click Submit RFQ. Your representative will respond with pricing shortly.</div></div>
+  </div>
+  <div class="faq-section">
+    <div class="faq-section-title">Purchasing &amp; Delivery</div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">How long before delivery from the point I place an order?<span>+</span></div><div class="faq-a">Domestic orders typically deliver within 3 business days. International orders require 7-10 business days. Exact lead times are confirmed at time of quote.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">How do I know the parts will be correct?<span>+</span></div><div class="faq-a">All parts are verified against your order specs. Certificates of Conformance and FAA 8130-3 forms are provided where available.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">What condition are the parts in?<span>+</span></div><div class="faq-a">Condition is specified on every quote: New (NE), New Surplus (NS), Overhauled (OH), Serviceable (SV), or As Removed (AR).</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">What is the warranty on parts?<span>+</span></div><div class="faq-a">The original manufacturer warranty applies in most cases. Overhauled or serviceable parts carry condition-appropriate warranties specified in your quote.</div></div>
+  </div>
+  <div class="faq-section">
+    <div class="faq-section-title">Payment</div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">How do I pay for parts?<span>+</span></div><div class="faq-a">Initial orders are payable by Credit Card, COD, or Wire Transfer.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Can I get payment terms?<span>+</span></div><div class="faq-a">Payment terms may be extended to repeat customers following a successful payment history. Contact your representative to discuss eligibility.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Are there any hidden fees?<span>+</span></div><div class="faq-a">No. We provide transparent, all-inclusive pricing. The price you see is the price you pay.</div></div>
+  </div>
+  <div class="faq-section">
+    <div class="faq-section-title">Export &amp; Compliance</div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Does Jupiter One USA comply with export regulations?<span>+</span></div><div class="faq-a">Yes. Jupiter One USA complies with all applicable US export control laws including ITAR and EAR.</div></div>
+    <div class="faq-item"><div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Can you ship internationally?<span>+</span></div><div class="faq-a">Yes, we ship worldwide subject to applicable export control regulations. International lead times are typically 7-10 business days.</div></div>
+  </div>
     </div>`).join('')}
 </div>
 

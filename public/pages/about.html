@@ -60,38 +60,35 @@
       <div class="section-label">How It Works</div>
       <div class="section-title" style="font-size:1.6rem;margin-bottom:20px;">Simple Process</div>
       <div style="display:flex;flex-direction:column;gap:16px;">
-        ${[
-          ['01','Search','Search our 14M+ NSN catalog by NSN, part number, or description.'],
-          ['02','Request','Add parts to your RFQ cart, set quantities and target prices, submit.'],
-          ['03','Source','Our team sources from verified suppliers and builds your quote.'],
-          ['04','Deliver','Accept the quote, place the order. We handle the rest.'],
-        ].map(([n,t,d]) => `
           <div style="display:flex;gap:16px;align-items:flex-start;">
-            <div style="background:var(--gold);color:var(--navy);font-family:var(--font-display);font-weight:700;font-size:.85rem;padding:6px 12px;flex-shrink:0;">${n}</div>
-            <div>
-              <div style="font-family:var(--font-display);font-weight:700;font-size:1rem;letter-spacing:.06em;margin-bottom:4px;">${t}</div>
-              <div style="font-size:.88rem;color:var(--muted);">${d}</div>
-            </div>
-          </div>`).join('')}
+            <div style="background:var(--gold);color:var(--navy);font-family:var(--font-display);font-weight:700;font-size:.85rem;padding:6px 12px;flex-shrink:0;">01</div>
+            <div><div style="font-family:var(--font-display);font-weight:700;font-size:1rem;letter-spacing:.06em;margin-bottom:4px;">Search</div><div style="font-size:.88rem;color:var(--muted);">Search our 14M+ NSN catalog by NSN, part number, or description.</div></div>
+          </div>
+          <div style="display:flex;gap:16px;align-items:flex-start;">
+            <div style="background:var(--gold);color:var(--navy);font-family:var(--font-display);font-weight:700;font-size:.85rem;padding:6px 12px;flex-shrink:0;">02</div>
+            <div><div style="font-family:var(--font-display);font-weight:700;font-size:1rem;letter-spacing:.06em;margin-bottom:4px;">Request</div><div style="font-size:.88rem;color:var(--muted);">Add parts to your RFQ cart, set quantities and target prices, submit.</div></div>
+          </div>
+          <div style="display:flex;gap:16px;align-items:flex-start;">
+            <div style="background:var(--gold);color:var(--navy);font-family:var(--font-display);font-weight:700;font-size:.85rem;padding:6px 12px;flex-shrink:0;">03</div>
+            <div><div style="font-family:var(--font-display);font-weight:700;font-size:1rem;letter-spacing:.06em;margin-bottom:4px;">Source</div><div style="font-size:.88rem;color:var(--muted);">Our team sources from verified suppliers and builds your quote.</div></div>
+          </div>
+          <div style="display:flex;gap:16px;align-items:flex-start;">
+            <div style="background:var(--gold);color:var(--navy);font-family:var(--font-display);font-weight:700;font-size:.85rem;padding:6px 12px;flex-shrink:0;">04</div>
+            <div><div style="font-family:var(--font-display);font-weight:700;font-size:1rem;letter-spacing:.06em;margin-bottom:4px;">Deliver</div><div style="font-size:.88rem;color:var(--muted);">Accept the quote, place the order. We handle the rest.</div></div>
+          </div>
       </div>
     </div>
     <div class="fade-up" style="transition-delay:.15s;">
       <div class="section-label">Our Commitment</div>
       <div class="section-title" style="font-size:1.6rem;margin-bottom:20px;">What You Can Expect</div>
       <div style="display:flex;flex-direction:column;gap:12px;">
-        ${[
-          'Response to all RFQs within 24 business hours',
-          'Transparent pricing with no hidden fees',
-          'Parts sourced only from certified, verified suppliers',
-          'Traceability documentation provided where available',
-          'Clear communication from quote through delivery',
-          'Expedited sourcing available for AOG and urgent needs',
-          'All applicable US export control laws followed',
-        ].map(item => `
-          <div style="display:flex;gap:10px;align-items:flex-start;">
-            <span style="color:var(--gold);flex-shrink:0;margin-top:2px;">◆</span>
-            <span style="font-size:.9rem;color:var(--muted);">${item}</span>
-          </div>`).join('')}
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">Response to all RFQs within 24 business hours</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">Transparent pricing with no hidden fees</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">Parts sourced only from certified, verified suppliers</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">Traceability documentation provided where available</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">Clear communication from quote through delivery</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">Expedited sourcing available for AOG and urgent needs</span></div>
+          <div style="display:flex;gap:10px;align-items:flex-start;"><span style="color:var(--gold);flex-shrink:0;">&#10003;</span><span style="font-size:.9rem;color:var(--muted);">All applicable US export control laws followed</span></div>
       </div>
     </div>
   </div>
