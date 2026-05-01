@@ -66,12 +66,10 @@ async function start() {
     await getPool();
     console.log('✅ Database connected');
 
-    buildAdminRouter().then(({ admin, adminRouter }) => {
-      app.use(admin.options.rootPath, adminRouter);
-      console.log('✅ Admin panel ready');
-    }).catch(err => {
-      console.error('Admin panel failed:', err.message);
-    });
+    // Admin panel — registered BEFORE catch-all
+    const { admin, adminRouter } = await buildAdminRouter();
+    app.use(admin.options.rootPath, adminRouter);
+    console.log('✅ Admin panel ready');
 
     // Catch-all → frontend
     app.get('*', (req, res) => {
@@ -87,7 +85,6 @@ async function start() {
       console.log('');
     });
 
-    // Start DIBBS/SAM auto-sync
     startDibbsCron();
 
   } catch (err) {
