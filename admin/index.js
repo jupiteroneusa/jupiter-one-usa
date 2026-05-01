@@ -7,8 +7,8 @@ import 'dotenv/config';
 AdminJS.registerAdapter({ Database, Resource });
 
 export async function buildAdminRouter() {
-  const db = await new Adapter('mssql', {
-    connectionString: `mssql://${encodeURIComponent(process.env.DB_USER)}:${encodeURIComponent(process.env.DB_PASSWORD)}@${process.env.DB_SERVER}:${process.env.DB_PORT || 1433}/${process.env.DB_NAME}`,
+  const db = await new Adapter('tedious', {
+    connectionString: `tedious://${encodeURIComponent(process.env.DB_USER)}:${encodeURIComponent(process.env.DB_PASSWORD)}@${process.env.DB_SERVER}:${process.env.DB_PORT || 1433}/${process.env.DB_NAME}`,
     database: process.env.DB_NAME,
   }).init();
 
