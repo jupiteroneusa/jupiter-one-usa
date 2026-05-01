@@ -175,7 +175,7 @@ export async function buildAdminRouter() {
         <td>${statusBadge(r.priority)}</td>
         <td>${statusBadge(r.status)}</td>
         <td>${new Date(r.submitted_at).toLocaleDateString()}</td>
-        <td><a href="/admin/rfqs" class="btn btn-outline btn-sm">View All</a></td>
+        <td><a href="/admin/rfqs/'+r.id+'" class="btn btn-outline btn-sm">View</a></td>
       </tr>`).join('');
       res.send(page('Dashboard', 'dashboard', `
         <div class="page-title">Dashboard</div>
