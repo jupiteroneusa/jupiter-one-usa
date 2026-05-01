@@ -1,6 +1,5 @@
 // admin/index.js
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
 
@@ -39,8 +38,6 @@ tr:hover td { background:rgba(200,147,42,0.04); }
 .btn-outline { background:transparent; color:#7a8a9a; border:1px solid #1e2d42; }
 .btn-outline:hover { border-color:#c8932a; color:#c8932a; }
 .btn-sm { font-size:.7rem; padding:5px 12px; }
-.btn-red { background:#8a2a2a; color:#eef1f5; }
-.btn-red:hover { background:#a03030; }
 select, input[type=text], input[type=email], textarea { background:#0a1628; border:1px solid #1e2d42; color:#eef1f5; padding:8px 12px; font-size:.85rem; outline:none; font-family:inherit; }
 select:focus, input:focus, textarea:focus { border-color:#c8932a; }
 .stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
@@ -106,21 +103,16 @@ function requireAuth(req, res) {
 export async function buildAdminRouter() {
   const router = Router();
 
-  // ── Login ────────────────────────────────────────────────
+  // Login
   router.get('/', (req, res) => {
     const err = req.query.error ? '<div class="alert alert-error">Invalid credentials.</div>' : '';
-    res.send(`<!DOCTYPE html><html><head><title>Admin Login — Jupiter One USA</title>
-    <style>${CSS}
-    body{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+    res.send(`<!DOCTYPE html><html><head><title>Admin Login</title>
+    <style>${CSS} body{display:flex;align-items:center;justify-content:center;min-height:100vh;}
     .login-card{background:#111e30;border:1px solid #1e2d42;border-top:3px solid #c8932a;padding:40px;width:100%;max-width:400px;}
-    h1{font-size:1.3rem;color:#c8932a;margin-bottom:4px;}
-    p{font-size:.82rem;color:#7a8a9a;margin-bottom:24px;}
-    input{width:100%;margin-bottom:12px;display:block;}
-    </style></head><body>
+    h1{font-size:1.3rem;color:#c8932a;margin-bottom:4px;} p{font-size:.82rem;color:#7a8a9a;margin-bottom:24px;}
+    input{width:100%;margin-bottom:12px;display:block;}</style></head><body>
     <div class="login-card">
-      <h1>⚡ Jupiter One USA</h1>
-      <p>Admin Panel — Restricted Access</p>
-      ${err}
+      <h1>⚡ Jupiter One USA</h1><p>Admin Panel — Restricted Access</p>${err}
       <form method="POST" action="/admin/login">
         <input type="email" name="email" placeholder="Admin Email" required/>
         <input type="password" name="password" placeholder="Password" required/>
@@ -145,7 +137,7 @@ export async function buildAdminRouter() {
     res.redirect('/admin');
   });
 
-  // ── Dashboard ────────────────────────────────────────────
+  // Dashboard
   router.get('/dashboard', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -159,23 +151,23 @@ export async function buildAdminRouter() {
       `);
       const s = stats.recordset[0];
       const recent = await pool.request().query(`
-        SELECT TOP 10 h.rfq_number, h.status, h.priority, h.submitted_at,
-          c.first_name+' '+c.last_name AS customer_name, c.company,
+        SELECT TOP 10 h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
+          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company,
           COUNT(l.id) AS line_count
         FROM rfq_headers h
         JOIN customers c ON c.id=h.customer_id
         LEFT JOIN rfq_lines l ON l.rfq_id=h.id
-        GROUP BY h.rfq_number,h.status,h.priority,h.submitted_at,c.first_name,c.last_name,c.company
+        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.id,c.first_name,c.last_name,c.company
         ORDER BY h.submitted_at DESC
       `);
-      let rows = recent.recordset.map(r => `<tr>
-        <td class="mono text-gold">${r.rfq_number}</td>
-        <td>${r.customer_name}<br><span class="text-muted" style="font-size:.75rem;">${r.company||''}</span></td>
+      const rows = recent.recordset.map(r => `<tr>
+        <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
+        <td><a href="/admin/customers/${r.customer_id}" style="color:#c8932a;">${r.customer_name}</a><br><span style="font-size:.75rem;color:#7a8a9a;">${r.company||''}</span></td>
         <td>${r.line_count}</td>
         <td>${statusBadge(r.priority)}</td>
         <td>${statusBadge(r.status)}</td>
         <td>${new Date(r.submitted_at).toLocaleDateString()}</td>
-        <td><a href="/admin/rfqs/'+r.id+'" class="btn btn-outline btn-sm">View</a></td>
+        <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
       </tr>`).join('');
       res.send(page('Dashboard', 'dashboard', `
         <div class="page-title">Dashboard</div>
@@ -196,7 +188,7 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── RFQs List ────────────────────────────────────────────
+  // RFQs List
   router.get('/rfqs', async (req, res) => {
     if (!requireAuth(req, res)) return;
     const status = req.query.status || '';
@@ -207,13 +199,13 @@ export async function buildAdminRouter() {
       if (status) { r.input('status', sql.NVarChar, status); where = 'WHERE h.status=@status'; }
       const result = await r.query(`
         SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
-          c.first_name+' '+c.last_name AS customer_name, c.company, c.email,
+          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email,
           COUNT(l.id) AS line_count
         FROM rfq_headers h
         JOIN customers c ON c.id=h.customer_id
         LEFT JOIN rfq_lines l ON l.rfq_id=h.id
         ${where}
-        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.first_name,c.last_name,c.company,c.email
+        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.id,c.first_name,c.last_name,c.company,c.email
         ORDER BY h.submitted_at DESC
         OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY
       `);
@@ -221,8 +213,8 @@ export async function buildAdminRouter() {
       const filters = statuses.map(s => `<a href="/admin/rfqs${s?'?status='+s:''}" class="btn btn-sm ${status===s?'btn-gold':'btn-outline'}">${s||'All'}</a>`).join('');
       const rows = result.recordset.map(r => `<tr>
         <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
-        <td>${r.customer_name}<br><span class="text-muted" style="font-size:.75rem;">${r.company||''}</span></td>
-        <td style="color:#7a8a9a;font-size:.75rem;">${r.email}</td>
+        <td><a href="/admin/customers/${r.customer_id}" style="color:#c8932a;">${r.customer_name}</a><br><span style="font-size:.75rem;color:#7a8a9a;">${r.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${r.email}</td>
         <td>${r.line_count}</td>
         <td>${statusBadge(r.priority)}</td>
         <td>${statusBadge(r.status)}</td>
@@ -242,13 +234,13 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── RFQ Detail ───────────────────────────────────────────
+  // RFQ Detail
   router.get('/rfqs/:id', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
       const h = await pool.request().input('id', sql.BigInt, req.params.id).query(`
-        SELECT h.*, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone
+        SELECT h.*, c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone
         FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id`);
       if (!h.recordset.length) return res.send(page('RFQ','rfqs','<div class="alert alert-error">RFQ not found.</div>'));
       const rfq = h.recordset[0];
@@ -256,7 +248,6 @@ export async function buildAdminRouter() {
         .query(`SELECT * FROM rfq_lines WHERE rfq_id=@id ORDER BY line_number`);
       const log = await pool.request().input('id', sql.BigInt, req.params.id)
         .query(`SELECT * FROM rfq_status_log WHERE rfq_id=@id ORDER BY created_at ASC`);
-
       const lineRows = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
         <td class="mono text-gold">${l.nsn||l.part_number||'—'}</td>
@@ -266,57 +257,43 @@ export async function buildAdminRouter() {
         <td>${l.target_price ? '$'+parseFloat(l.target_price).toFixed(2) : '—'}</td>
         <td style="color:#7a8a9a;font-size:.8rem;">${l.notes||'—'}</td>
       </tr>`).join('');
-
       const logRows = log.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
         <td>${statusBadge(l.new_status)}</td>
         <td style="color:#7a8a9a;">${l.note||'—'}</td>
       </tr>`).join('');
-
       const statuses = ['Submitted','Under Review','Sourcing','Quoted','Closed','Cancelled'];
       const statusOptions = statuses.map(s => `<option value="${s}"${rfq.status===s?' selected':''}>${s}</option>`).join('');
-
       res.send(page(`RFQ ${rfq.rfq_number}`,'rfqs',`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">RFQ ${rfq.rfq_number}</div>
           <a href="/admin/rfqs" class="btn btn-outline btn-sm">← Back to RFQs</a>
         </div>
         <div class="page-sub">Submitted ${new Date(rfq.submitted_at).toLocaleString()}</div>
-
         <div class="detail-grid">
-          <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value">${rfq.customer_name}</div></div>
+          <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${rfq.customer_id}" style="color:#c8932a;">${rfq.customer_name}</a></div></div>
           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${rfq.company||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value">${rfq.email}</div></div>
           <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${rfq.phone||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Priority</div><div class="detail-value">${statusBadge(rfq.priority)}</div></div>
           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(rfq.status)}</div></div>
         </div>
-
         ${rfq.notes ? `<div class="card" style="margin-bottom:20px;"><div class="card-header">Notes from Customer</div><div class="card-body" style="color:#7a8a9a;">${rfq.notes}</div></div>` : ''}
-
         <div class="card">
           <div class="card-header">Line Items (${lines.recordset.length})</div>
           <table><thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Target Price</th><th>Notes</th></tr></thead>
           <tbody>${lineRows}</tbody></table>
         </div>
-
         <div class="card">
           <div class="card-header">Update Status</div>
           <div class="card-body">
             <form method="POST" action="/admin/rfqs/${rfq.id}/status" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
-              <div>
-                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">New Status</div>
-                <select name="status">${statusOptions}</select>
-              </div>
-              <div style="flex:1;min-width:200px;">
-                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Note (optional)</div>
-                <input type="text" name="note" placeholder="Add a note..." style="width:100%;"/>
-              </div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">${statusOptions}</select></div>
+              <div style="flex:1;min-width:200px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Note (optional)</div><input type="text" name="note" placeholder="Add a note..." style="width:100%;"/></div>
               <button type="submit" class="btn btn-gold">Update Status</button>
             </form>
           </div>
         </div>
-
         <div class="card">
           <div class="card-header">Status History</div>
           <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
@@ -327,7 +304,7 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── RFQ Status Update POST ───────────────────────────────
+  // RFQ Status Update
   router.post('/rfqs/:id/status', async (req, res) => {
     if (!requireAuth(req, res)) return;
     const { status, note } = req.body;
@@ -350,7 +327,7 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── Customers ────────────────────────────────────────────
+  // Customers List
   router.get('/customers', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -384,15 +361,57 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── Quotes ───────────────────────────────────────────────
+  // Customer Detail
+  router.get('/customers/:id', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const cr = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM customers WHERE id=@id');
+      if (!cr.recordset.length) return res.send(page('Customer','customers','<div class="alert alert-error">Not found.</div>'));
+      const cust = cr.recordset[0];
+      const rfqs = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at, COUNT(l.id) AS line_count FROM rfq_headers h LEFT JOIN rfq_lines l ON l.rfq_id=h.id WHERE h.customer_id=@id GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at ORDER BY h.submitted_at DESC');
+      const rfqRows = rfqs.recordset.map(r => `<tr>
+        <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
+        <td>${r.line_count}</td>
+        <td>${statusBadge(r.priority)}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(r.submitted_at).toLocaleDateString()}</td>
+        <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:16px;">No RFQs yet</td></tr>';
+      res.send(page('Customer: '+cust.first_name+' '+cust.last_name,'customers',`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div class="page-title">${cust.first_name} ${cust.last_name}</div>
+          <a href="/admin/customers" class="btn btn-outline btn-sm">← Back</a>
+        </div>
+        <div class="page-sub">${cust.company||''}</div>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value">${cust.email}</div></div>
+          <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${cust.phone||'—'}</div></div>
+          <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${cust.company||'—'}</div></div>
+          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(cust.status)}</div></div>
+          <div class="detail-item"><div class="detail-label">Member Since</div><div class="detail-value">${new Date(cust.created_at).toLocaleDateString()}</div></div>
+          <div class="detail-item"><div class="detail-label">Country</div><div class="detail-value">${cust.country||'—'}</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">RFQ History</div>
+          <table><thead><tr><th>RFQ #</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody>${rfqRows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Customer','customers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Quotes
   router.get('/quotes', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
       const result = await pool.request().query(`
         SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at,
-          c.first_name+' '+c.last_name AS customer_name, c.company,
-          h.rfq_number
+          c.first_name+' '+c.last_name AS customer_name, c.company, h.rfq_number
         FROM quotes q
         JOIN customers c ON c.id=q.customer_id
         JOIN rfq_headers h ON h.id=q.rfq_id
@@ -401,7 +420,7 @@ export async function buildAdminRouter() {
       const rows = result.recordset.map(q => `<tr>
         <td class="mono text-gold">${q.quote_number}</td>
         <td class="mono" style="color:#7a8a9a;">${q.rfq_number}</td>
-        <td>${q.customer_name}<br><span class="text-muted" style="font-size:.75rem;">${q.company||''}</span></td>
+        <td>${q.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${q.company||''}</span></td>
         <td style="font-weight:600;">$${parseFloat(q.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td>${statusBadge(q.status)}</td>
         <td style="color:#7a8a9a;font-size:.78rem;">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</td>
@@ -419,7 +438,7 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── Orders ───────────────────────────────────────────────
+  // Orders
   router.get('/orders', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -433,7 +452,7 @@ export async function buildAdminRouter() {
       `);
       const rows = result.recordset.map(o => `<tr>
         <td class="mono text-gold">${o.order_number}</td>
-        <td>${o.customer_name}<br><span class="text-muted" style="font-size:.75rem;">${o.company||''}</span></td>
+        <td>${o.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${o.company||''}</span></td>
         <td style="font-weight:600;">$${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td>${statusBadge(o.status)}</td>
         <td style="color:#7a8a9a;font-size:.78rem;">${o.confirmed_at?new Date(o.confirmed_at).toLocaleDateString():'—'}</td>
@@ -450,7 +469,7 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── Invoices ─────────────────────────────────────────────
+  // Invoices
   router.get('/invoices', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -464,7 +483,7 @@ export async function buildAdminRouter() {
       `);
       const rows = result.recordset.map(i => `<tr>
         <td class="mono text-gold">${i.invoice_number}</td>
-        <td>${i.customer_name}<br><span class="text-muted" style="font-size:.75rem;">${i.company||''}</span></td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
         <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td>${statusBadge(i.status)}</td>
@@ -482,38 +501,7 @@ export async function buildAdminRouter() {
     }
   });
 
-  // ── Customer Detail
-  router.get('/customers/:id', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const cr = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query('SELECT * FROM customers WHERE id=@id');
-      if (!cr.recordset.length) return res.send(page('Customer','customers','<div class="alert alert-error">Not found.</div>'));
-      const cust = cr.recordset[0];
-      const rfqs = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query('SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at, COUNT(l.id) AS line_count FROM rfq_headers h LEFT JOIN rfq_lines l ON l.rfq_id=h.id WHERE h.customer_id=@id GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at ORDER BY h.submitted_at DESC');
-      const rfqRows = rfqs.recordset.map(r => '<tr><td class="mono text-gold"><a href="/admin/rfqs/'+r.id+'" style="color:#c8932a;">'+r.rfq_number+'</a></td><td>'+r.line_count+'</td><td>'+statusBadge(r.priority)+'</td><td>'+statusBadge(r.status)+'</td><td style="color:#7a8a9a;font-size:.78rem;">'+new Date(r.submitted_at).toLocaleDateString()+'</td><td><a href="/admin/rfqs/'+r.id+'" class="btn btn-outline btn-sm">View</a></td></tr>').join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:16px;">No RFQs yet</td></tr>';
-      res.send(page('Customer: '+cust.first_name+' '+cust.last_name,'customers',
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div class="page-title">'+cust.first_name+' '+cust.last_name+'</div><a href="/admin/customers" class="btn btn-outline btn-sm">← Back</a></div>'+
-        '<div class="page-sub">'+(cust.company||'')+'</div>'+
-        '<div class="detail-grid">'+
-          '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value">'+cust.email+'</div></div>'+
-          '<div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">'+(cust.phone||'—')+'</div></div>'+
-          '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">'+(cust.company||'—')+'</div></div>'+
-          '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">'+statusBadge(cust.status)+'</div></div>'+
-          '<div class="detail-item"><div class="detail-label">Member Since</div><div class="detail-value">'+new Date(cust.created_at).toLocaleDateString()+'</div></div>'+
-        '</div>'+
-        '<div class="card"><div class="card-header">RFQ History</div>'+
-        '<table><thead><tr><th>RFQ #</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>'+
-        '<tbody>'+rfqRows+'</tbody></table></div>'
-      ));
-    } catch(err) {
-      res.send(page('Customer','customers','<div class="alert alert-error">'+err.message+'</div>'));
-    }
-  });
-
-  // ── Suppliers ────────────────────────────────────────────
+  // Suppliers
   router.get('/suppliers', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
