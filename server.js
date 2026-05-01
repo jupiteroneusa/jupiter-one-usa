@@ -66,8 +66,12 @@ async function start() {
     await getPool();
     console.log('✅ Database connected');
 
-    const { admin, adminRouter } = await buildAdminRouter();
-    app.use(admin.options.rootPath, adminRouter);
+    buildAdminRouter().then(({ admin, adminRouter }) => {
+      app.use(admin.options.rootPath, adminRouter);
+      console.log('✅ Admin panel ready');
+    }).catch(err => {
+      console.error('Admin panel failed:', err.message);
+    });
 
     // Catch-all → frontend
     app.get('*', (req, res) => {
