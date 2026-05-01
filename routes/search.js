@@ -188,5 +188,18 @@ router.get('/class/:fsc', async (req, res) => {
   }
 });
 
+
+// ── GET /api/search/nsnnow/:nsn ── fetch from nsn-now.com ──
+router.get('/nsnnow/:nsn', async (req, res) => {
+  try {
+    const { getNsnNowData } = await import('../services/nsnnow.js');
+    const data = await getNsnNowData(req.params.nsn);
+    if (!data) return res.status(404).json({ error: 'NSN not found on NSN-Now.' });
+    res.json(data);
+  } catch (err) {
+    console.error('NSN-Now route error:', err);
+    res.status(500).json({ error: 'Failed to fetch NSN-Now data.' });
+  }
+});
 export default router;
   
