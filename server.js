@@ -23,6 +23,7 @@ import documentRouter  from './routes/documents.js';
 import customerRouter  from './routes/customers.js';
 import dibssRouter     from './routes/dibss.js';
 import settingsRouter  from './routes/settings.js';
+import contactRouter   from './routes/contact.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -53,6 +54,7 @@ app.use('/api/documents', documentRouter);
 app.use('/api/customers', customerRouter);
 app.use('/api/dibss',     dibssRouter);
 app.use('/api/settings',  settingsRouter);
+app.use('/api/contact',   contactRouter);
 
 app.get('/api/health', async (req, res) => {
   try {
