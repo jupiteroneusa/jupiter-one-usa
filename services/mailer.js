@@ -157,13 +157,13 @@ export async function sendRfqReceivedCustomer({ customer, rfq }) {
       <p style="font-size:14px;color:#444;line-height:1.7;">
         We have received your Request for Quote <strong>${rfq.rfq_number}</strong>
         containing <strong>${rfq.line_count} line item${rfq.line_count !== 1 ? 's' : ''}</strong>.
-        Your dedicated representative will begin sourcing immediately and you will
+        We will begin processing your request immediately and you will
         hear back within <strong>24 hours</strong> with pricing and availability.
       </p>
       <div style="background:#f9f9f9;border-left:3px solid #c8932a;padding:14px 20px;margin:20px 0;font-size:13px;color:#666;">
         <strong>Reference:</strong> ${rfq.rfq_number}<br/>
         <strong>Priority:</strong> ${rfq.priority}<br/>
-        <strong>Submitted:</strong> ${new Date().toLocaleString()}
+        <strong>Submitted:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })}
       </div>
       <p style="font-size:14px;color:#444;">
         Need it urgently? Call us directly:<br/>
