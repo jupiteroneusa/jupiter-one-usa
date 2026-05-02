@@ -360,3 +360,21 @@ export async function sendInvoice({ customer, invoice, pdfUrl }) {
     `),
   });
 }  
+
+export async function sendContactNotificationAdmin({ name, email, phone, company, subject, message }) {
+  const subj = 'New Contact — ' + (subject || name);
+  await send({
+    to: process.env.RFQ_NOTIFY_EMAIL,
+    subject: subj,
+    type: 'contact',
+    html: layout(`
+      <h3 style="color:#c8932a;margin-top:0;">New Contact Form Submission</h3>
+      <p><strong>Name:</strong> ${name}</p>
+      <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+      <p><strong>Phone:</strong> ${phone || '—'}</p>
+      <p><strong>Company:</strong> ${company || '—'}</p>
+      <p><strong>Subject:</strong> ${subject || '—'}</p>
+      <p><strong>Message:</strong><br>${message}</p>
+    `),
+  });
+}
