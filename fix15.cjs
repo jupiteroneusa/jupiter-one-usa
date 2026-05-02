@@ -1,10 +1,10 @@
 const fs = require('fs');
 let c = fs.readFileSync('public/js/api.js', 'utf8');
 
-// Fix cart.add to use quantity from item
+// Fix cart.add - when item exists, add the new quantity instead of just +1
 c = c.replace(
-  "else { items.push({ ...item, quantity: 1, condition_code: item.condition_code || 'NE' }); }",
-  "else { items.push({ ...item, quantity: item.quantity || 1, condition_code: item.condition_code || 'NE' }); }"
+  "if (existing) { existing.quantity = (existing.quantity || 1) + 1; }",
+  "if (existing) { existing.quantity = (existing.quantity || 1) + (item.quantity || 1); }"
 );
 
 fs.writeFileSync('public/js/api.js', c);
