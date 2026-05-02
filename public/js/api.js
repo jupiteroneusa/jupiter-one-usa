@@ -26,7 +26,7 @@ export const cart = {
     const items = cart.get();
     const existing = items.find(i => (i.nsn && i.nsn === item.nsn) || (i.part_number && i.part_number === item.part_number));
     if (existing) { existing.quantity = (existing.quantity || 1) + 1; }
-    else { items.push({ ...item, quantity: 1, condition_code: item.condition_code || 'NE' }); }
+    else { items.push({ ...item, quantity: item.quantity || 1, condition_code: item.condition_code || 'NE' }); }
     cart.set(items);
     cart.updateBadge();
   },
