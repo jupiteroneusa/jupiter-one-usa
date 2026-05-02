@@ -188,8 +188,7 @@ router.get('/class/:fsc', async (req, res) => {
   }
 });
 
-
-// ── GET /api/search/nsnnow/:nsn ── fetch from nsn-now.com ──
+// ── GET /api/search/nsnnow-debug/:nsn ── Puppeteer debug ─────
 router.get('/nsnnow-debug/:nsn', async (req, res) => {
   try {
     const puppeteer = await import('puppeteer');
@@ -211,13 +210,19 @@ router.get('/nsnnow-debug/:nsn', async (req, res) => {
     await new Promise(r => setTimeout(r, 3000));
     const url = page.url();
     const html = await page.content();
-    const links = await page.evaluate(() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h.includes('detail')));
+    const links = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('a'))
+        .map(a => a.href)
+        .filter(h => h.includes('detail'))
+    );
     await browser.close();
     res.json({ afterLogin, searchUrl: url, detailLinks: links, htmlSnippet: html.slice(0, 2000) });
-  } catch(err) {
+  } catch (err) {
     res.json({ error: err.message });
   }
 });
+
+// ── GET /api/search/nsnnow/:nsn ── live NSN-Now lookup ───────
 router.get('/nsnnow/:nsn', async (req, res) => {
   try {
     const { getNsnNowData } = await import('../services/nsnnow.js');
@@ -229,27 +234,49 @@ router.get('/nsnnow/:nsn', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch NSN-Now data.' });
   }
 });
+
+// ── GET /api/search/email-test ── send a real test email ─────
 router.get('/email-test', async (req, res) => {
   try {
     const nodemailer = await import('nodemailer');
-    const t = nodemailer.default.createTransport({
+    const transporter = nodemailer.default.createTransport({
       host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT),
+      port: parseInt(process.env.SMTP_PORT) || 587,
       secure: false,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
     });
-    await t.verify();
-    await t.sendMail({
-      from: `\`"Jupiter One USA`\`" <DTorchia@jupiteroneusa.com>,
+
+    await transporter.verify();
+
+    await transporter.sendMail({
+      from: '"Jupiter One USA" <DTorchia@jupiteroneusa.com>',
       to: process.env.RFQ_NOTIFY_EMAIL || 'DTorchia@jupiteroneusa.com',
-      subject: 'Test from Azure',
-      text: 'SMTP working. HOST:' + process.env.SMTP_HOST + ' USER:' + process.env.SMTP_USER
+      subject: 'Jupiter One USA — Email Test',
+      text: `SMTP test successful.\n\nHost: ${process.env.SMTP_HOST}\nPort: ${process.env.SMTP_PORT}\nSent to: ${process.env.RFQ_NOTIFY_EMAIL}`,
+      html: `<p><strong>SMTP test successful.</strong></p>
+             <p>Host: ${process.env.SMTP_HOST}<br>
+             Port: ${process.env.SMTP_PORT}<br>
+             Sent to: ${process.env.RFQ_NOTIFY_EMAIL}</p>`,
     });
-    res.json({ success: true, host: process.env.SMTP_HOST, user: process.env.SMTP_USER, to: process.env.RFQ_NOTIFY_EMAIL });
-  } catch(err) {
-    res.json({ error: err.message, host: process.env.SMTP_HOST, user: process.env.SMTP_USER });
+
+    res.json({
+      success: true,
+      message: 'Email sent — check your inbox!',
+      host: process.env.SMTP_HOST,
+      user: process.env.SMTP_USER,
+      to: process.env.RFQ_NOTIFY_EMAIL,
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      error: err.message,
+      host: process.env.SMTP_HOST,
+      user: process.env.SMTP_USER,
+    });
   }
 });
 
 export default router;
-  
