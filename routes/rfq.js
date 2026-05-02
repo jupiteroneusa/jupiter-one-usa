@@ -1,7 +1,7 @@
 // routes/rfq.js
 import { Router } from 'express';
 import { getPool, sql } from '../db/connect.js';
-import { requireCustomer, requireAdmin } from '../middleware/auth.js';
+import { requireCustomer, requireAdmin, requireAdminCookie } from '../middleware/auth.js';
 import { logAudit, getIp } from '../middleware/audit.js';
 import { generateNumber } from '../db/numbering.js';
 import { sendRfqReceivedCustomer, sendRfqNotificationAdmin } from '../services/mailer.js';
@@ -146,7 +146,7 @@ router.get('/:id', requireCustomer, async (req, res) => {
 });
 
 // ── Admin: GET /api/rfq/admin/all — all RFQs ─────────────────
-router.get('/admin/all', requireAdmin, async (req, res) => {
+router.get('/admin/all', requireAdminCookie, async (req, res) => {
   const { status, limit = 50, offset = 0 } = req.query;
   try {
     const pool = await getPool();
@@ -179,7 +179,7 @@ router.get('/admin/all', requireAdmin, async (req, res) => {
 });
 
 // ── Admin: PATCH /api/rfq/admin/:id/status ───────────────────
-router.patch('/admin/:id/status', requireAdmin, async (req, res) => {
+router.patch('/admin/:id/status', requireAdminCookie, async (req, res) => {
   const { status, note } = req.body;
   if (!status) return res.status(400).json({ error: 'Status required.' });
 

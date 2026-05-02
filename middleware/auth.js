@@ -84,6 +84,20 @@ export async function optionalCustomer(req, res, next) {
   next();
 }
 
+export async function requireAdminCookie(req, res, next) {
+  try {
+    const token = req.cookies?.j1_admin_token;
+    if (!token) return res.status(401).json({ error: 'Admin login required.' });
+    const jwt2 = await import('jsonwebtoken');
+    const decoded = jwt2.default.verify(token, process.env.ADMIN_JWT_SECRET);
+    if (decoded.type !== 'admin') return res.status(403).json({ error: 'Forbidden.' });
+    req.adminEmail = decoded.email;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid admin token.' });
+  }
+}
+
 function extractToken(req) {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
