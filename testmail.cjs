@@ -1,14 +1,12 @@
 const nodemailer = require('nodemailer');
+require('dotenv').config();
 const t = nodemailer.createTransport({
-  host: 'smtp.sendgrid.net',
-  port: 587,
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT),
   secure: false,
-  auth: { 
-    user: 'apikey',
-    pass: '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'
-  }
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
 });
-t.verify((err, ok) => {
+t.verify((err) => {
   if (err) console.log('FAIL:', err.message);
   else console.log('SUCCESS!');
 });
