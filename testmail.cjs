@@ -1,9 +1,12 @@
 const nodemailer = require('nodemailer');
 const t = nodemailer.createTransport({
-  host: 'smtpout.secureserver.net',
-  port: 465,
-  secure: true,
-  auth: { user: 'DTorchia@jupiteroneusa.com', pass: 'Nicolle2217$' }
+  host: 'smtp.sendgrid.net',
+  port: 587,
+  secure: false,
+  auth: { 
+    user: 'apikey',
+    pass: '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'
+  }
 });
 t.verify((err, ok) => {
   if (err) console.log('FAIL:', err.message);
