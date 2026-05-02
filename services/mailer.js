@@ -13,7 +13,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const FROM = `"Jupiter One USA" <${process.env.SMTP_USER}>`;
+// ✅ FIXED: FROM must be your verified sender domain, not SMTP_USER ("apikey")
+const FROM = `"Jupiter One USA" <noreply@jupiteroneusa.com>`;
+
 const COMPANY = {
   name:    'Jupiter One USA LLC',
   address: '400 N Tampa St, Suite 1550, Tampa FL',
@@ -47,7 +49,8 @@ async function send({ to, subject, html, type, entityType, entityId, sentBy }) {
     await logEmail({ to, subject, type, entityType, entityId, success: true, sentBy });
   } catch (err) {
     await logEmail({ to, subject, type, entityType, entityId, success: false, error: err.message, sentBy });
-    console.error(`Email failed [${type}]:`, err.message);
+    console.error(`Email failed [${type}] to ${to}:`, err.message);
+    throw err; // re-throw so callers can catch and log
   }
 }
 
@@ -179,17 +182,18 @@ export async function sendRfqReceivedCustomer({ customer, rfq }) {
 export async function sendRfqNotificationAdmin({ rfq, customer, lines }) {
   const lineRows = lines.map(l => `
     <tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #eee;font-family:monospace;">${l.nsn || l.part_number}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #eee;font-family:monospace;">${l.nsn || l.part_number || '—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;">${l.item_name || '—'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:center;">${l.quantity}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;">${l.condition_code || '—'}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #eee;">${l.target_price ? '$' + l.target_price : '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #eee;">${l.target_price ? '$' + Number(l.target_price).toFixed(2) : '—'}</td>
     </tr>
   `).join('');
 
   const subject = `🔔 New RFQ ${rfq.rfq_number} — ${customer.company || customer.first_name + ' ' + customer.last_name}`;
   await send({
-    to: process.env.RFQ_NOTIFY_EMAIL, subject,
+    to: process.env.RFQ_NOTIFY_EMAIL || COMPANY.email,
+    subject,
     type: 'rfq_notification', entityType: 'rfq', entityId: rfq.id,
     html: layout(`
       <h3 style="color:#c8932a;margin-top:0;">${rfq.rfq_number} — ${rfq.priority} Priority</h3>
@@ -199,6 +203,7 @@ export async function sendRfqNotificationAdmin({ rfq, customer, lines }) {
         <tr><td style="color:#888;padding:6px 0;">Email</td><td><a href="mailto:${customer.email}">${customer.email}</a></td></tr>
         <tr><td style="color:#888;padding:6px 0;">Phone</td><td>${customer.phone || '—'}</td></tr>
         <tr><td style="color:#888;padding:6px 0;">Lines</td><td>${lines.length}</td></tr>
+        <tr><td style="color:#888;padding:6px 0;">Notes</td><td>${rfq.notes || '—'}</td></tr>
       </table>
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
@@ -257,15 +262,17 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl }) {
         </thead>
         <tbody>${lineRows}</tbody>
         <tfoot>
-          <tr><td colspan="5" style="padding:10px 12px;text-align:right;font-weight:bold;">Total</td>
-              <td style="padding:10px 12px;text-align:right;font-weight:bold;color:#c8932a;">$${Number(quote.total_amount).toFixed(2)}</td></tr>
+          <tr>
+            <td colspan="5" style="padding:10px 12px;text-align:right;font-weight:bold;">Total</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:bold;color:#c8932a;">$${Number(quote.total_amount).toFixed(2)}</td>
+          </tr>
         </tfoot>
       </table>
       <div style="background:#f9f9f9;border-left:3px solid #c8932a;padding:14px 20px;font-size:12px;color:#666;margin-bottom:20px;">
         ${quote.notes || 'This quotation is valid for 30 days from the date of issue. Prices are subject to availability at time of order confirmation.'}
       </div>
       ${pdfUrl ? `<p style="font-size:13px;">📎 <a href="${pdfUrl}">Download Quote PDF</a></p>` : ''}
-      <div style="margin-top:20px;display:flex;gap:12px;">
+      <div style="margin-top:20px;">
         <a href="${process.env.FRONTEND_URL}/account/quotes/${quote.id}/accept"
            style="background:#c8932a;color:#000;padding:12px 28px;text-decoration:none;font-weight:bold;font-size:13px;">
           ACCEPT QUOTE →
