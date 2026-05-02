@@ -183,6 +183,7 @@ export function renderNav() {
     });
   } else {
     userArea.innerHTML = `
+      <a href="/pages/rfq-cart.html" class="rfq-cart-btn">RFQ Cart <span class="rfq-cart-count">${cart.count()}</span></a>
       <a href="/pages/login.html" class="btn btn-outline btn-sm">Login</a>
       <a href="/pages/register.html" class="btn btn-primary btn-sm">Register</a>
     `;
