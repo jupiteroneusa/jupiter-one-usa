@@ -45,6 +45,11 @@ import { api, auth, renderNav, getNavHTML, getFooterHTML, initNavToggle, showAle
 document.getElementById('nav-container').innerHTML = getNavHTML();
 document.getElementById('footer-container').innerHTML = getFooterHTML();
 if (auth.isLoggedIn()) window.location.href = '/pages/account.html';
+const params = new URLSearchParams(window.location.search);
+if (params.get('redirect') && params.get('redirect').includes('rfq-cart')) {
+  document.querySelector('.auth-sub').textContent = 'Login or create a free account to submit your RFQ. Your cart will be saved.';
+  document.querySelector('.auth-title').textContent = 'Almost There!';
+}
 renderNav(); initNavToggle();
 
 document.getElementById('login-form').addEventListener('submit', async e => {

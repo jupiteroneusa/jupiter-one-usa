@@ -241,7 +241,7 @@ export function getFooterHTML() {
           <div class="nav-logo-icon">J1</div>
           Jupiter One USA LLC
         </a>
-        <p>NSN and aerospace component sourcing. Fast responses, verified suppliers, clear communication from quote to delivery.</p>
+        <p>NSN and aerospace component supply. Fast responses, verified suppliers, clear communication from quote to delivery.</p>
       </div>
       <div class="footer-col">
         <h4>Navigation</h4>
