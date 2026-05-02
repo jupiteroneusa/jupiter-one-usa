@@ -46,9 +46,9 @@ export async function getNsnNowData(nsn) {
 
     const page = await getLoggedInPage(browser);
 
-    // Search for NSN
+    // Search for NSN using logged-in search
     await page.goto(
-      `https://www.nsn-now.com/Indexing/PublicSearch.aspx?NSN=${encodeURIComponent(nsn)}`,
+      `https://www.nsn-now.com/search/results.aspx?q=${encodeURIComponent(nsn)}&searchtype=NSN`,
       { waitUntil: 'networkidle2', timeout: 30000 }
     );
     await new Promise(r => setTimeout(r, 2000));
