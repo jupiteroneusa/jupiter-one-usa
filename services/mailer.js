@@ -14,7 +14,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // ✅ FIXED: FROM must be your verified sender domain, not SMTP_USER ("apikey")
-const FROM = `"Jupiter One USA" <noreply@jupiteroneusa.com>`;
+const FROM = `"Jupiter One USA" <DTorchia@jupiteroneusa.com>`;
 
 const COMPANY = {
   name:    'Jupiter One USA LLC',
