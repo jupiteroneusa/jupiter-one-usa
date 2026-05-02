@@ -190,6 +190,34 @@ router.get('/class/:fsc', async (req, res) => {
 
 
 // ── GET /api/search/nsnnow/:nsn ── fetch from nsn-now.com ──
+router.get('/nsnnow-debug/:nsn', async (req, res) => {
+  try {
+    const puppeteer = await import('puppeteer');
+    const browser = await puppeteer.default.launch({
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
+      headless: true,
+    });
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    await page.goto('https://www.nsn-now.com/login.aspx', { waitUntil: 'networkidle2', timeout: 30000 });
+    await page.type('input[name="txtUserID"]', process.env.NSNNOW_USER || '');
+    await page.type('input[name="txtPassword"]', process.env.NSNNOW_PASS || '');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }),
+      page.click('input[name="btnLogin"]'),
+    ]);
+    const afterLogin = page.url();
+    await page.goto(`https://www.nsn-now.com/search/results.aspx?q=${req.params.nsn}&searchtype=NSN`, { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 3000));
+    const url = page.url();
+    const html = await page.content();
+    const links = await page.evaluate(() => Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h.includes('detail')));
+    await browser.close();
+    res.json({ afterLogin, searchUrl: url, detailLinks: links, htmlSnippet: html.slice(0, 2000) });
+  } catch(err) {
+    res.json({ error: err.message });
+  }
+});
 router.get('/nsnnow/:nsn', async (req, res) => {
   try {
     const { getNsnNowData } = await import('../services/nsnnow.js');
