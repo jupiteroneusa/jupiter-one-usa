@@ -204,7 +204,7 @@ export function initScrollReveal() {
 export function getNavHTML() {
   return `
   <div class="topbar">
-    <span>Aerospace and Defense Component Sourcing</span>
+    <span>Aerospace and Defense Component Supply</span>
     <div class="topbar-right">
       <a href="mailto:DTorchia@jupiteroneusa.com">DTorchia@jupiteroneusa.com</a>
       <a href="tel:+13478217412">+1 (347) 821-7412</a>
