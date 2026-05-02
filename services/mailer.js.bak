@@ -359,4 +359,4 @@ export async function sendInvoice({ customer, invoice, pdfUrl }) {
       </p>
     `),
   });
-}  
+}
