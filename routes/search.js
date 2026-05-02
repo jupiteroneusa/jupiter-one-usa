@@ -240,7 +240,7 @@ router.get('/email-test', async (req, res) => {
     });
     await t.verify();
     await t.sendMail({
-      from: process.env.SMTP_USER + '@jupiteroneusa.com',
+      from: `\`"Jupiter One USA`\`" <DTorchia@jupiteroneusa.com>,
       to: process.env.RFQ_NOTIFY_EMAIL || 'DTorchia@jupiteroneusa.com',
       subject: 'Test from Azure',
       text: 'SMTP working. HOST:' + process.env.SMTP_HOST + ' USER:' + process.env.SMTP_USER
