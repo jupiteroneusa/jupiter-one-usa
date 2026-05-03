@@ -38,7 +38,7 @@ tr:hover td { background:rgba(200,147,42,0.04); }
 .btn-outline { background:transparent; color:#7a8a9a; border:1px solid #1e2d42; }
 .btn-outline:hover { border-color:#c8932a; color:#c8932a; }
 .btn-sm { font-size:.7rem; padding:5px 12px; }
-select, input[type=text], input[type=email], textarea { background:#0a1628; border:1px solid #1e2d42; color:#eef1f5; padding:8px 12px; font-size:.85rem; outline:none; font-family:inherit; }
+select, input[type=text], input[type=email], input[type=number], textarea { background:#0a1628; border:1px solid #1e2d42; color:#eef1f5; padding:8px 12px; font-size:.85rem; outline:none; font-family:inherit; }
 select:focus, input:focus, textarea:focus { border-color:#c8932a; }
 .stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:24px; }
 .stat { background:#111e30; border:1px solid #1e2d42; border-top:3px solid #c8932a; padding:18px 20px; }
@@ -75,6 +75,7 @@ function adminNav(active) {
     <a href="/admin/orders" class="${active==='orders'?'active':''}">📦 Orders</a>
     <a href="/admin/suppliers" class="${active==='suppliers'?'active':''}">🏭 Suppliers</a>
     <a href="/admin/invoices" class="${active==='invoices'?'active':''}">🧾 Invoices</a>
+    <a href="/admin/messages" class="${active==='messages'?'active':''}">✉️ Messages</a>
   </div>`;
 }
 
@@ -147,7 +148,8 @@ export async function buildAdminRouter() {
           (SELECT COUNT(*) FROM rfq_headers) AS total_rfqs,
           (SELECT COUNT(*) FROM rfq_headers WHERE status='Submitted') AS new_rfqs,
           (SELECT COUNT(*) FROM customers) AS total_customers,
-          (SELECT COUNT(*) FROM rfq_headers WHERE status='Sourcing') AS active_sourcing
+          (SELECT COUNT(*) FROM rfq_headers WHERE status='Sourcing') AS active_sourcing,
+          (SELECT COUNT(*) FROM contact_messages WHERE status='New') AS new_messages
       `);
       const s = stats.recordset[0];
       const recent = await pool.request().query(`
@@ -175,8 +177,9 @@ export async function buildAdminRouter() {
         <div class="stat-grid">
           <div class="stat"><div class="stat-num">${s.new_rfqs}</div><div class="stat-label">New RFQs</div></div>
           <div class="stat"><div class="stat-num">${s.total_rfqs}</div><div class="stat-label">Total RFQs</div></div>
-          <div class="stat"><div class="stat-num">${s.active_sourcing}</div><div class="stat-label">Sourcing</div></div>
+          <div class="stat"><div class="stat-num">${s.active_sourcing}</div><div class="stat-label">Active</div></div>
           <div class="stat"><div class="stat-num">${s.total_customers}</div><div class="stat-label">Customers</div></div>
+          <div class="stat"><div class="stat-num">${s.new_messages}</div><div class="stat-label">New Messages</div></div>
         </div>
         <div class="card">
           <div class="card-header">Recent RFQs</div>
@@ -248,23 +251,47 @@ export async function buildAdminRouter() {
         .query(`SELECT * FROM rfq_lines WHERE rfq_id=@id ORDER BY line_number`);
       const log = await pool.request().input('id', sql.BigInt, req.params.id)
         .query(`SELECT * FROM rfq_status_log WHERE rfq_id=@id ORDER BY created_at ASC`);
+
+      const successMsg = req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
+
       const lineRows = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
-        <td class="mono text-gold"><a href="https://www.nsn-now.com/Indexing/PublicSearch.aspx?NSN=${l.nsn||l.part_number}" target="_blank" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</a></td>
+        <td class="mono text-gold"><a href="/pages/nsn-detail.html?nsn=${l.nsn||l.part_number}" target="_blank" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</a></td>
         <td>${l.item_name||'—'}</td>
         <td>${l.quantity}</td>
         <td>${statusBadge(l.condition_code||'—')}</td>
         <td>${l.target_price ? '$'+parseFloat(l.target_price).toFixed(2) : '—'}</td>
         <td style="color:#7a8a9a;font-size:.8rem;">${l.notes||'—'}</td>
       </tr>`).join('');
+
+      const quoteLineInputs = lines.recordset.map(l => `<tr>
+        <td style="color:#7a8a9a;">${l.line_number}</td>
+        <td class="mono" style="color:#c8932a;">${l.nsn||l.part_number||'—'}
+          <input type="hidden" name="lines[${l.line_number-1}][rfq_line_id]" value="${l.id}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][nsn]" value="${l.nsn||''}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][part_number]" value="${l.part_number||''}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][item_name]" value="${l.item_name||''}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][quantity]" value="${l.quantity}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][condition_code]" value="${l.condition_code||'NE'}"/>
+        </td>
+        <td>${l.item_name||'—'}</td>
+        <td style="text-align:center;">${l.quantity}</td>
+        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_cost]" placeholder="0.00" style="width:90px;" required/></td>
+        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_price]" placeholder="0.00" style="width:90px;" required/></td>
+        <td><input type="number" min="1" name="lines[${l.line_number-1}][lead_time_days]" placeholder="7" style="width:70px;"/></td>
+      </tr>`).join('');
+
       const logRows = log.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
         <td>${statusBadge(l.new_status)}</td>
         <td style="color:#7a8a9a;">${l.note||'—'}</td>
       </tr>`).join('');
+
       const statuses = ['Submitted','Under Review','Sourcing','Quoted','Closed','Cancelled'];
       const statusOptions = statuses.map(s => `<option value="${s}"${rfq.status===s?' selected':''}>${s}</option>`).join('');
+
       res.send(page(`RFQ ${rfq.rfq_number}`,'rfqs',`
+        ${successMsg}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">RFQ ${rfq.rfq_number}</div>
           <a href="/admin/rfqs" class="btn btn-outline btn-sm">← Back to RFQs</a>
@@ -273,7 +300,7 @@ export async function buildAdminRouter() {
         <div class="detail-grid">
           <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${rfq.customer_id}" style="color:#c8932a;">${rfq.customer_name}</a></div></div>
           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${rfq.company||'—'}</div></div>
-          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value">${rfq.email}</div></div>
+          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${rfq.email}" style="color:#c8932a;">${rfq.email}</a></div></div>
           <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${rfq.phone||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Priority</div><div class="detail-value">${statusBadge(rfq.priority)}</div></div>
           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(rfq.status)}</div></div>
@@ -284,6 +311,39 @@ export async function buildAdminRouter() {
           <table><thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Target Price</th><th>Notes</th></tr></thead>
           <tbody>${lineRows}</tbody></table>
         </div>
+
+        <div class="card">
+          <div class="card-header">
+            Create & Send Quote
+            <button class="btn btn-gold btn-sm" onclick="var f=document.getElementById('quote-form');f.style.display=f.style.display==='none'?'block':'none';">+ New Quote</button>
+          </div>
+          <div id="quote-form" style="display:none;padding:18px;">
+            <form method="POST" action="/admin/rfqs/${rfq.id}/quote">
+              <div style="overflow-x:auto;">
+                <table style="width:100%;margin-bottom:16px;">
+                  <thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Unit Cost ($)</th><th>Unit Price ($)</th><th>Lead Days</th></tr></thead>
+                  <tbody>${quoteLineInputs}</tbody>
+                </table>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div>
+                  <input type="text" name="payment_terms" value="Credit Card, COD, or Wire Transfer" style="width:100%;"/>
+                </div>
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div>
+                  <input type="number" name="valid_days" value="30" style="width:100%;"/>
+                </div>
+              </div>
+              <div style="margin-bottom:16px;">
+                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes / Terms</div>
+                <textarea name="notes" rows="3" style="width:100%;" placeholder="Quote terms, lead times, conditions..."></textarea>
+              </div>
+              <button type="submit" class="btn btn-gold">Create & Send Quote to Customer →</button>
+            </form>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-header">Update Status</div>
           <div class="card-body">
@@ -301,6 +361,107 @@ export async function buildAdminRouter() {
         </div>`));
     } catch(err) {
       res.send(page('RFQ','rfqs',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Create Quote from RFQ
+  router.post('/rfqs/:id/quote', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const rfqResult = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query(`SELECT h.*, c.first_name, c.last_name, c.email, c.company FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id`);
+      if (!rfqResult.recordset.length) return res.redirect('/admin/rfqs');
+      const rfq = rfqResult.recordset[0];
+      const { valid_days = 30, payment_terms, notes } = req.body;
+      const linesRaw = req.body.lines || {};
+      const linesArr = Object.values(linesRaw);
+      let subtotal = 0;
+      const processedLines = linesArr.map((l, i) => {
+        const unitPrice = parseFloat(l.unit_price) || 0;
+        const unitCost = parseFloat(l.unit_cost) || 0;
+        const qty = parseInt(l.quantity) || 1;
+        const lineTotal = unitPrice * qty;
+        const lineCost = unitCost * qty;
+        subtotal += lineTotal;
+        return {
+          ...l,
+          line_number: i + 1,
+          unit_price: unitPrice,
+          unit_cost: unitCost,
+          quantity: qty,
+          line_total: lineTotal,
+          line_cost: lineCost,
+          line_margin: lineTotal - lineCost,
+          markup_pct: unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0,
+          margin_pct: lineTotal > 0 ? ((lineTotal - lineCost) / lineTotal) * 100 : 0,
+        };
+      });
+      const { generateNumber } = await import('../db/numbering.js');
+      const quoteNumber = await generateNumber('QT');
+      const validUntil = new Date(Date.now() + parseInt(valid_days) * 24 * 60 * 60 * 1000);
+      const totalCost = processedLines.reduce((s, l) => s + l.line_cost, 0);
+      const qr = await pool.request()
+        .input('rfqId', sql.BigInt, rfq.id)
+        .input('customerId', sql.BigInt, rfq.customer_id)
+        .input('quoteNumber', sql.NVarChar(20), quoteNumber)
+        .input('subtotal', sql.Decimal(12,2), subtotal)
+        .input('totalAmount', sql.Decimal(12,2), subtotal)
+        .input('totalCost', sql.Decimal(12,2), totalCost)
+        .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
+        .input('validUntil', sql.Date, validUntil)
+        .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card, COD, or Wire Transfer')
+        .input('notes', sql.NVarChar(sql.MAX), notes || null)
+        .query(`
+          INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, status)
+          OUTPUT INSERTED.id, INSERTED.quote_number
+          VALUES (@rfqId, @customerId, @quoteNumber, @subtotal, @totalAmount, @totalCost, @totalMargin, @validUntil, @paymentTerms, @notes, 'Sent')
+        `);
+      const quote = qr.recordset[0];
+      for (const l of processedLines) {
+        await pool.request()
+          .input('quoteId', sql.BigInt, quote.id)
+          .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
+          .input('lineNum', sql.Int, l.line_number)
+          .input('nsn', sql.NVarChar(20), l.nsn || null)
+          .input('partNum', sql.NVarChar(100), l.part_number || null)
+          .input('itemName', sql.NVarChar(255), l.item_name || null)
+          .input('condition', sql.NVarChar(5), l.condition_code || 'NE')
+          .input('qty', sql.Int, l.quantity)
+          .input('unitCost', sql.Decimal(10,2), l.unit_cost)
+          .input('unitPrice', sql.Decimal(10,2), l.unit_price)
+          .input('lineTotal', sql.Decimal(12,2), l.line_total)
+          .input('lineCost', sql.Decimal(12,2), l.line_cost)
+          .input('lineMargin', sql.Decimal(12,2), l.line_margin)
+          .input('markupPct', sql.Decimal(5,2), l.markup_pct)
+          .input('marginPct', sql.Decimal(5,2), l.margin_pct)
+          .input('leadTime', sql.Int, parseInt(l.lead_time_days) || null)
+          .query(`
+            INSERT INTO quote_lines
+              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, markup_pct, margin_pct, lead_time_days)
+            VALUES
+              (@quoteId, @rfqLineId, @lineNum, @nsn, @partNum, @itemName, @condition, @qty, @unitCost, @unitPrice, @lineTotal, @lineCost, @lineMargin, @markupPct, @marginPct, @leadTime)
+          `);
+      }
+      await pool.request()
+        .input('rfqId', sql.BigInt, rfq.id)
+        .query(`UPDATE rfq_headers SET status='Quoted', updated_at=GETDATE() WHERE id=@rfqId`);
+      await pool.request()
+        .input('rfqId', sql.BigInt, rfq.id)
+        .input('note', sql.NVarChar(500), `Quote ${quoteNumber} created and sent`)
+        .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, 'Submitted', 'Quoted', @note)`);
+      const { sendQuoteToCustomer } = await import('../services/mailer.js');
+      const customer = { first_name: rfq.first_name, last_name: rfq.last_name, email: rfq.email };
+      await sendQuoteToCustomer({
+        customer,
+        quote: { ...quote, total_amount: subtotal, valid_until: validUntil, payment_terms, notes },
+        lines: processedLines,
+        pdfUrl: null,
+      }).catch(console.error);
+      res.redirect(`/admin/rfqs/${req.params.id}?quoted=1`);
+    } catch(err) {
+      console.error('Admin quote error:', err);
+      res.redirect(`/admin/rfqs/${req.params.id}?error=1`);
     }
   });
 
@@ -387,7 +548,7 @@ export async function buildAdminRouter() {
         </div>
         <div class="page-sub">${cust.company||''}</div>
         <div class="detail-grid">
-          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value">${cust.email}</div></div>
+          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${cust.email}" style="color:#c8932a;">${cust.email}</a></div></div>
           <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${cust.phone||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${cust.company||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(cust.status)}</div></div>
@@ -527,6 +688,60 @@ export async function buildAdminRouter() {
         </div>`));
     } catch(err) {
       res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
     }
   });
 
