@@ -5,10 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>Quote — Jupiter One USA</title>
 <link rel="stylesheet" href="/css/main.css"/>
+<style>
+.quote-header { background:var(--navy2); border-bottom:3px solid var(--gold); padding:28px 32px; margin-bottom:0; }
+.quote-body { padding:28px 32px; }
+.tc-box { background:var(--navy3); border:1px solid var(--border); border-left:3px solid var(--gold); padding:20px 24px; margin:20px 0; font-size:.82rem; color:var(--muted); line-height:1.8; }
+.tc-box h4 { font-family:var(--font-mono); font-size:.65rem; letter-spacing:.2em; text-transform:uppercase; color:var(--gold); margin-bottom:12px; }
+.tc-box ol { padding-left:18px; display:flex; flex-direction:column; gap:6px; }
+</style>
 </head>
 <body>
 <div id="nav-container"></div>
-<div style="max-width:900px;margin:0 auto;padding:40px 5vw;">
+<div style="max-width:960px;margin:0 auto;padding:40px 5vw;">
   <div id="content"><div class="results-loading">Loading quote...</div></div>
 </div>
 <div id="footer-container"></div>
@@ -28,63 +35,110 @@ try {
   const expired = q.valid_until && new Date(q.valid_until) < new Date();
 
   document.getElementById('content').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:28px;">
-      <div>
-        <div class="section-label">Quote</div>
-        <div style="font-family:var(--font-display);font-weight:700;font-size:1.8rem;letter-spacing:.06em;">${q.quote_number}</div>
-        <div style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin-top:4px;">RFQ Ref: ${q.rfq_number}</div>
+    <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid var(--gold);">
+
+      <!-- Quote Header -->
+      <div style="padding:28px 32px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;">
+        <div>
+          <div class="section-label">Quote</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:2rem;letter-spacing:.06em;">${q.quote_number}</div>
+          <div style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted);margin-top:4px;">RFQ Reference: ${q.rfq_number}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="margin-bottom:8px;">${statusBadge(q.status)}</div>
+          <div style="font-family:var(--font-display);font-size:1.8rem;font-weight:700;color:var(--gold);">${formatMoney(q.total_amount)}</div>
+          <div style="font-size:.75rem;color:var(--muted);">Total Amount</div>
+        </div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        ${statusBadge(q.status)}
-        ${q.pdf_url ? `<a href="${q.pdf_url}" target="_blank" class="btn btn-outline btn-sm">📄 Download PDF</a>` : ''}
-        ${canAccept && !expired ? `<button class="btn btn-primary" id="accept-btn">Accept Quote →</button>` : ''}
+
+      <!-- Key Details -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-bottom:1px solid var(--border);">
+        ${[
+          ['Quote Date', formatDate(q.sent_at) || '—'],
+          ['Valid Until', formatDate(q.valid_until)],
+          ['Payment Terms', q.payment_terms || 'Credit Card, COD, Wire Transfer'],
+          ['Status', q.status],
+        ].map(([l,v]) => `<div style="padding:16px 20px;border-right:1px solid var(--border);">
+          <div style="font-family:var(--font-mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
+          <div style="font-size:.88rem;color:var(--white);">${v}</div>
+        </div>`).join('')}
       </div>
+
+      <!-- Line Items -->
+      <div style="overflow-x:auto;">
+        <table class="results-table" style="width:100%;">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>NSN / Part #</th>
+              <th>Description</th>
+              <th>Condition</th>
+              <th style="text-align:center;">Qty</th>
+              <th style="text-align:right;">Unit Price</th>
+              <th style="text-align:right;">Line Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${q.lines?.map(l => `<tr>
+              <td style="color:var(--muted);font-family:var(--font-mono);font-size:.75rem;">${l.line_number}</td>
+              <td style="font-family:var(--font-mono);color:var(--gold);font-weight:bold;">${l.nsn||l.part_number||'—'}</td>
+              <td style="color:var(--white);">${l.item_name||'—'}</td>
+              <td><span class="badge badge-gray">${l.condition_code||'NE'}</span></td>
+              <td style="text-align:center;">${l.quantity}</td>
+              <td style="text-align:right;">${formatMoney(l.unit_price)}</td>
+              <td style="text-align:right;font-weight:600;color:var(--gold);">${formatMoney(l.line_total)}</td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="border-top:2px solid var(--gold);">
+              <td colspan="6" style="text-align:right;font-family:var(--font-display);font-weight:700;font-size:1rem;letter-spacing:.06em;color:var(--white);padding:16px 14px;">TOTAL</td>
+              <td style="text-align:right;font-weight:700;font-size:1.2rem;color:var(--gold);padding:16px 14px;">${formatMoney(q.total_amount)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Notes -->
+      ${q.notes ? `<div style="padding:20px 28px;border-top:1px solid var(--border);font-size:.85rem;color:var(--muted);line-height:1.7;border-left:3px solid var(--gold);">${q.notes}</div>` : ''}
+
+      <!-- Terms & Conditions -->
+      <div style="padding:24px 28px;border-top:1px solid var(--border);">
+        <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:14px;">Terms & Conditions</div>
+        <div style="font-size:.82rem;color:var(--muted);line-height:1.9;">
+          <ol style="padding-left:18px;display:flex;flex-direction:column;gap:8px;">
+            <li>This quotation is valid for <strong style="color:var(--white);">30 days</strong> from the date of issue. Prices are subject to availability at time of order confirmation.</li>
+            <li>All prices are quoted in USD. Payment accepted via Credit Card, COD, or Wire Transfer prior to shipment unless otherwise agreed in writing.</li>
+            <li>Parts supplied are sourced from verified suppliers and include applicable traceability documentation. Condition codes follow standard ITAR/EAR classifications.</li>
+            <li>Lead times are estimates only and subject to supplier availability. Jupiter One USA will communicate any changes promptly.</li>
+            <li>All sales are subject to applicable US export control laws including EAR and ITAR. Buyer is responsible for obtaining any required export licenses.</li>
+            <li>Returns accepted within 10 days of receipt for unused, uninstalled parts in original packaging. All returns require prior written authorization.</li>
+            <li>Jupiter One USA LLC is not liable for delays caused by force majeure, supplier shortages, or customs clearance.</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Accept / Actions -->
+      <div style="padding:24px 28px;border-top:1px solid var(--border);background:var(--navy2);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+        <div style="font-size:.85rem;color:var(--muted);">
+          Questions? <a href="/pages/contact.html" style="color:var(--gold);">Contact our team</a> or call <a href="tel:+13478217412" style="color:var(--gold);">+1 (347) 821-7412</a>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          ${q.pdf_url ? `<a href="${q.pdf_url}" target="_blank" class="btn btn-outline btn-sm">📄 Download PDF</a>` : ''}
+          <a href="/pages/account.html" class="btn btn-outline">← My Account</a>
+          ${expired && canAccept ? `<span style="color:#e05050;font-size:.82rem;">Quote expired — <a href="/pages/contact.html" style="color:var(--gold);">request renewal</a></span>` : ''}
+          ${canAccept && !expired ? `<button class="btn btn-primary btn-lg" id="accept-btn">Accept Quote →</button>` : ''}
+          ${q.status === 'Accepted' ? `<span style="color:#4caf50;font-weight:600;">✔ Quote Accepted — Order Processing</span>` : ''}
+        </div>
+      </div>
+
     </div>
 
-    ${expired && canAccept ? `<div class="alert alert-warning">This quote expired on ${formatDate(q.valid_until)}. Contact us for an updated quote.</div>` : ''}
-    <div id="accept-message"></div>
+    <div id="accept-message" style="margin-top:16px;"></div>
 
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:24px;">
-      ${[
-        ['Quote Date', formatDate(q.sent_at)],
-        ['Valid Until', formatDate(q.valid_until)],
-        ['Total', formatMoney(q.total_amount)],
-        ['Status', q.status],
-      ].map(([l,v]) => `<div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
-        <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
-        <div style="font-size:.92rem;color:var(--white);">${v}</div>
-      </div>`).join('')}
-    </div>
-
-    <div style="background:var(--card);border:1px solid var(--border);border-top:2px solid var(--gold);overflow:auto;margin-bottom:20px;">
-      <table class="results-table" style="width:100%;">
-        <thead><tr><th>#</th><th>NSN / Part #</th><th>Description</th><th>Cond</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
-        <tbody>
-          ${q.lines?.map(l => `<tr>
-            <td style="color:var(--muted);font-family:var(--font-mono);font-size:.75rem;">${l.line_number}</td>
-            <td class="td-nsn">${l.nsn||l.part_number||'—'}</td>
-            <td class="td-name">${l.item_name||'—'}</td>
-            <td><span class="badge badge-gray">${l.condition_code||'—'}</span></td>
-            <td>${l.quantity}</td>
-            <td style="text-align:right;">${formatMoney(l.unit_price)}</td>
-            <td style="text-align:right;font-weight:600;">${formatMoney(l.line_total)}</td>
-          </tr>`).join('')}
-        </tbody>
-        <tfoot>
-          <tr style="border-top:2px solid var(--border);">
-            <td colspan="6" style="text-align:right;font-family:var(--font-display);font-weight:700;font-size:.95rem;letter-spacing:.06em;color:var(--white);background:var(--card);padding:14px;">TOTAL</td>
-            <td style="text-align:right;font-weight:700;font-size:1.05rem;color:var(--gold);background:var(--card);padding:14px;">${formatMoney(q.total_amount)}</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
-
-    ${q.payment_terms ? `<div style="font-size:.85rem;color:var(--muted);margin-bottom:8px;"><strong style="color:var(--white);">Payment Terms:</strong> ${q.payment_terms}</div>` : ''}
-    ${q.notes ? `<div style="background:var(--card);border:1px solid var(--border);border-left:3px solid var(--gold);padding:16px 18px;margin:16px 0;font-size:.85rem;color:var(--muted);line-height:1.7;">${q.notes}</div>` : ''}
-
-    <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
-      <a href="/pages/account.html" class="btn btn-outline">← My Account</a>
-      <a href="/pages/contact.html" class="btn btn-outline">Contact Us</a>
+    <!-- Company Info -->
+    <div style="margin-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;font-size:.78rem;color:var(--muted);font-family:var(--font-mono);">
+      <span>Jupiter One USA LLC · 400 N Tampa St, Suite 1550, Tampa FL</span>
+      <span>DTorchia@jupiteroneusa.com · +1 (347) 821-7412</span>
     </div>`;
 
   document.getElementById('accept-btn')?.addEventListener('click', async () => {
@@ -92,13 +146,14 @@ try {
     setLoading(btn, true, 'Accepting...');
     try {
       await api.acceptQuote(id);
-      showAlert(document.getElementById('accept-message'), 'Quote accepted! We will confirm your order shortly.', 'success');
-      btn.remove();
+      showAlert(document.getElementById('accept-message'), '✔ Quote accepted! Our team will confirm your order within 24 hours.', 'success');
+      btn.style.display = 'none';
     } catch(err) {
       setLoading(btn, false);
       showAlert(document.getElementById('accept-message'), err.message, 'error');
     }
   });
+
 } catch(err) {
   document.getElementById('content').innerHTML = `<div class="alert alert-error">${err.message}</div>`;
 }
