@@ -3,26 +3,58 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>NSN Detail — Jupiter One USA</title>
+<title id="page-title">NSN Lookup — Jupiter One USA</title>
+<meta name="description" id="page-desc" content="Search NSN parts, request a quote, and get fast aerospace component supply from Jupiter One USA. Verified suppliers, 24-hour response."/>
+<meta name="keywords" content="NSN lookup, national stock number, aerospace parts, defense parts, NSN search, military parts supplier"/>
+<meta name="robots" content="index, follow"/>
+<meta name="author" content="Jupiter One USA LLC"/>
+
+<!-- Open Graph -->
+<meta property="og:type" content="website"/>
+<meta property="og:site_name" content="Jupiter One USA"/>
+<meta property="og:title" id="og-title" content="NSN Parts Lookup — Jupiter One USA"/>
+<meta property="og:description" id="og-desc" content="Fast NSN and aerospace component supply. Search 14M+ NSN records, submit RFQs, get quotes within 24 hours."/>
+<meta property="og:url" id="og-url" content="https://jupiteroneusa.com/pages/nsn-detail.html"/>
+<meta property="og:image" content="https://jupiteroneusa.com/images/og-image.jpg"/>
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:title" id="tw-title" content="NSN Parts Lookup — Jupiter One USA"/>
+<meta name="twitter:description" id="tw-desc" content="Fast NSN and aerospace component supply. Search 14M+ NSN records, submit RFQs, get quotes within 24 hours."/>
+
+<!-- Schema.org Organization -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "Jupiter One USA LLC",
+  "url": "https://jupiteroneusa.com",
+  "logo": "https://jupiteroneusa.com/images/logo.png",
+  "description": "Specialized NSN and aerospace component supply. Verified suppliers, fast response times, quote to delivery.",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "400 N Tampa St, Suite 1550",
+    "addressLocality": "Tampa",
+    "addressRegion": "FL",
+    "postalCode": "33602",
+    "addressCountry": "US"
+  },
+  "contactPoint": {
+    "@type": "ContactPoint",
+    "telephone": "+1-347-821-7412",
+    "contactType": "customer service",
+    "email": "DTorchia@jupiteroneusa.com",
+    "availableLanguage": "English"
+  },
+  "sameAs": []
+}
+</script>
+
+<!-- Schema.org for NSN detail page (injected dynamically) -->
+<script id="nsn-schema" type="application/ld+json"></script>
+
+<link rel="canonical" id="canonical" href="https://jupiteroneusa.com/pages/nsn-detail.html"/>
 <link rel="stylesheet" href="/css/main.css"/>
-<style>
-.detail-section { background:var(--card); border:1px solid var(--border); margin-bottom:20px; }
-.detail-section-header { padding:14px 20px; border-bottom:1px solid var(--border); font-family:var(--font-display); font-weight:700; font-size:.95rem; letter-spacing:.06em; color:var(--gold); }
-.detail-table { width:100%; border-collapse:collapse; }
-.detail-table th { background:#060e1a; padding:10px 14px; text-align:left; font-family:var(--font-mono); font-size:.62rem; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border); }
-.detail-table td { padding:12px 14px; border-bottom:1px solid var(--border); font-size:.88rem; }
-.detail-table tr:last-child td { border-bottom:none; }
-.detail-table tr:hover td { background:var(--gold-dim); }
-.breadcrumb { font-family:var(--font-mono); font-size:.7rem; letter-spacing:.08em; color:var(--muted); margin-bottom:20px; }
-.breadcrumb a { color:var(--gold); text-decoration:none; }
-.breadcrumb a:hover { text-decoration:underline; }
-.breadcrumb span { margin:0 8px; color:var(--muted); }
-.part-alternates { background:var(--navy3); border:1px solid var(--border); border-left:3px solid var(--gold); padding:14px 20px; margin-bottom:20px; font-family:var(--font-mono); font-size:.82rem; color:var(--muted); }
-.part-alternates strong { color:var(--white); }
-.rfq-added-msg { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-.rfq-added-msg span { color:#4ade80; font-weight:600; font-size:.95rem; }
-.rfq-added-msg a { color:var(--gold); font-size:.88rem; text-decoration:underline; }
-</style>
 </head>
 <body>
 <div id="nav-container"></div>
@@ -41,146 +73,157 @@ if (!nsn) window.location.href = '/pages/parts.html';
 
 try {
   const data = await api.nsnDetail(nsn);
-  document.title = `NSN ${data.nsn} — ${data.item_name} | Jupiter One USA`;
+
+  // ── Dynamic SEO tags ──────────────────────────────────────
+  const title = `NSN ${data.nsn} — ${data.item_name || 'Part Lookup'} | Jupiter One USA`;
+  const desc  = `NSN ${data.nsn} (NIIN ${data.niin}) — ${data.item_name || 'Aerospace Part'}. FSC ${data.fsc}. Request a quote from Jupiter One USA. Fast response, verified suppliers.`;
+  const url   = `https://jupiteroneusa.com/pages/nsn-detail.html?nsn=${data.nsn}`;
+
+  document.title = title;
+  document.getElementById('page-title').textContent = title;
+  document.getElementById('page-desc').setAttribute('content', desc);
+  document.getElementById('og-title').setAttribute('content', title);
+  document.getElementById('og-desc').setAttribute('content', desc);
+  document.getElementById('og-url').setAttribute('content', url);
+  document.getElementById('tw-title').setAttribute('content', title);
+  document.getElementById('tw-desc').setAttribute('content', desc);
+  document.getElementById('canonical').setAttribute('href', url);
+
+  // ── Schema.org Product markup for NSN ────────────────────
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": data.item_name || `NSN ${data.nsn}`,
+    "description": `National Stock Number ${data.nsn}. ${data.item_name || ''}. Federal Supply Class ${data.fsc}. NIIN ${data.niin}. Available from Jupiter One USA LLC.`,
+    "sku": data.nsn,
+    "mpn": data.niin,
+    "brand": { "@type": "Brand", "name": "US Department of Defense / DLA" },
+    "offers": {
+      "@type": "Offer",
+      "url": url,
+      "priceCurrency": "USD",
+      "availability": data.status === 'A' ? "https://schema.org/InStock" : "https://schema.org/Discontinued",
+      "seller": { "@type": "Organization", "name": "Jupiter One USA LLC" }
+    },
+    "additionalProperty": [
+      { "@type": "PropertyValue", "name": "NSN", "value": data.nsn },
+      { "@type": "PropertyValue", "name": "NIIN", "value": data.niin },
+      { "@type": "PropertyValue", "name": "FSC", "value": data.fsc },
+      { "@type": "PropertyValue", "name": "Unit of Issue", "value": data.ui || "EA" },
+      { "@type": "PropertyValue", "name": "Status", "value": data.status === 'A' ? 'Active' : 'Inactive' }
+    ]
+  };
+  document.getElementById('nsn-schema').textContent = JSON.stringify(schema);
 
   const partAlternates = data.parts?.map(p => p.part_number).filter(Boolean).join(', ') || '—';
   const nsnClean = nsn.replace(/-/g, '');
   const niinClean = data.niin?.replace(/-/g, '') || '';
 
-  // Check if already in cart
-  const cartItems = cart.get();
-  const alreadyInCart = cartItems.some(i => i.nsn === data.nsn);
-
   document.getElementById('content').innerHTML = `
-
-    <!-- Breadcrumb -->
     <div class="breadcrumb">
-      <a href="/">Home</a>
-      <span>›</span>
-      <a href="/pages/parts.html">Parts Search</a>
-      <span>›</span>
-      <a href="/pages/directory.html?type=fsg">${data.fsg_title||'FSG'}</a>
-      <span>›</span>
-      <a href="/pages/directory.html?fsc=${data.fsc}">${data.fsc_title||data.fsc}</a>
-      <span>›</span>
+      <a href="/">Home</a><span>›</span>
+      <a href="/pages/parts.html">Parts Search</a><span>›</span>
+      <a href="/pages/directory.html?type=fsg">${data.fsg_title||'FSG'}</a><span>›</span>
+      <a href="/pages/directory.html?fsc=${data.fsc}">${data.fsc_title||data.fsc}</a><span>›</span>
       <span style="color:var(--white);">${data.nsn}</span>
     </div>
 
-    <!-- Title -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:16px;">
       <div>
-        <div style="font-family:var(--font-display);font-weight:700;font-size:2rem;letter-spacing:.06em;color:var(--white);">NSN ${data.nsn}</div>
+        <h1 style="font-family:var(--font-display);font-weight:700;font-size:2rem;letter-spacing:.06em;color:var(--white);">NSN ${data.nsn}</h1>
         <div style="font-size:1.2rem;color:var(--gold);margin-top:4px;font-weight:600;">${data.item_name||'—'}</div>
       </div>
       <span class="${data.status==='A'?'badge badge-green':'badge badge-gray'}" style="font-size:.85rem;padding:8px 16px;">${data.status==='A'?'● Active':'● Inactive'}</span>
     </div>
 
-    <!-- Part Alternates -->
-    <div class="part-alternates">
-      <strong>Part Alternates:</strong> ${partAlternates}, ${nsn}, ${nsnClean}, ${data.niin||''}, ${niinClean}
+    <div class="part-alternates" style="background:var(--navy3);border:1px solid var(--border);border-left:3px solid var(--gold);padding:14px 20px;margin-bottom:20px;font-family:var(--font-mono);font-size:.82rem;color:var(--muted);">
+      <strong style="color:var(--white);">Part Alternates:</strong> ${partAlternates}, ${nsn}, ${nsnClean}, ${data.niin||''}, ${niinClean}
     </div>
 
-    <!-- Key Details -->
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-bottom:20px;">
-      ${[
-        ['NSN', data.nsn],
-        ['NIIN', data.niin||'—'],
-        ['FSC', `${data.fsc||'—'}`],
-        ['Unit of Issue', data.ui||'EA'],
-      ].map(([l,v]) => `<div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
+      ${[['NSN',data.nsn],['NIIN',data.niin||'—'],['FSC',data.fsc||'—'],['Unit of Issue',data.ui||'EA']].map(([l,v])=>`
+      <div style="background:var(--card);border:1px solid var(--border);padding:16px 18px;">
         <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:6px;">${l}</div>
         <div style="font-size:.95rem;color:var(--white);font-family:var(--font-mono);font-weight:600;">${v}</div>
       </div>`).join('')}
     </div>
 
-    <!-- Product Details Table -->
-    <div class="detail-section">
-      <div class="detail-section-header">Product Details | ${data.item_name}</div>
-      <table class="detail-table">
+    <div class="detail-section" style="background:var(--card);border:1px solid var(--border);margin-bottom:20px;">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-family:var(--font-display);font-weight:700;font-size:.95rem;letter-spacing:.06em;color:var(--gold);">Product Details | ${data.item_name}</div>
+      <table style="width:100%;border-collapse:collapse;">
         <tbody>
-          <tr><td style="color:var(--muted);width:35%;">Supply Group (FSG)</td><td><a href="/pages/directory.html?fsg=${data.fsg}" style="color:var(--gold);">${data.fsg||'—'}</a> — ${data.fsg_title||'—'}</td></tr>
-          <tr><td style="color:var(--muted);">Federal Supply Class (FSC)</td><td><a href="/pages/directory.html?fsc=${data.fsc}" style="color:var(--gold);">${data.fsc||'—'}</a> — ${data.fsc_title||'—'}</td></tr>
-          <tr><td style="color:var(--muted);">NIIN</td><td style="font-family:var(--font-mono);">${data.niin||'—'}</td></tr>
-          <tr><td style="color:var(--muted);">Item Status</td><td>${data.status==='A'?'<span style="color:#4ade80;">Active</span>':'<span style="color:var(--muted);">Inactive</span>'}</td></tr>
-          <tr><td style="color:var(--muted);">Unit of Issue</td><td>${data.ui||'EA'}</td></tr>
+          <tr><td style="color:var(--muted);width:35%;padding:12px 14px;border-bottom:1px solid var(--border);">Supply Group (FSG)</td><td style="padding:12px 14px;border-bottom:1px solid var(--border);"><a href="/pages/directory.html?fsg=${data.fsg}" style="color:var(--gold);">${data.fsg||'—'}</a> — ${data.fsg_title||'—'}</td></tr>
+          <tr><td style="color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--border);">Federal Supply Class (FSC)</td><td style="padding:12px 14px;border-bottom:1px solid var(--border);"><a href="/pages/directory.html?fsc=${data.fsc}" style="color:var(--gold);">${data.fsc||'—'}</a> — ${data.fsc_title||'—'}</td></tr>
+          <tr><td style="color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--border);">NIIN</td><td style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font-mono);">${data.niin||'—'}</td></tr>
+          <tr><td style="color:var(--muted);padding:12px 14px;border-bottom:1px solid var(--border);">Item Status</td><td style="padding:12px 14px;border-bottom:1px solid var(--border);">${data.status==='A'?'<span style="color:#4ade80;">Active</span>':'<span style="color:var(--muted);">Inactive</span>'}</td></tr>
+          <tr><td style="color:var(--muted);padding:12px 14px;">Unit of Issue</td><td style="padding:12px 14px;">${data.ui||'EA'}</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- Cross Reference -->
     ${data.parts?.length ? `
-    <div class="detail-section">
-      <div class="detail-section-header">Cross Reference | NSN ${data.nsn}</div>
-      <table class="detail-table">
+    <div style="background:var(--card);border:1px solid var(--border);margin-bottom:20px;">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border);font-family:var(--font-display);font-weight:700;font-size:.95rem;letter-spacing:.06em;color:var(--gold);">Cross Reference | NSN ${data.nsn}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
         <thead><tr>
-          <th>Part Number</th>
-          <th>CAGE Code</th>
-          <th>Manufacturer</th>
+          <th style="background:#060e1a;padding:10px 14px;text-align:left;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Part Number</th>
+          <th style="background:#060e1a;padding:10px 14px;text-align:left;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">CAGE Code</th>
+          <th style="background:#060e1a;padding:10px 14px;text-align:left;font-family:var(--font-mono);font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--border);">Manufacturer</th>
         </tr></thead>
-        <tbody>${data.parts.map(p => `<tr>
-          <td style="font-family:var(--font-mono);color:var(--gold);font-weight:bold;">${p.part_number||'—'}</td>
-          <td style="font-family:var(--font-mono);color:var(--muted);">${p.cage_code||'—'}</td>
-          <td style="color:var(--white);">${p.company_name||'—'}</td>
+        <tbody>${data.parts.map(p=>`<tr>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font-mono);color:var(--gold);font-weight:bold;">${p.part_number||'—'}</td>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border);font-family:var(--font-mono);color:var(--muted);">${p.cage_code||'—'}</td>
+          <td style="padding:12px 14px;border-bottom:1px solid var(--border);color:var(--white);">${p.company_name||'—'}</td>
         </tr>`).join('')}</tbody>
       </table>
     </div>` : ''}
 
-    <!-- Request a Quote -->
-    <div class="detail-section" style="border-top:3px solid var(--gold);">
+    <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid var(--gold);">
       <div style="padding:28px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;">
         <div>
-          <div style="font-family:var(--font-display);font-weight:700;font-size:1.2rem;letter-spacing:.06em;margin-bottom:6px;">Request a Quote</div>
-          <div style="font-size:.88rem;color:var(--muted);">NSN ${data.nsn} — ${data.item_name}</div>
-          
+          <div style="font-family:var(--font-display);font-weight:700;font-size:1.2rem;letter-spacing:.06em;margin-bottom:6px;">Request a Quote for NSN ${data.nsn}</div>
+          <div style="font-size:.88rem;color:var(--muted);">${data.item_name} — Fast response, verified suppliers</div>
         </div>
         <div id="rfq-btn-area">
-          ${alreadyInCart
-            ? `<div class="rfq-added-msg">
-                <span>✔ Added to RFQ Cart</span>
-                <a href="/pages/rfq-cart.html">View Cart & Submit →</a>
-               </div>`
-            : `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                <div style="display:flex;align-items:center;gap:8px;">
-                  <label style="font-size:.82rem;color:var(--muted);">Qty:</label>
-                  <input type="number" id="rfq-qty" value="1" min="1" style="width:70px;padding:8px;background:var(--navy3);border:1px solid var(--border);color:var(--white);border-radius:4px;text-align:center;font-size:.9rem;"/>
-                </div>
-                <button class="btn btn-primary btn-lg" id="add-rfq-btn">+ Add to RFQ Cart →</button>
-               </div>`
-          }
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <label style="font-size:.82rem;color:var(--muted);">Qty:</label>
+              <input type="number" id="rfq-qty" value="1" min="1" style="width:70px;padding:8px;background:var(--navy3);border:1px solid var(--border);color:var(--white);border-radius:4px;text-align:center;font-size:.9rem;"/>
+            </div>
+            <button class="btn btn-primary btn-lg" id="add-rfq-btn">+ Add to RFQ Cart →</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- Related NSNs in same FSC -->
-    <div style="margin-top:8px;">
+    <div style="margin-top:12px;">
       <a href="/pages/parts.html?q=${data.fsc}&type=nsn" style="color:var(--gold);font-family:var(--font-mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;">
         View more NSNs in FSC ${data.fsc} →
       </a>
     </div>`;
 
-  // Add to cart button handler
-  const addBtn = document.getElementById('add-rfq-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      const qty = parseInt(document.getElementById('rfq-qty').value) || 1;
-      cart.add({ nsn: data.nsn, item_name: data.item_name, quantity: qty });
-      renderNav();
-      document.getElementById('rfq-btn-area').innerHTML = `
-        <div class="rfq-added-msg">
-          <span>✔ Added to RFQ Cart</span>
-          <a href="/pages/rfq-cart.html">View Cart & Submit →</a>
-        </div>`;
-    });
+  const cartItems = cart.get();
+  const alreadyInCart = cartItems.some(i => i.nsn === data.nsn);
+  if (alreadyInCart) {
+    document.getElementById('rfq-btn-area').innerHTML = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span style="color:#4ade80;font-weight:600;">✔ Added to RFQ Cart</span><a href="/pages/rfq-cart.html" style="color:var(--gold);font-size:.88rem;text-decoration:underline;">View Cart & Submit →</a></div>`;
   }
+
+  document.getElementById('add-rfq-btn')?.addEventListener('click', () => {
+    const qty = parseInt(document.getElementById('rfq-qty').value) || 1;
+    cart.add({ nsn: data.nsn, item_name: data.item_name, quantity: qty });
+    renderNav();
+    document.getElementById('rfq-btn-area').innerHTML = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;"><span style="color:#4ade80;font-weight:600;">✔ Added to RFQ Cart</span><a href="/pages/rfq-cart.html" style="color:var(--gold);font-size:.88rem;text-decoration:underline;">View Cart & Submit →</a></div>`;
+  });
 
 } catch(err) {
   document.getElementById('content').innerHTML = `
     <div style="text-align:center;padding:60px 20px;">
       <div style="font-size:2rem;margin-bottom:12px;">🔍</div>
-      <div style="font-family:var(--font-display);font-size:1.2rem;margin-bottom:8px;">Part Not Found</div>
+      <h1 style="font-family:var(--font-display);font-size:1.2rem;margin-bottom:8px;">NSN ${nsn} — Part Not Found</h1>
       <div style="color:var(--muted);margin-bottom:24px;">We couldn't find data for NSN ${nsn} — let us source it for you.</div>
       <a href="/pages/contact.html?part=${nsn}" class="btn btn-primary">Submit an RFQ for This Part →</a>
     </div>`;
+  document.title = `NSN ${nsn} — Part Lookup | Jupiter One USA`;
 }
 </script>
 </body>

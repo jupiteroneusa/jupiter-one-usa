@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+Allow: /pages/
+Allow: /pages/nsn-detail.html
+Allow: /pages/parts.html
+Allow: /pages/directory.html
+Allow: /pages/about.html
+Allow: /pages/contact.html
+Allow: /pages/faq.html
+Disallow: /admin/
+Disallow: /api/
+Disallow: /pages/account.html
+Disallow: /pages/login.html
+Disallow: /pages/register.html
+Disallow: /pages/rfq-cart.html
+
+Sitemap: https://jupiteroneusa.com/sitemap.xml
