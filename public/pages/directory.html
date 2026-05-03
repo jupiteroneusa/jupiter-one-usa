@@ -92,11 +92,11 @@ async function loadDirectory() {
             <thead><tr><th>NSN</th><th>Item Name</th><th>Mfr Part Numbers</th><th>Status</th><th></th></tr></thead>
             <tbody>${fscData.map(row => `
               <tr>
-                <td class="td-nsn">${row.nsn}</td>
+               <td class="td-nsn"><a href="/pages/nsn-detail.html?nsn=${row.nsn}" style="color:var(--gold);font-family:var(--font-mono);font-weight:bold;">${row.nsn}</a></td>
                 <td class="td-name">${row.item_name||'—'}</td>
                 <td class="td-parts" style="font-family:var(--font-mono);font-size:.72rem;color:var(--muted);">${row.part_numbers||'—'}</td>
                 <td class="${row.status==='A'?'td-status-active':'td-status-inactive'}">${row.status==='A'?'● Active':'○ Inactive'}</td>
-                <td><a href="/?q=${encodeURIComponent(row.nsn)}&type=nsn" class="btn btn-primary btn-sm">Search →</a></td>
+                <td><a href="/pages/nsn-detail.html?nsn=${row.nsn}" class="btn btn-primary btn-sm">View →</a></td>
               </tr>`).join('')}
             </tbody>
           </table>

@@ -276,7 +276,7 @@ export function getFooterHTML() {
     </div>
     <div class="footer-bottom">
       <p>© ${new Date().getFullYear()} Jupiter One USA LLC. All rights reserved.</p>
-      <p>NSN Sourcing · Aerospace Components · Defense Procurement</p>
+      <p>NSN Supply · Aerospace Components · Defense Procurement</p>
     </div>
   </footer>`;
 }
