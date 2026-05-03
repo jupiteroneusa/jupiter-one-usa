@@ -94,7 +94,7 @@ input, select, textarea, button { font-family: inherit; }
   flex-shrink: 0;
 }
 
-.nav-links {
+.nav-links { margin-left: 24px;
   display: flex;
   align-items: center;
   gap: 2rem;
@@ -627,7 +627,7 @@ input, select, textarea, button { font-family: inherit; }
 
 /* ── RESPONSIVE ─────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .nav-links { display: none; }
+  .nav-links { margin-left: 24px; display: none; }
   .nav-toggle { display: flex; }
   .nav-links.open {
     display: flex;
