@@ -53,12 +53,15 @@ try {
         <thead><tr><th>#</th><th>NSN / Part #</th><th>Description</th><th>Qty</th><th>Condition</th><th>Target Price</th><th>Status</th></tr></thead>
         <tbody>${rfq.lines?.map(l => `<tr>
           <td style="color:var(--muted);font-family:var(--font-mono);font-size:.75rem;">${l.line_number}</td>
-          <td class="td-nsn">${l.nsn||l.part_number||'—'}</td>
+          <td class="td-nsn">${l.nsn
+            ? `<a href="/pages/nsn-detail.html?nsn=${l.nsn}" style="color:var(--gold);font-family:var(--font-mono);font-weight:bold;">${l.nsn}</a>`
+            : `<span style="font-family:var(--font-mono);">${l.part_number||'—'}</span>`
+          }</td>
           <td class="td-name">${l.item_name||'—'}</td>
           <td>${l.quantity}</td>
           <td><span class="badge badge-gray">${l.condition_code||'—'}</span></td>
           <td>${l.target_price ? formatMoney(l.target_price) : '—'}</td>
-          <td>${statusBadge(l.status)}</td>
+          <td>${statusBadge(l.status||'Pending')}</td>
         </tr>`).join('')}</tbody>
       </table>
     </div>
