@@ -111,6 +111,7 @@ export const api = {
 
   // Invoices
   myInvoices:  ()    => get('/invoices'),
+updateProfile: (data) => request('PUT', '/customers/profile', data),
 
   // Shipment
   shipmentDetail: (id) => get(`/shipments/${id}`),
