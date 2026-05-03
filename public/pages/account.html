@@ -7,9 +7,8 @@
 <link rel="stylesheet" href="/css/main.css"/>
 <style>
 .account-layout { display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 130px); }
-.account-sidebar {
-  background:var(--navy2); border-right:1px solid var(--border); padding:28px 16px;
-}
+.account-sidebar { background:var(--navy2); border-right:1px solid var(--border); padding:28px 16px; }
+.account-sidebar-title { font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:16px;padding:0 14px; }
 .account-nav-link {
   display:flex; align-items:center; gap:10px;
   padding:10px 14px; font-size:.9rem; color:var(--muted);
@@ -21,17 +20,22 @@
 .account-nav-link.active { color:var(--gold); border-left-color:var(--gold); background:var(--gold-dim); padding-left:18px; }
 .account-main { padding:36px 40px; }
 .data-table { width:100%; border-collapse:collapse; }
-.data-table th {
-  background:#060e1a; padding:10px 14px; text-align:left;
-  font-family:var(--font-mono); font-size:.62rem; letter-spacing:.15em;
-  text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border);
-}
+.data-table th { background:#060e1a; padding:10px 14px; text-align:left; font-family:var(--font-mono); font-size:.62rem; letter-spacing:.15em; text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--border); }
 .data-table td { padding:12px 14px; border-bottom:1px solid var(--border); font-size:.88rem; background:var(--card); }
 .data-table tr:hover td { background:var(--gold-dim); }
-.account-welcome { margin-bottom:32px; }
+.form-group { margin-bottom:16px; }
+.form-group label { display:block; font-size:.75rem; color:var(--muted); margin-bottom:4px; }
+.form-group input { width:100%; padding:10px 12px; background:var(--navy3); border:1px solid var(--border); color:var(--white); border-radius:4px; font-size:.9rem; box-sizing:border-box; }
+.form-group input:focus { outline:none; border-color:var(--gold); }
+.form-group input[readonly] { opacity:.5; cursor:not-allowed; }
+.msg-card { background:var(--card); border:1px solid var(--border); border-left:3px solid var(--gold); padding:16px 20px; margin-bottom:12px; border-radius:2px; }
+.msg-card .msg-meta { font-size:.75rem; color:var(--muted); margin-bottom:6px; display:flex; justify-content:space-between; }
+.msg-card .msg-title { font-weight:600; color:var(--white); margin-bottom:4px; }
+.msg-card .msg-body { font-size:.85rem; color:var(--muted); }
 @media(max-width:900px) {
   .account-layout { grid-template-columns:1fr; }
   .account-sidebar { padding:16px 5vw; display:flex; gap:8px; flex-wrap:wrap; border-right:none; border-bottom:1px solid var(--border); }
+  .account-sidebar-title { display:none; }
   .account-main { padding:24px 5vw; }
 }
 </style>
@@ -40,15 +44,16 @@
 <div id="nav-container"></div>
 <div class="account-layout">
   <aside class="account-sidebar">
-    <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:16px;padding:0 14px;">My Account</div>
+    <div class="account-sidebar-title">My Account</div>
     <button class="account-nav-link active" data-tab="rfqs">📋 My RFQs</button>
     <button class="account-nav-link" data-tab="quotes">💰 My Quotes</button>
     <button class="account-nav-link" data-tab="orders">📦 My Orders</button>
     <button class="account-nav-link" data-tab="invoices">🧾 Invoices</button>
-    <button class="account-nav-link" data-tab="profile">👤 Profile</button>
+    <button class="account-nav-link" data-tab="messages">✉️ Messages</button>
+    <button class="account-nav-link" data-tab="profile">👤 Profile & Settings</button>
   </aside>
   <main class="account-main">
-    <div class="account-welcome">
+    <div style="margin-bottom:28px;">
       <div class="section-label">Dashboard</div>
       <div class="section-title" style="font-size:1.6rem;" id="welcome-text">Welcome Back</div>
     </div>
@@ -69,10 +74,10 @@ renderNav(); initNavToggle();
 const user = auth.getUser();
 if (user) document.getElementById('welcome-text').textContent = `Welcome, ${user.first_name}`;
 
-let activeTab = 'rfqs';
+// Check for tab in URL
+const urlTab = new URLSearchParams(window.location.search).get('tab') || 'rfqs';
 
 async function loadTab(tab) {
-  activeTab = tab;
   document.querySelectorAll('.account-nav-link').forEach(l => l.classList.toggle('active', l.dataset.tab === tab));
   const content = document.getElementById('tab-content');
   content.innerHTML = '<div class="results-loading">Loading...</div>';
@@ -82,6 +87,10 @@ async function loadTab(tab) {
       const data = await api.myRfqs();
       if (!data.length) { content.innerHTML = emptyState('No RFQs yet', 'Submit your first RFQ by searching for parts.', '/pages/parts.html', 'Search Parts'); return; }
       content.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;">My RFQs</div>
+          <a href="/pages/parts.html" class="btn btn-primary btn-sm">+ New RFQ</a>
+        </div>
         <table class="data-table">
           <thead><tr><th>RFQ Number</th><th>Lines</th><th>Priority</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
           <tbody>${data.map(r => `<tr>
@@ -96,8 +105,9 @@ async function loadTab(tab) {
 
     } else if (tab === 'quotes') {
       const data = await api.myQuotes();
-      if (!data.length) { content.innerHTML = emptyState('No quotes yet', 'Once you submit an RFQ, we\'ll send you a quote within 24 hours.'); return; }
+      if (!data.length) { content.innerHTML = emptyState('No quotes yet', "Once you submit an RFQ, we'll respond within 24 hours."); return; }
       content.innerHTML = `
+        <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;margin-bottom:16px;">My Quotes</div>
         <table class="data-table">
           <thead><tr><th>Quote #</th><th>RFQ Ref</th><th>Total</th><th>Status</th><th>Valid Until</th><th></th></tr></thead>
           <tbody>${data.map(q => `<tr>
@@ -117,6 +127,7 @@ async function loadTab(tab) {
       const data = await api.myOrders();
       if (!data.length) { content.innerHTML = emptyState('No orders yet', 'Accept a quote to place your first order.'); return; }
       content.innerHTML = `
+        <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;margin-bottom:16px;">My Orders</div>
         <table class="data-table">
           <thead><tr><th>Order #</th><th>Customer PO</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>${data.map(o => `<tr>
@@ -133,6 +144,7 @@ async function loadTab(tab) {
       const data = await api.myInvoices();
       if (!data.length) { content.innerHTML = emptyState('No invoices yet', 'Invoices will appear here after your first order ships.'); return; }
       content.innerHTML = `
+        <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;margin-bottom:16px;">My Invoices</div>
         <table class="data-table">
           <thead><tr><th>Invoice #</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th><th></th></tr></thead>
           <tbody>${data.map(inv => `<tr>
@@ -145,23 +157,87 @@ async function loadTab(tab) {
           </tr>`).join('')}</tbody>
         </table>`;
 
+    } else if (tab === 'messages') {
+      const data = await api.myRfqs();
+      content.innerHTML = `
+        <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;margin-bottom:20px;">Messages & Activity</div>
+        ${data.length === 0
+          ? emptyState('No messages yet', 'Your RFQ updates and responses will appear here.')
+          : data.map(r => `
+            <div class="msg-card">
+              <div class="msg-meta">
+                <span>RFQ — ${r.rfq_number}</span>
+                <span>${formatDate(r.submitted_at)}</span>
+              </div>
+              <div class="msg-title">${r.line_count} line item${r.line_count !== 1 ? 's' : ''} · ${r.priority} Priority</div>
+              <div class="msg-body" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                <span>${statusBadge(r.status)}</span>
+                <a href="/pages/rfq-detail.html?id=${r.id}" class="btn btn-outline btn-sm">View Details</a>
+              </div>
+            </div>`).join('')
+        }
+        <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border);">
+          <div style="font-size:.88rem;color:var(--muted);margin-bottom:12px;">Need help? Contact our team directly.</div>
+          <a href="/pages/contact.html" class="btn btn-outline">Contact Support →</a>
+        </div>`;
+
     } else if (tab === 'profile') {
       const data = await api.me();
       content.innerHTML = `
         <div style="max-width:520px;">
+          <div style="font-family:var(--font-display);font-size:1.1rem;font-weight:700;margin-bottom:20px;">Profile & Settings</div>
           <div class="card" style="margin-bottom:20px;">
             <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:16px;">Account Information</div>
+            <div id="profile-msg"></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Name</div><div>${data.first_name} ${data.last_name}</div></div>
-              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Company</div><div>${data.company||'—'}</div></div>
-              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Email</div><div>${data.email}</div></div>
-              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Phone</div><div>${data.phone||'—'}</div></div>
-              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Member Since</div><div>${formatDate(data.created_at)}</div></div>
-              <div><div style="font-size:.75rem;color:var(--muted);margin-bottom:3px;">Status</div><div>${statusBadge(data.status)}</div></div>
+              <div class="form-group">
+                <label>First Name</label>
+                <input type="text" id="p-first" value="${data.first_name||''}"/>
+              </div>
+              <div class="form-group">
+                <label>Last Name</label>
+                <input type="text" id="p-last" value="${data.last_name||''}"/>
+              </div>
+              <div class="form-group">
+                <label>Email (read only)</label>
+                <input type="text" value="${data.email}" readonly/>
+              </div>
+              <div class="form-group">
+                <label>Phone</label>
+                <input type="text" id="p-phone" value="${data.phone||''}"/>
+              </div>
+              <div class="form-group" style="grid-column:1/-1;">
+                <label>Company</label>
+                <input type="text" id="p-company" value="${data.company||''}"/>
+              </div>
+            </div>
+            <button class="btn btn-primary" id="save-profile-btn" style="margin-top:8px;">Save Changes</button>
+          </div>
+          <div class="card">
+            <div style="font-family:var(--font-mono);font-size:.62rem;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:16px;">Account Details</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:.88rem;">
+              <div><div style="color:var(--muted);margin-bottom:2px;">Member Since</div><div>${formatDate(data.created_at)}</div></div>
+              <div><div style="color:var(--muted);margin-bottom:2px;">Status</div><div>${statusBadge(data.status)}</div></div>
             </div>
           </div>
-          <a href="/pages/contact.html" class="btn btn-outline">Contact Support</a>
         </div>`;
+
+      document.getElementById('save-profile-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('save-profile-btn');
+        btn.textContent = 'Saving...'; btn.disabled = true;
+        try {
+          await api.updateProfile({
+            first_name: document.getElementById('p-first').value,
+            last_name:  document.getElementById('p-last').value,
+            phone:      document.getElementById('p-phone').value,
+            company:    document.getElementById('p-company').value,
+          });
+          document.getElementById('profile-msg').innerHTML = `<div class="alert alert-success" style="margin-bottom:12px;">Profile updated successfully.</div>`;
+        } catch(e) {
+          document.getElementById('profile-msg').innerHTML = `<div class="alert alert-error" style="margin-bottom:12px;">${e.message}</div>`;
+        }
+        btn.textContent = 'Save Changes'; btn.disabled = false;
+      });
     }
   } catch(err) {
     content.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
@@ -180,7 +256,7 @@ document.querySelectorAll('.account-nav-link').forEach(link => {
   link.addEventListener('click', () => loadTab(link.dataset.tab));
 });
 
-loadTab('rfqs');
+loadTab(urlTab);
 </script>
 </body>
 </html>
