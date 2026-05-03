@@ -170,7 +170,7 @@ export function renderNav() {
   const user = auth.getUser();
   if (user) {
     userArea.innerHTML = `
-      <a href="/pages/account.html" class="nav-user-name">${user.first_name}</a>
+      <a href="/pages/account.html" class="btn btn-outline btn-sm">Dashboard</a>
       <a href="/pages/rfq-cart.html" class="rfq-cart-btn">
         RFQ Cart <span class="rfq-cart-count">${cart.count()}</span>
       </a>
