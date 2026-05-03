@@ -223,7 +223,7 @@ export function getNavHTML() {
       <li><a href="/pages/contact.html" id="nav-contact">Contact</a></li>
     </ul>
     <div style="display:flex;align-items:center;gap:12px;">
-      <div id="nav-user-area" style="display:flex;align-items:center;gap:10px;"></div>
+      <div id="nav-user-area" style="display:flex;align-items:center;gap:14px;"></div>
       <a href="/pages/contact.html" class="nav-cta">Request a Quote</a>
       <div class="nav-toggle" id="nav-toggle">
         <span></span><span></span><span></span>

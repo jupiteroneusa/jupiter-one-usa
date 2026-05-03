@@ -68,7 +68,7 @@ input, select, textarea, button { font-family: inherit; }
   background: rgba(10,22,40,0.97);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
-  padding: 0 5vw;
+  padding: 0 3vw;
   height: 64px;
   display: flex;
   align-items: center;
@@ -616,7 +616,7 @@ input, select, textarea, button { font-family: inherit; }
 .page-btn.active { border-color: var(--gold); color: var(--gold); background: var(--gold-dim); }
 
 /* ── UTILITY ────────────────────────────────────────────────── */
-.container { max-width: 1280px; margin: 0 auto; padding: 0 5vw; }
+.container { max-width: 1280px; margin: 0 auto; padding: 0 3vw; }
 .text-gold { color: var(--gold); }
 .text-muted { color: var(--muted); }
 .text-mono { font-family: var(--font-mono); }
