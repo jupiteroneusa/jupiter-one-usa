@@ -110,7 +110,7 @@ export const api = {
   orderDetail: (id)  => get(`/orders/${id}`),
 
   // Invoices
-  updateProfile: (data) => request(`PUT`, `/customers/profile`, data),`n  myInvoices:  ()    => get('/invoices'),
+  myInvoices:  ()    => get('/invoices'),
 
   // Shipment
   shipmentDetail: (id) => get(`/shipments/${id}`),
