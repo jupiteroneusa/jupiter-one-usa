@@ -19,6 +19,9 @@
 .breadcrumb span { margin:0 8px; color:var(--muted); }
 .part-alternates { background:var(--navy3); border:1px solid var(--border); border-left:3px solid var(--gold); padding:14px 20px; margin-bottom:20px; font-family:var(--font-mono); font-size:.82rem; color:var(--muted); }
 .part-alternates strong { color:var(--white); }
+.rfq-added-msg { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.rfq-added-msg span { color:#4ade80; font-weight:600; font-size:.95rem; }
+.rfq-added-msg a { color:var(--gold); font-size:.88rem; text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -44,6 +47,10 @@ try {
   const nsnClean = nsn.replace(/-/g, '');
   const niinClean = data.niin?.replace(/-/g, '') || '';
 
+  // Check if already in cart
+  const cartItems = cart.get();
+  const alreadyInCart = cartItems.some(i => i.nsn === data.nsn);
+
   document.getElementById('content').innerHTML = `
 
     <!-- Breadcrumb -->
@@ -65,7 +72,7 @@ try {
         <div style="font-family:var(--font-display);font-weight:700;font-size:2rem;letter-spacing:.06em;color:var(--white);">NSN ${data.nsn}</div>
         <div style="font-size:1.2rem;color:var(--gold);margin-top:4px;font-weight:600;">${data.item_name||'—'}</div>
       </div>
-      <span class="${data.status==='A'?'badge badge-green':'badge badge-gray'}" style="font-size:.85rem;padding:8px 16px;">${data.status==='A'?'● Active':'○ Inactive'}</span>
+      <span class="${data.status==='A'?'badge badge-green':'badge badge-gray'}" style="font-size:.85rem;padding:8px 16px;">${data.status==='A'?'● Active':'● Inactive'}</span>
     </div>
 
     <!-- Part Alternates -->
@@ -126,15 +133,21 @@ try {
           <div style="font-size:.88rem;color:var(--muted);">NSN ${data.nsn} — ${data.item_name}</div>
           <div style="font-size:.82rem;color:var(--muted);margin-top:4px;">⏱ 24-hour response guaranteed</div>
         </div>
-        <button class="btn btn-primary btn-lg" id="add-rfq-btn">+ Add to RFQ Cart →</button>
-      </div>
-    </div>
-
-    <!-- NSN-Now Extended Data -->
-    <div class="detail-section" id="nsnnow-section" style="display:none;">
-      <div class="detail-section-header">⚡ Extended Market Data</div>
-      <div id="nsnnow-content" style="padding:20px;">
-        <div style="color:var(--muted);font-size:.85rem;">Loading extended data...</div>
+        <div id="rfq-btn-area">
+          ${alreadyInCart
+            ? `<div class="rfq-added-msg">
+                <span>✔ Added to RFQ Cart</span>
+                <a href="/pages/rfq-cart.html">View Cart & Submit →</a>
+               </div>`
+            : `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <label style="font-size:.82rem;color:var(--muted);">Qty:</label>
+                  <input type="number" id="rfq-qty" value="1" min="1" style="width:70px;padding:8px;background:var(--navy3);border:1px solid var(--border);color:var(--white);border-radius:4px;text-align:center;font-size:.9rem;"/>
+                </div>
+                <button class="btn btn-primary btn-lg" id="add-rfq-btn">+ Add to RFQ Cart →</button>
+               </div>`
+          }
+        </div>
       </div>
     </div>
 
@@ -145,13 +158,20 @@ try {
       </a>
     </div>`;
 
-  document.getElementById('add-rfq-btn').addEventListener('click', () => {
-    cart.add({ nsn: data.nsn, item_name: data.item_name, quantity: 1 });
-    renderNav();
-    document.getElementById('add-rfq-btn').textContent = '✅ Added to RFQ Cart';
-    document.getElementById('add-rfq-btn').disabled = true;
-    document.getElementById('add-rfq-btn').style.opacity = '0.7';
-  });
+  // Add to cart button handler
+  const addBtn = document.getElementById('add-rfq-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const qty = parseInt(document.getElementById('rfq-qty').value) || 1;
+      cart.add({ nsn: data.nsn, item_name: data.item_name, quantity: qty });
+      renderNav();
+      document.getElementById('rfq-btn-area').innerHTML = `
+        <div class="rfq-added-msg">
+          <span>✔ Added to RFQ Cart</span>
+          <a href="/pages/rfq-cart.html">View Cart & Submit →</a>
+        </div>`;
+    });
+  }
 
 } catch(err) {
   document.getElementById('content').innerHTML = `
