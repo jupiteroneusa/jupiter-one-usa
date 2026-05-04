@@ -793,13 +793,13 @@ export async function buildAdminRouter() {
       const statuses = ['Submitted','Under Review','Sourcing','Quoted','Closed','Cancelled'];
       const statusOptions = statuses.map(s => `<option value="${s}"${rfq.status===s?' selected':''}>${s}</option>`).join('');
 
-      res.send(page(`RFQ ${rfq.rfq_number}`,'rfqs',`
+      res.send(page(`${rfq.rfq_number}`,'rfqs',`
         ${successMsg}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div class="page-title">RFQ ${rfq.rfq_number}</div>
+          <div class="page-title">${rfq.rfq_number}</div>
           <a href="/admin/rfqs" class="btn btn-outline btn-sm">← Back to RFQs</a>
         </div>
-        <div class="page-sub">Submitted ${new Date(rfq.submitted_at).toLocaleString()}</div>
+        <div class="page-sub">Submitted ${new Date(rfq.submitted_at).toLocaleString('en-US', {timeZone:'America/New_York'})} ET</div>
         <div class="detail-grid">
           <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${rfq.customer_id}" style="color:#c8932a;">${rfq.customer_name}</a></div></div>
           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${rfq.company||'—'}</div></div>
