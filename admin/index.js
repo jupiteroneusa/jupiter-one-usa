@@ -23,6 +23,10 @@ a { color:inherit; text-decoration:none; }
 .card-body { padding:18px; }
 table { width:100%; border-collapse:collapse; font-size:.85rem; }
 th { background:#060e1a; padding:9px 12px; text-align:left; font-size:.68rem; letter-spacing:.15em; text-transform:uppercase; color:#7a8a9a; border-bottom:1px solid #1e2d42; white-space:nowrap; }
+th.sortable { cursor:pointer; user-select:none; }
+th.sortable:hover { color:#c8932a; }
+th.sort-asc::after { content:' ▲'; color:#c8932a; }
+th.sort-desc::after { content:' ▼'; color:#c8932a; }
 td { padding:11px 12px; border-bottom:1px solid #1e2d42; vertical-align:middle; }
 tr:last-child td { border-bottom:none; }
 tr:hover td { background:rgba(200,147,42,0.04); }
@@ -55,6 +59,10 @@ select:focus, input:focus, textarea:focus { border-color:#c8932a; }
 .detail-item { background:#0a1628; padding:12px 16px; }
 .detail-label { font-size:.65rem; letter-spacing:.15em; text-transform:uppercase; color:#7a8a9a; margin-bottom:4px; }
 .detail-value { font-size:.9rem; color:#eef1f5; }
+.pagination { display:flex; align-items:center; gap:8px; padding:14px 18px; border-top:1px solid #1e2d42; flex-wrap:wrap; }
+.pagination-info { color:#7a8a9a; font-size:.78rem; margin-right:auto; }
+.pagination .btn { padding:5px 12px; font-size:.7rem; }
+.page-size-select { background:#0a1628; border:1px solid #1e2d42; color:#eef1f5; padding:5px 8px; font-size:.78rem; }
 @media(max-width:700px){ .sidebar{display:none;} .main{margin-left:0;} .detail-grid{grid-template-columns:1fr;} }
 `;
 
@@ -68,7 +76,7 @@ function adminNav(active) {
     </div>
   </div>
   <div class="sidebar">
-    <a href="/admin/dashboard" class="${active==='dashboard'?'active':''}">📊 Dashboard</a>
+    <a href="/admin/dashboard" class="${active==='dashboard'?'active':''}">📈 Dashboard</a>
     <a href="/admin/rfqs" class="${active==='rfqs'?'active':''}">📋 RFQs</a>
     <a href="/admin/customers" class="${active==='customers'?'active':''}">👥 Customers</a>
     <a href="/admin/quotes" class="${active==='quotes'?'active':''}">💰 Quotes</a>
@@ -100,6 +108,29 @@ function requireAuth(req, res) {
   try { jwt.verify(token, process.env.ADMIN_JWT_SECRET); return true; }
   catch { res.redirect('/admin'); return false; }
 }
+
+// Sortable table script for dashboard
+const SORT_SCRIPT = `
+<script>
+function sortTable(th, col) {
+  const table = th.closest('table');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const allTh = table.querySelectorAll('th.sortable');
+  const asc = !th.classList.contains('sort-asc');
+  allTh.forEach(t => t.classList.remove('sort-asc','sort-desc'));
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+  rows.sort((a, b) => {
+    const av = a.cells[col]?.innerText.trim() || '';
+    const bv = b.cells[col]?.innerText.trim() || '';
+    const an = parseFloat(av.replace(/[^0-9.-]/g,''));
+    const bn = parseFloat(bv.replace(/[^0-9.-]/g,''));
+    if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+    return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+</script>`;
 
 export async function buildAdminRouter() {
   const router = Router();
@@ -153,7 +184,7 @@ export async function buildAdminRouter() {
       `);
       const s = stats.recordset[0];
       const recent = await pool.request().query(`
-        SELECT TOP 10 h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
+        SELECT TOP 20 h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
           c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company,
           COUNT(l.id) AS line_count
         FROM rfq_headers h
@@ -172,6 +203,7 @@ export async function buildAdminRouter() {
         <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
       </tr>`).join('');
       res.send(page('Dashboard', 'dashboard', `
+        ${SORT_SCRIPT}
         <div class="page-title">Dashboard</div>
         <div class="page-sub">Jupiter One USA — Admin Overview</div>
         <div class="stat-grid">
@@ -182,8 +214,16 @@ export async function buildAdminRouter() {
           <div class="stat"><div class="stat-num">${s.new_messages}</div><div class="stat-label">New Messages</div></div>
         </div>
         <div class="card">
-          <div class="card-header">Recent RFQs</div>
-          <table><thead><tr><th>RFQ #</th><th>Customer</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <div class="card-header">Recent RFQs <span style="font-size:.72rem;color:#7a8a9a;font-weight:400;">Click column headers to sort</span></div>
+          <table><thead><tr>
+            <th class="sortable" onclick="sortTable(this,0)">RFQ #</th>
+            <th class="sortable" onclick="sortTable(this,1)">Customer</th>
+            <th class="sortable" onclick="sortTable(this,2)">Lines</th>
+            <th class="sortable" onclick="sortTable(this,3)">Priority</th>
+            <th class="sortable" onclick="sortTable(this,4)">Status</th>
+            <th class="sortable" onclick="sortTable(this,5)">Date</th>
+            <th></th>
+          </tr></thead>
           <tbody>${rows}</tbody></table>
         </div>`));
     } catch(err) {
@@ -191,15 +231,42 @@ export async function buildAdminRouter() {
     }
   });
 
-  // RFQs List
+  // RFQs List — with pagination + sortable headers
   router.get('/rfqs', async (req, res) => {
     if (!requireAuth(req, res)) return;
     const status = req.query.status || '';
+    const pageNum = Math.max(1, parseInt(req.query.page) || 1);
+    const pageSize = [10, 25, 50, 100].includes(parseInt(req.query.pageSize)) ? parseInt(req.query.pageSize) : 25;
+    const offset = (pageNum - 1) * pageSize;
+    const sortCol = req.query.sort || 'submitted_at';
+    const sortDir = req.query.dir === 'asc' ? 'ASC' : 'DESC';
+
+    // Whitelist sort columns
+    const allowedSorts = {
+      rfq_number: 'h.rfq_number',
+      customer: 'c.last_name',
+      lines: 'line_count',
+      priority: 'h.priority',
+      status: 'h.status',
+      submitted_at: 'h.submitted_at',
+    };
+    const orderBy = allowedSorts[sortCol] || 'h.submitted_at';
+
     try {
       const pool = await getPool();
-      const r = pool.request().input('lim', sql.Int, 100).input('off', sql.Int, 0);
+      const r = pool.request().input('lim', sql.Int, pageSize).input('off', sql.Int, offset);
       let where = '';
       if (status) { r.input('status', sql.NVarChar, status); where = 'WHERE h.status=@status'; }
+
+      // Count query
+      const countQ = await pool.request().input('status2', sql.NVarChar, status || null).query(`
+        SELECT COUNT(*) AS total FROM rfq_headers h
+        JOIN customers c ON c.id=h.customer_id
+        ${status ? 'WHERE h.status=@status2' : ''}
+      `);
+      const totalRows = countQ.recordset[0].total;
+      const totalPages = Math.ceil(totalRows / pageSize);
+
       const result = await r.query(`
         SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
           c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email,
@@ -209,11 +276,20 @@ export async function buildAdminRouter() {
         LEFT JOIN rfq_lines l ON l.rfq_id=h.id
         ${where}
         GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.id,c.first_name,c.last_name,c.company,c.email
-        ORDER BY h.submitted_at DESC
+        ORDER BY ${orderBy} ${sortDir}
         OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY
       `);
+
       const statuses = ['','Submitted','Under Review','Sourcing','Quoted','Closed','Cancelled'];
-      const filters = statuses.map(s => `<a href="/admin/rfqs${s?'?status='+s:''}" class="btn btn-sm ${status===s?'btn-gold':'btn-outline'}">${s||'All'}</a>`).join('');
+      const filters = statuses.map(s => `<a href="/admin/rfqs?status=${s}&pageSize=${pageSize}" class="btn btn-sm ${status===s?'btn-gold':'btn-outline'}">${s||'All'}</a>`).join('');
+
+      // Build sortable header link helper
+      function sortLink(col, label) {
+        const nextDir = (sortCol === col && sortDir === 'DESC') ? 'asc' : 'desc';
+        const arrow = sortCol === col ? (sortDir === 'DESC' ? ' ▼' : ' ▲') : '';
+        return `<th><a href="/admin/rfqs?status=${status}&sort=${col}&dir=${nextDir}&page=1&pageSize=${pageSize}" style="color:${sortCol===col?'#c8932a':'#7a8a9a'};text-decoration:none;font:inherit;letter-spacing:inherit;text-transform:inherit;">${label}${arrow}</a></th>`;
+      }
+
       const rows = result.recordset.map(r => `<tr>
         <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
         <td><a href="/admin/customers/${r.customer_id}" style="color:#c8932a;">${r.customer_name}</a><br><span style="font-size:.75rem;color:#7a8a9a;">${r.company||''}</span></td>
@@ -224,13 +300,59 @@ export async function buildAdminRouter() {
         <td>${new Date(r.submitted_at).toLocaleDateString()}</td>
         <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
       </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No RFQs found</td></tr>';
+
+      // Pagination controls
+      const baseUrl = (p) => `/admin/rfqs?status=${status}&sort=${sortCol}&dir=${sortDir}&page=${p}&pageSize=${pageSize}`;
+      const pageSizeOptions = [10,25,50,100].map(n =>
+        `<option value="${n}" ${n===pageSize?'selected':''}>${n} per page</option>`).join('');
+
+      const prevBtn = pageNum > 1
+        ? `<a href="${baseUrl(pageNum-1)}" class="btn btn-outline">← Prev</a>` : `<span class="btn btn-outline" style="opacity:.4;cursor:default;">← Prev</span>`;
+      const nextBtn = pageNum < totalPages
+        ? `<a href="${baseUrl(pageNum+1)}" class="btn btn-outline">Next →</a>` : `<span class="btn btn-outline" style="opacity:.4;cursor:default;">Next →</span>`;
+
+      // Page number buttons (show up to 7)
+      let pageButtons = '';
+      const delta = 3;
+      for (let p = 1; p <= totalPages; p++) {
+        if (p === 1 || p === totalPages || (p >= pageNum - delta && p <= pageNum + delta)) {
+          pageButtons += `<a href="${baseUrl(p)}" class="btn btn-sm ${p===pageNum?'btn-gold':'btn-outline'}">${p}</a>`;
+        } else if (p === pageNum - delta - 1 || p === pageNum + delta + 1) {
+          pageButtons += `<span style="color:#7a8a9a;padding:0 4px;">…</span>`;
+        }
+      }
+
+      const start = offset + 1;
+      const end = Math.min(offset + pageSize, totalRows);
+
+      const pagination = `
+        <div class="pagination">
+          <span class="pagination-info">Showing ${start}–${end} of ${totalRows} RFQs</span>
+          <select class="page-size-select" onchange="window.location='/admin/rfqs?status=${status}&sort=${sortCol}&dir=${sortDir}&page=1&pageSize='+this.value">
+            ${pageSizeOptions}
+          </select>
+          ${prevBtn}
+          ${pageButtons}
+          ${nextBtn}
+        </div>`;
+
       res.send(page('RFQs','rfqs',`
         <div class="page-title">RFQs</div>
         <div class="page-sub">All customer requests for quotation</div>
         <div class="filter-bar">${filters}</div>
         <div class="card">
-          <table><thead><tr><th>RFQ #</th><th>Customer</th><th>Email</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <table><thead><tr>
+            ${sortLink('rfq_number','RFQ #')}
+            ${sortLink('customer','Customer')}
+            <th>Email</th>
+            ${sortLink('lines','Lines')}
+            ${sortLink('priority','Priority')}
+            ${sortLink('status','Status')}
+            ${sortLink('submitted_at','Date')}
+            <th></th>
+          </tr></thead>
           <tbody>${rows}</tbody></table>
+          ${pagination}
         </div>`));
     } catch(err) {
       res.send(page('RFQs','rfqs',`<div class="alert alert-error">${err.message}</div>`));
