@@ -123,9 +123,17 @@ function sortTable(th, col) {
   rows.sort((a, b) => {
     const av = a.cells[col]?.innerText.trim() || '';
     const bv = b.cells[col]?.innerText.trim() || '';
+    // Handle RFQ/PO numbers like RFQ-2026-00019 — sort by trailing sequence number
+    const rfqMatch = av.match(/(\d+)$/) && bv.match(/(\d+)$/);
+    if (rfqMatch && av.includes('-') && bv.includes('-')) {
+      const an = parseInt(av.match(/(\d+)$/)[1]);
+      const bn = parseInt(bv.match(/(\d+)$/)[1]);
+      return asc ? an - bn : bn - an;
+    }
+    // Plain numbers
     const an = parseFloat(av.replace(/[^0-9.-]/g,''));
     const bn = parseFloat(bv.replace(/[^0-9.-]/g,''));
-    if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+    if (!isNaN(an) && !isNaN(bn) && av !== '' && bv !== '') return asc ? an - bn : bn - an;
     return asc ? av.localeCompare(bv) : bv.localeCompare(av);
   });
   rows.forEach(r => tbody.appendChild(r));
