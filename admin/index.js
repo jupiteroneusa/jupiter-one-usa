@@ -414,13 +414,15 @@ export async function buildAdminRouter() {
                 </div>
               </div>
 
-              <!-- Existing customer -->
+              <!-- Existing customer typeahead -->
               <div id="existing-customer-section">
-                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Select Customer</div>
-                <select name="customer_id" style="width:100%;max-width:500px;">
-                  <option value="">— Select a customer —</option>
-                  ${custOptions}
-                </select>
+                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Search Customer (name, company, or email)</div>
+                <div style="position:relative;max-width:500px;">
+                  <input type="text" id="customer-search" placeholder="Start typing..." autocomplete="off" style="width:100%;" oninput="searchCustomers(this.value)"/>
+                  <input type="hidden" name="customer_id" id="customer-id-hidden"/>
+                  <div id="customer-suggestions" style="position:absolute;top:100%;left:0;right:0;background:#0f1e35;border:1px solid #c8932a;z-index:999;max-height:220px;overflow-y:auto;display:none;"></div>
+                </div>
+                <div id="customer-selected" style="margin-top:8px;font-size:.8rem;color:#4caf50;display:none;"></div>
               </div>
 
               <!-- New customer -->
@@ -550,7 +552,48 @@ export async function buildAdminRouter() {
         function toggleCustomer(val) {
           document.getElementById('existing-customer-section').style.display = val === 'existing' ? 'block' : 'none';
           document.getElementById('new-customer-section').style.display = val === 'new' ? 'block' : 'none';
+          if (val === 'existing') {
+            document.getElementById('customer-search').focus();
+          }
         }
+        let searchTimeout;
+        function searchCustomers(val) {
+          clearTimeout(searchTimeout);
+          const box = document.getElementById('customer-suggestions');
+          const hidden = document.getElementById('customer-id-hidden');
+          const selected = document.getElementById('customer-selected');
+          hidden.value = '';
+          selected.style.display = 'none';
+          if (val.length < 2) { box.style.display = 'none'; return; }
+          searchTimeout = setTimeout(() => {
+            fetch('/admin/api/customer-search?q=' + encodeURIComponent(val))
+              .then(r => r.json())
+              .then(results => {
+                if (!results.length) { box.innerHTML = '<div style="padding:10px 14px;color:#7a8a9a;font-size:.82rem;">No customers found</div>'; box.style.display = 'block'; return; }
+                box.innerHTML = results.map(c => \`<div onclick="selectCustomer('\${c.id}','\${c.name}','\${c.company||''}','\${c.email}')"
+                  style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #1e2d42;font-size:.82rem;"
+                  onmouseover="this.style.background='rgba(200,147,42,0.1)'" onmouseout="this.style.background=''">
+                  <span style="color:#eef1f5;font-weight:600;">\${c.name}</span>
+                  \${c.company ? '<span style="color:#7a8a9a;"> — '+c.company+'</span>' : ''}
+                  <br><span style="color:#c8932a;font-size:.75rem;">\${c.email}</span>
+                </div>\`).join('');
+                box.style.display = 'block';
+              });
+          }, 200);
+        }
+        function selectCustomer(id, name, company, email) {
+          document.getElementById('customer-id-hidden').value = id;
+          document.getElementById('customer-search').value = name + (company ? ' — ' + company : '');
+          document.getElementById('customer-suggestions').style.display = 'none';
+          const sel = document.getElementById('customer-selected');
+          sel.innerHTML = '✓ Selected: <strong>' + name + '</strong> (' + email + ')';
+          sel.style.display = 'block';
+        }
+        document.addEventListener('click', function(e) {
+          if (!e.target.closest('#existing-customer-section')) {
+            document.getElementById('customer-suggestions').style.display = 'none';
+          }
+        });
         function addLine() {
           const idx = lineCount;
           lineCount++;
@@ -719,20 +762,21 @@ export async function buildAdminRouter() {
       </tr>`).join('');
 
       const quoteLineInputs = lines.recordset.map(l => `<tr>
-        <td style="color:#7a8a9a;">${l.line_number}</td>
-        <td class="mono" style="color:#c8932a;">${l.nsn||l.part_number||'—'}
-          <input type="hidden" name="lines[${l.line_number-1}][rfq_line_id]" value="${l.id}"/>
-          <input type="hidden" name="lines[${l.line_number-1}][nsn]" value="${l.nsn||''}"/>
-          <input type="hidden" name="lines[${l.line_number-1}][part_number]" value="${l.part_number||''}"/>
-          <input type="hidden" name="lines[${l.line_number-1}][item_name]" value="${l.item_name||''}"/>
-          <input type="hidden" name="lines[${l.line_number-1}][quantity]" value="${l.quantity}"/>
-          <input type="hidden" name="lines[${l.line_number-1}][condition_code]" value="${l.condition_code||'NE'}"/>
+        <td style="color:#7a8a9a;">\${l.line_number}</td>
+        <td>
+          <div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Customer requested: \${l.nsn||l.part_number||'—'}</div>
+          <input type="text" name="lines[\${l.line_number-1}][fulfillment_part]" value="\${l.nsn||l.part_number||''}" placeholder="NSN or Part #" style="width:150px;font-family:monospace;color:#c8932a;" title="Edit to substitute a different part number"/>
+          <input type="hidden" name="lines[\${l.line_number-1}][rfq_line_id]" value="\${l.id}"/>
+          <input type="hidden" name="lines[\${l.line_number-1}][original_nsn]" value="\${l.nsn||''}"/>
+          <input type="hidden" name="lines[\${l.line_number-1}][original_part]" value="\${l.part_number||''}"/>
+          <input type="hidden" name="lines[\${l.line_number-1}][quantity]" value="\${l.quantity}"/>
+          <input type="hidden" name="lines[\${l.line_number-1}][condition_code]" value="\${l.condition_code||'NE'}"/>
         </td>
-        <td>${l.item_name||'—'}</td>
-        <td style="text-align:center;">${l.quantity}</td>
-        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_cost]" placeholder="0.00" style="width:90px;" required/></td>
-        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_price]" placeholder="0.00" style="width:90px;" required/></td>
-        <td><input type="number" min="1" name="lines[${l.line_number-1}][lead_time_days]" placeholder="7" style="width:70px;"/></td>
+        <td><input type="text" name="lines[\${l.line_number-1}][item_name]" value="\${l.item_name||''}" placeholder="Description" style="width:160px;"/></td>
+        <td style="text-align:center;">\${l.quantity}</td>
+        <td><input type="number" step="0.01" min="0" name="lines[\${l.line_number-1}][unit_cost]" placeholder="0.00" style="width:90px;" required/></td>
+        <td><input type="number" step="0.01" min="0" name="lines[\${l.line_number-1}][unit_price]" placeholder="0.00" style="width:90px;" required/></td>
+        <td><input type="number" min="1" name="lines[\${l.line_number-1}][lead_time_days]" placeholder="7" style="width:70px;"/></td>
       </tr>`).join('');
 
       const logRows = log.recordset.map(l => `<tr>
@@ -838,9 +882,17 @@ export async function buildAdminRouter() {
         const lineTotal = unitPrice * qty;
         const lineCost = unitCost * qty;
         subtotal += lineTotal;
+        // Use fulfillment_part if provided (admin may substitute a different part)
+        const fulfillPart = (l.fulfillment_part || '').trim();
+        const isNSN = /^\d{4}-\d{2}-\d{3}-\d{4}$/.test(fulfillPart);
+        const resolvedNsn = isNSN ? fulfillPart : (l.original_nsn || l.nsn || null);
+        const resolvedPart = !isNSN && fulfillPart ? fulfillPart : (l.original_part || l.part_number || null);
         return {
           ...l,
           line_number: i + 1,
+          nsn: resolvedNsn,
+          part_number: resolvedPart,
+          item_name: l.item_name || null,
           unit_price: unitPrice,
           unit_cost: unitCost,
           quantity: qty,
@@ -1196,6 +1248,31 @@ export async function buildAdminRouter() {
       res.redirect('/admin/messages');
     } catch(err) {
       res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
     }
   });
 
