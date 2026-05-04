@@ -60,7 +60,7 @@ function layout(content) {
   <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;background:#f5f5f5;">
     <div style="background:#0a1628;padding:20px 28px;border-bottom:3px solid #c8932a;">
       <h2 style="color:#c8932a;margin:0;font-size:18px;letter-spacing:.06em;">JUPITER ONE USA LLC</h2>
-      <p style="color:#aaa;margin:4px 0 0;font-size:12px;">NSN &amp; Aerospace Component Sourcing</p>
+      <p style="color:#aaa;margin:4px 0 0;font-size:12px;">Aerospace &amp; Defense Component Supplier</p>
     </div>
     <div style="background:#fff;padding:28px;">
       ${content}
