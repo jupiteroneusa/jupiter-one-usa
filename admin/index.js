@@ -269,21 +269,30 @@ export async function buildAdminRouter() {
     try {
       const pool = await getPool();
       const r = pool.request().input('lim', sql.Int, pageSize).input('off', sql.Int, offset);
+      const refFilter = req.query.ref || '';
       let where = '';
-      if (status) { r.input('status', sql.NVarChar, status); where = 'WHERE h.status=@status'; }
+      let whereClauses = [];
+      if (status) { r.input('status', sql.NVarChar, status); whereClauses.push('h.status=@status'); }
+      if (refFilter) { r.input('refFilter', sql.NVarChar, refFilter); whereClauses.push('h.customer_ref=@refFilter'); }
+      if (whereClauses.length) where = 'WHERE ' + whereClauses.join(' AND ');
 
       // Count query
-      const countQ = await pool.request().input('status2', sql.NVarChar, status || null).query(`
+      const countQ = await pool.request()
+        .input('status2', sql.NVarChar, status || null)
+        .input('refFilter2', sql.NVarChar, refFilter || null)
+        .query(`
         SELECT COUNT(*) AS total FROM rfq_headers h
         JOIN customers c ON c.id=h.customer_id
-        ${status ? 'WHERE h.status=@status2' : ''}
+        WHERE (1=1)
+          ${status ? 'AND h.status=@status2' : ''}
+          ${refFilter ? 'AND h.customer_ref=@refFilter2' : ''}
       `);
       const totalRows = countQ.recordset[0].total;
       const totalPages = Math.ceil(totalRows / pageSize);
 
       const result = await r.query(`
         SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
-          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, h.customer_ref,
+          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, h.customer_ref, h.customer_ref,
           COUNT(l.id) AS line_count
         FROM rfq_headers h
         JOIN customers c ON c.id=h.customer_id
@@ -308,6 +317,7 @@ export async function buildAdminRouter() {
         <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
         <td><a href="/admin/customers/${r.customer_id}" style="color:#c8932a;">${r.customer_name}</a><br><span style="font-size:.75rem;color:#7a8a9a;">${r.company||''}</span></td>
         <td style="color:#7a8a9a;font-size:.8rem;">${r.email}</td>
+        <td>${r.customer_ref ? `<a href="/admin/rfqs?ref=${encodeURIComponent(r.customer_ref)}" style="color:#c8932a;font-size:.8rem;font-family:monospace;">${r.customer_ref}</a>` : '<span style="color:#555;">—</span>'}</td>
         <td>${r.line_count}</td>
         <td>${statusBadge(r.priority)}</td>
         <td>${statusBadge(r.status)}</td>
@@ -316,7 +326,7 @@ export async function buildAdminRouter() {
       </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No RFQs found</td></tr>';
 
       // Pagination controls
-      const baseUrl = (p) => `/admin/rfqs?status=${status}&sort=${sortCol}&dir=${sortDir}&page=${p}&pageSize=${pageSize}`;
+      const baseUrl = (p) => `/admin/rfqs?status=${status}&sort=${sortCol}&dir=${sortDir}&page=${p}&pageSize=${pageSize}${refFilter?'&ref='+encodeURIComponent(refFilter):''}`;
       const pageSizeOptions = [10,25,50,100].map(n =>
         `<option value="${n}" ${n===pageSize?'selected':''}>${n} per page</option>`).join('');
 
@@ -351,8 +361,8 @@ export async function buildAdminRouter() {
         </div>`;
 
       res.send(page('RFQs','rfqs',`
-        <div class="page-title">RFQs</div>
-        <div class="page-sub">All customer requests for quotation</div>
+        <div class="page-title">RFQs${refFilter ? ' — Ref: '+refFilter : ''}</div>
+        <div class="page-sub">${refFilter ? '<a href="/admin/rfqs" style="color:#c8932a;">← Clear filter</a> &nbsp;|&nbsp; RFQs for ref: <strong style="color:#c8932a;">'+refFilter+'</strong>' : 'All customer requests for quotation'}</div>
         <div class="filter-bar">${filters}</div>
         <div class="card">
           <table><thead><tr>
@@ -1136,6 +1146,7 @@ export async function buildAdminRouter() {
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(q.created_at).toLocaleDateString()}</td>
       </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No quotes yet</td></tr>';
       res.send(page('Quotes','quotes',`
+        ${SORT_SCRIPT}
         <div class="page-title">Quotes</div>
         <div class="page-sub">All customer quotes</div>
         <div class="card">
