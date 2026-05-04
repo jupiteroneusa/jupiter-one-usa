@@ -1112,6 +1112,7 @@ export async function buildAdminRouter() {
       const result = await pool.request().query(`
         SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at,
           q.rfq_id, q.customer_id,
+          q.rfq_id, q.customer_id,
           c.first_name+' '+c.last_name AS customer_name, c.company, h.rfq_number
         FROM quotes q
         JOIN customers c ON c.id=q.customer_id
