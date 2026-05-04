@@ -807,7 +807,7 @@ export async function buildAdminRouter() {
           <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${rfq.phone||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Priority</div><div class="detail-value">${statusBadge(rfq.priority)}</div></div>
           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(rfq.status)}</div></div>
-          ${rfq.customer_ref ? `<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">${rfq.customer_ref}</div></div>` : ''}
+          ${rfq.customer_ref ? `<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value"><a href="/admin/rfqs?ref=${rfq.customer_ref}" style="color:#c8932a;font-family:monospace;">${rfq.customer_ref}</a></div></div>` : ''}
         </div>
         ${rfq.notes ? `<div class="card" style="margin-bottom:20px;"><div class="card-header">Notes from Customer</div><div class="card-body" style="color:#7a8a9a;">${rfq.notes}</div></div>` : ''}
         <div class="card">
