@@ -762,21 +762,20 @@ export async function buildAdminRouter() {
       </tr>`).join('');
 
       const quoteLineInputs = lines.recordset.map(l => `<tr>
-        <td style="color:#7a8a9a;">\${l.line_number}</td>
+        <td style="color:#7a8a9a;">${l.line_number}</td>
         <td>
-          <div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Customer requested: \${l.nsn||l.part_number||'—'}</div>
-          <input type="text" name="lines[\${l.line_number-1}][fulfillment_part]" value="\${l.nsn||l.part_number||''}" placeholder="NSN or Part #" style="width:150px;font-family:monospace;color:#c8932a;" title="Edit to substitute a different part number"/>
-          <input type="hidden" name="lines[\${l.line_number-1}][rfq_line_id]" value="\${l.id}"/>
-          <input type="hidden" name="lines[\${l.line_number-1}][original_nsn]" value="\${l.nsn||''}"/>
-          <input type="hidden" name="lines[\${l.line_number-1}][original_part]" value="\${l.part_number||''}"/>
-          <input type="hidden" name="lines[\${l.line_number-1}][quantity]" value="\${l.quantity}"/>
-          <input type="hidden" name="lines[\${l.line_number-1}][condition_code]" value="\${l.condition_code||'NE'}"/>
+          <div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Requested: ${l.nsn||l.part_number||'—'}</div>
+          <input type="text" name="lines[${l.line_number-1}][fulfillment_part]" value="${l.nsn||l.part_number||''}" placeholder="NSN or Part #" style="width:150px;font-family:monospace;color:#c8932a;" title="Edit to substitute a different part number"/>
+          <input type="hidden" name="lines[${l.line_number-1}][rfq_line_id]" value="${l.id}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][original_nsn]" value="${l.nsn||''}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][original_part]" value="${l.part_number||''}"/>
+          <input type="hidden" name="lines[${l.line_number-1}][condition_code]" value="${l.condition_code||'NE'}"/>
         </td>
-        <td><input type="text" name="lines[\${l.line_number-1}][item_name]" value="\${l.item_name||''}" placeholder="Description" style="width:160px;"/></td>
-        <td style="text-align:center;">\${l.quantity}</td>
-        <td><input type="number" step="0.01" min="0" name="lines[\${l.line_number-1}][unit_cost]" placeholder="0.00" style="width:90px;" required/></td>
-        <td><input type="number" step="0.01" min="0" name="lines[\${l.line_number-1}][unit_price]" placeholder="0.00" style="width:90px;" required/></td>
-        <td><input type="number" min="1" name="lines[\${l.line_number-1}][lead_time_days]" placeholder="7" style="width:70px;"/></td>
+        <td><input type="text" name="lines[${l.line_number-1}][item_name]" value="${l.item_name||''}" placeholder="Description" style="width:160px;"/></td>
+        <td><input type="number" min="1" name="lines[${l.line_number-1}][quantity]" value="${l.quantity||1}" style="width:65px;" required/></td>
+        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_cost]" placeholder="0.00" style="width:90px;" required/></td>
+        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_price]" placeholder="0.00" style="width:90px;" required/></td>
+        <td><input type="text" name="lines[${l.line_number-1}][lead_time_days]" placeholder="e.g. 7-10 days" style="width:110px;"/></td>
       </tr>`).join('');
 
       const logRows = log.recordset.map(l => `<tr>
@@ -819,7 +818,7 @@ export async function buildAdminRouter() {
             <form method="POST" action="/admin/rfqs/${rfq.id}/quote">
               <div style="overflow-x:auto;">
                 <table style="width:100%;margin-bottom:16px;">
-                  <thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Unit Cost ($)</th><th>Unit Price ($)</th><th>Lead Days</th></tr></thead>
+                  <thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Unit Cost ($)</th><th>Unit Price ($)</th><th>Lead Time</th></tr></thead>
                   <tbody>${quoteLineInputs}</tbody>
                 </table>
               </div>
@@ -878,7 +877,7 @@ export async function buildAdminRouter() {
       const processedLines = linesArr.map((l, i) => {
         const unitPrice = parseFloat(l.unit_price) || 0;
         const unitCost = parseFloat(l.unit_cost) || 0;
-        const qty = parseInt(l.quantity) || 1;
+        const qty = parseInt(l.quantity) || 1; // qty now editable in form
         const lineTotal = unitPrice * qty;
         const lineCost = unitCost * qty;
         subtotal += lineTotal;
@@ -893,6 +892,7 @@ export async function buildAdminRouter() {
           nsn: resolvedNsn,
           part_number: resolvedPart,
           item_name: l.item_name || null,
+          lead_time_text: l.lead_time_days?.toString().trim() || null,
           unit_price: unitPrice,
           unit_cost: unitCost,
           quantity: qty,
@@ -941,7 +941,7 @@ export async function buildAdminRouter() {
           .input('lineMargin', sql.Decimal(12,2), l.line_margin)
           .input('markupPct', sql.Decimal(5,2), l.markup_pct)
           .input('marginPct', sql.Decimal(5,2), l.margin_pct)
-          .input('leadTime', sql.Int, parseInt(l.lead_time_days) || null)
+          .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
           .query(`
             INSERT INTO quote_lines
               (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, markup_pct, margin_pct, lead_time_days)
