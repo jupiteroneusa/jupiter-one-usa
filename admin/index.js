@@ -825,7 +825,7 @@ export async function buildAdminRouter() {
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
                 <div>
                   <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div>
-                  <input type="text" name="payment_terms" value="Credit Card, COD, or Wire Transfer" style="width:100%;"/>
+                  <input type="text" name="payment_terms" value="Credit Card or Wire Transfer" style="width:100%;"/>
                 </div>
                 <div>
                   <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div>
@@ -916,7 +916,7 @@ export async function buildAdminRouter() {
         .input('totalCost', sql.Decimal(12,2), totalCost)
         .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
         .input('validUntil', sql.Date, validUntil)
-        .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card, COD, or Wire Transfer')
+        .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
         .input('notes', sql.NVarChar(sql.MAX), notes || null)
         .query(`
           INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, status)
