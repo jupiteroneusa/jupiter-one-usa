@@ -283,7 +283,7 @@ export async function buildAdminRouter() {
 
       const result = await r.query(`
         SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
-          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email,
+          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, h.customer_ref,
           COUNT(l.id) AS line_count
         FROM rfq_headers h
         JOIN customers c ON c.id=h.customer_id
@@ -359,6 +359,7 @@ export async function buildAdminRouter() {
             ${sortLink('rfq_number','RFQ #')}
             ${sortLink('customer','Customer')}
             <th>Email</th>
+            <th>Cust Ref</th>
             ${sortLink('lines','Lines')}
             ${sortLink('priority','Priority')}
             ${sortLink('status','Status')}
