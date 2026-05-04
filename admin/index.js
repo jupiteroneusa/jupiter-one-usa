@@ -289,7 +289,7 @@ export async function buildAdminRouter() {
         JOIN customers c ON c.id=h.customer_id
         LEFT JOIN rfq_lines l ON l.rfq_id=h.id
         ${where}
-        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.id,c.first_name,c.last_name,c.company,c.email
+        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,h.customer_ref,c.id,c.first_name,c.last_name,c.company,c.email
         ORDER BY ${orderBy} ${sortDir}
         OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY
       `);
