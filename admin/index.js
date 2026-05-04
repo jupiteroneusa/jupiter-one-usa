@@ -1085,8 +1085,8 @@ export async function buildAdminRouter() {
         ORDER BY q.created_at DESC
       `);
       const rows = result.recordset.map(q => `<tr>
-        <td class="mono text-gold">${q.quote_number}</td>
-        <td class="mono" style="color:#7a8a9a;">${q.rfq_number}</td>
+        <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a></td>
+        <td class="mono"><a href="/admin/rfqs/${q.rfq_id}" style="color:#c8932a;">${q.rfq_number}</a></td>
         <td>${q.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${q.company||''}</span></td>
         <td style="font-weight:600;">$${parseFloat(q.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td>${statusBadge(q.status)}</td>
