@@ -492,6 +492,10 @@ export async function buildAdminRouter() {
                 <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes</div>
                 <textarea name="notes" rows="3" style="width:100%;" placeholder="Customer notes, special requirements, delivery instructions..."></textarea>
               </div>
+              <div style="margin-top:12px;">
+                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Customer Reference <span style="color:#555;">(optional — customer's PO#, project code, etc.)</span></div>
+                <input type="text" name="customer_ref" placeholder="e.g. PO-12345, Project Alpha" style="width:100%;"/>
+              </div>
             </div>
           </div>
 
@@ -632,7 +636,7 @@ export async function buildAdminRouter() {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
-      const { customer_type, customer_id, priority, status, source, notes,
+      const { customer_type, customer_id, priority, status, source, notes, customer_ref,
               new_first_name, new_last_name, new_email, new_phone, new_company, new_country } = req.body;
       const linesRaw = req.body.lines || {};
       const linesArr = Object.values(linesRaw).filter(l => l.quantity && parseInt(l.quantity) > 0);
@@ -801,6 +805,7 @@ export async function buildAdminRouter() {
           <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${rfq.phone||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Priority</div><div class="detail-value">${statusBadge(rfq.priority)}</div></div>
           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(rfq.status)}</div></div>
+          ${rfq.customer_ref ? `<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">${rfq.customer_ref}</div></div>` : ''}
         </div>
         ${rfq.notes ? `<div class="card" style="margin-bottom:20px;"><div class="card-header">Notes from Customer</div><div class="card-body" style="color:#7a8a9a;">${rfq.notes}</div></div>` : ''}
         <div class="card">
