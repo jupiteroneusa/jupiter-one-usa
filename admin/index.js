@@ -112,7 +112,7 @@ function requireAuth(req, res) {
 // Sortable table script for dashboard
 const SORT_SCRIPT = `
 <script>
-function sortTable(th, col) {
+function sortTable(th, col, dataAttr) {
   const table = th.closest('table');
   const tbody = table.querySelector('tbody');
   const rows = Array.from(tbody.querySelectorAll('tr'));
@@ -121,16 +121,16 @@ function sortTable(th, col) {
   allTh.forEach(t => t.classList.remove('sort-asc','sort-desc'));
   th.classList.add(asc ? 'sort-asc' : 'sort-desc');
   rows.sort((a, b) => {
-    const av = a.cells[col]?.innerText.trim() || '';
-    const bv = b.cells[col]?.innerText.trim() || '';
-    // Handle RFQ/PO numbers like RFQ-2026-00019 — sort by trailing sequence number
-    const rfqMatch = av.match(/(\d+)$/) && bv.match(/(\d+)$/);
-    if (rfqMatch && av.includes('-') && bv.includes('-')) {
-      const an = parseInt(av.match(/(\d+)$/)[1]);
-      const bn = parseInt(bv.match(/(\d+)$/)[1]);
-      return asc ? an - bn : bn - an;
+    const cell_a = a.cells[col];
+    const cell_b = b.cells[col];
+    // Use data attribute if specified (e.g. for RFQ # numeric sort)
+    if (dataAttr && cell_a && cell_b) {
+      const an = parseFloat(cell_a.getAttribute(dataAttr) || cell_a.innerText);
+      const bn = parseFloat(cell_b.getAttribute(dataAttr) || cell_b.innerText);
+      if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
     }
-    // Plain numbers
+    const av = cell_a?.innerText.trim() || '';
+    const bv = cell_b?.innerText.trim() || '';
     const an = parseFloat(av.replace(/[^0-9.-]/g,''));
     const bn = parseFloat(bv.replace(/[^0-9.-]/g,''));
     if (!isNaN(an) && !isNaN(bn) && av !== '' && bv !== '') return asc ? an - bn : bn - an;
@@ -201,18 +201,24 @@ export async function buildAdminRouter() {
         GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.id,c.first_name,c.last_name,c.company
         ORDER BY h.submitted_at DESC
       `);
-      const rows = recent.recordset.map(r => `<tr>
-        <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
+      const rows = recent.recordset.map(r => {
+        const seq = parseInt((r.rfq_number||'').split('-').pop()) || 0;
+        return `<tr>
+        <td class="mono text-gold" data-val="${seq}"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
         <td><a href="/admin/customers/${r.customer_id}" style="color:#c8932a;">${r.customer_name}</a><br><span style="font-size:.75rem;color:#7a8a9a;">${r.company||''}</span></td>
         <td>${r.line_count}</td>
         <td>${statusBadge(r.priority)}</td>
         <td>${statusBadge(r.status)}</td>
         <td>${new Date(r.submitted_at).toLocaleDateString()}</td>
         <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
       res.send(page('Dashboard', 'dashboard', `
         ${SORT_SCRIPT}
-        <div class="page-title">Dashboard</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div class="page-title">Dashboard</div>
+          <a href="/admin/rfqs/create" class="btn btn-gold">+ Create Manual RFQ</a>
+        </div>
         <div class="page-sub">Jupiter One USA — Admin Overview</div>
         <div class="stat-grid">
           <div class="stat"><div class="stat-num">${s.new_rfqs}</div><div class="stat-label">New RFQs</div></div>
@@ -224,7 +230,7 @@ export async function buildAdminRouter() {
         <div class="card">
           <div class="card-header">Recent RFQs <span style="font-size:.72rem;color:#7a8a9a;font-weight:400;">Click column headers to sort</span></div>
           <table><thead><tr>
-            <th class="sortable" onclick="sortTable(this,0)">RFQ #</th>
+            <th class="sortable" onclick="sortTable(this,0,'data-val')">RFQ #</th>
             <th class="sortable" onclick="sortTable(this,1)">Customer</th>
             <th class="sortable" onclick="sortTable(this,2)">Lines</th>
             <th class="sortable" onclick="sortTable(this,3)">Priority</th>
@@ -367,6 +373,324 @@ export async function buildAdminRouter() {
     }
   });
 
+  // Create Manual RFQ — GET form
+  router.get('/rfqs/create', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      // Load existing customers for the dropdown
+      const custResult = await pool.request().query(`
+        SELECT id, first_name+' '+last_name AS name, email, company
+        FROM customers ORDER BY last_name, first_name
+      `);
+      const custOptions = custResult.recordset.map(c =>
+        `<option value="${c.id}">${c.name}${c.company ? ' — '+c.company : ''} (${c.email})</option>`
+      ).join('');
+
+      const errorMsg = req.query.error ? `<div class="alert alert-error">${decodeURIComponent(req.query.error)}</div>` : '';
+
+      res.send(page('Create Manual RFQ', 'rfqs', `
+        ${errorMsg}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div class="page-title">Create Manual RFQ</div>
+          <a href="/admin/rfqs" class="btn btn-outline btn-sm">← Back to RFQs</a>
+        </div>
+        <div class="page-sub">Enter RFQ from a verbal or email order</div>
+
+        <form method="POST" action="/admin/rfqs/create" id="manual-rfq-form">
+
+          <!-- Customer Section -->
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header">Customer</div>
+            <div class="card-body">
+              <div style="margin-bottom:16px;">
+                <div style="display:flex;gap:16px;margin-bottom:12px;">
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;">
+                    <input type="radio" name="customer_type" value="existing" checked onchange="toggleCustomer(this.value)" style="accent-color:#c8932a;width:auto;border:none;padding:0;"/> Use Existing Customer
+                  </label>
+                  <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;">
+                    <input type="radio" name="customer_type" value="new" onchange="toggleCustomer(this.value)" style="accent-color:#c8932a;width:auto;border:none;padding:0;"/> Create New Customer
+                  </label>
+                </div>
+              </div>
+
+              <!-- Existing customer -->
+              <div id="existing-customer-section">
+                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Select Customer</div>
+                <select name="customer_id" style="width:100%;max-width:500px;">
+                  <option value="">— Select a customer —</option>
+                  ${custOptions}
+                </select>
+              </div>
+
+              <!-- New customer -->
+              <div id="new-customer-section" style="display:none;">
+                <div class="detail-grid" style="margin-bottom:0;">
+                  <div>
+                    <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">First Name *</div>
+                    <input type="text" name="new_first_name" style="width:100%;"/>
+                  </div>
+                  <div>
+                    <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Last Name *</div>
+                    <input type="text" name="new_last_name" style="width:100%;"/>
+                  </div>
+                  <div>
+                    <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Email *</div>
+                    <input type="email" name="new_email" style="width:100%;"/>
+                  </div>
+                  <div>
+                    <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Phone *</div>
+                    <input type="text" name="new_phone" style="width:100%;"/>
+                  </div>
+                  <div>
+                    <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Company</div>
+                    <input type="text" name="new_company" style="width:100%;"/>
+                  </div>
+                  <div>
+                    <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Country</div>
+                    <input type="text" name="new_country" style="width:100%;"/>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RFQ Details -->
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header">RFQ Details</div>
+            <div class="card-body">
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Priority</div>
+                  <select name="priority" style="width:100%;">
+                    <option value="Standard">Standard</option>
+                    <option value="Urgent">Urgent</option>
+                    <option value="AOG">AOG</option>
+                  </select>
+                </div>
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Status</div>
+                  <select name="status" style="width:100%;">
+                    <option value="Submitted">Submitted</option>
+                    <option value="Under Review">Under Review</option>
+                    <option value="Sourcing">Sourcing</option>
+                  </select>
+                </div>
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Source</div>
+                  <select name="source" style="width:100%;">
+                    <option value="Phone">Phone</option>
+                    <option value="Email">Email</option>
+                    <option value="In Person">In Person</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes</div>
+                <textarea name="notes" rows="3" style="width:100%;" placeholder="Customer notes, special requirements, delivery instructions..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Line Items -->
+          <div class="card" style="margin-bottom:20px;">
+            <div class="card-header">
+              Line Items
+              <button type="button" class="btn btn-outline btn-sm" onclick="addLine()">+ Add Line</button>
+            </div>
+            <div style="overflow-x:auto;">
+              <table style="width:100%;">
+                <thead><tr>
+                  <th>#</th>
+                  <th>NSN / Part Number</th>
+                  <th>Description</th>
+                  <th>Qty *</th>
+                  <th>Condition</th>
+                  <th>Target Price ($)</th>
+                  <th>Notes</th>
+                  <th></th>
+                </tr></thead>
+                <tbody id="lines-tbody">
+                  <tr id="line-1">
+                    <td style="color:#7a8a9a;">1</td>
+                    <td><input type="text" name="lines[0][part]" placeholder="NSN or Part #" style="width:150px;"/></td>
+                    <td><input type="text" name="lines[0][description]" placeholder="Item description" style="width:180px;"/></td>
+                    <td><input type="number" name="lines[0][quantity]" value="1" min="1" style="width:70px;" required/></td>
+                    <td>
+                      <select name="lines[0][condition]" style="width:80px;">
+                        <option value="NE">NE</option>
+                        <option value="NS">NS</option>
+                        <option value="AR">AR</option>
+                        <option value="OH">OH</option>
+                        <option value="RN">RN</option>
+                        <option value="RP">RP</option>
+                        <option value="RX">RX</option>
+                        <option value="SV">SV</option>
+                        <option value="UN">UN</option>
+                      </select>
+                    </td>
+                    <td><input type="number" step="0.01" min="0" name="lines[0][target_price]" placeholder="0.00" style="width:90px;"/></td>
+                    <td><input type="text" name="lines[0][notes]" placeholder="Notes" style="width:140px;"/></td>
+                    <td><button type="button" onclick="removeLine(1)" class="btn btn-outline btn-sm" style="color:#e05050;border-color:#e05050;">✕</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;">
+            <button type="submit" class="btn btn-gold" style="padding:11px 28px;">Create RFQ →</button>
+            <a href="/admin/rfqs" class="btn btn-outline" style="padding:11px 20px;">Cancel</a>
+          </div>
+        </form>
+
+        <script>
+        let lineCount = 1;
+        function toggleCustomer(val) {
+          document.getElementById('existing-customer-section').style.display = val === 'existing' ? 'block' : 'none';
+          document.getElementById('new-customer-section').style.display = val === 'new' ? 'block' : 'none';
+        }
+        function addLine() {
+          const idx = lineCount;
+          lineCount++;
+          const num = idx + 1;
+          const row = document.createElement('tr');
+          row.id = 'line-' + num;
+          row.innerHTML = \`
+            <td style="color:#7a8a9a;">\${num}</td>
+            <td><input type="text" name="lines[\${idx}][part]" placeholder="NSN or Part #" style="width:150px;"/></td>
+            <td><input type="text" name="lines[\${idx}][description]" placeholder="Item description" style="width:180px;"/></td>
+            <td><input type="number" name="lines[\${idx}][quantity]" value="1" min="1" style="width:70px;" required/></td>
+            <td><select name="lines[\${idx}][condition]" style="width:80px;">
+              <option value="NE">NE</option><option value="NS">NS</option><option value="AR">AR</option>
+              <option value="OH">OH</option><option value="RN">RN</option><option value="RP">RP</option>
+              <option value="RX">RX</option><option value="SV">SV</option><option value="UN">UN</option>
+            </select></td>
+            <td><input type="number" step="0.01" min="0" name="lines[\${idx}][target_price]" placeholder="0.00" style="width:90px;"/></td>
+            <td><input type="text" name="lines[\${idx}][notes]" placeholder="Notes" style="width:140px;"/></td>
+            <td><button type="button" onclick="removeLine(\${num})" class="btn btn-outline btn-sm" style="color:#e05050;border-color:#e05050;">✕</button></td>
+          \`;
+          document.getElementById('lines-tbody').appendChild(row);
+        }
+        function removeLine(num) {
+          const row = document.getElementById('line-' + num);
+          if (row && document.getElementById('lines-tbody').children.length > 1) row.remove();
+        }
+        </script>
+      `));
+    } catch(err) {
+      res.send(page('Create RFQ', 'rfqs', `<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Create Manual RFQ — POST handler
+  router.post('/rfqs/create', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const { customer_type, customer_id, priority, status, source, notes,
+              new_first_name, new_last_name, new_email, new_phone, new_company, new_country } = req.body;
+      const linesRaw = req.body.lines || {};
+      const linesArr = Object.values(linesRaw).filter(l => l.quantity && parseInt(l.quantity) > 0);
+
+      if (!linesArr.length) {
+        return res.redirect('/admin/rfqs/create?error='+encodeURIComponent('At least one line item is required.'));
+      }
+
+      let finalCustomerId;
+
+      if (customer_type === 'new') {
+        // Validate required new customer fields
+        if (!new_first_name || !new_last_name || !new_email || !new_phone) {
+          return res.redirect('/admin/rfqs/create?error='+encodeURIComponent('First name, last name, email and phone are required for new customers.'));
+        }
+        // Check if email already exists
+        const existing = await pool.request()
+          .input('email', sql.NVarChar, new_email.toLowerCase())
+          .query('SELECT id FROM customers WHERE email=@email');
+        if (existing.recordset.length) {
+          return res.redirect('/admin/rfqs/create?error='+encodeURIComponent('A customer with that email already exists. Use "existing customer" and select them.'));
+        }
+        // Create the customer (no password — admin-created, they can reset later)
+        const bcrypt = await import('bcryptjs');
+        const tempHash = await bcrypt.default.hash(Math.random().toString(36), 10);
+        const newCust = await pool.request()
+          .input('firstName', sql.NVarChar(100), new_first_name.trim())
+          .input('lastName', sql.NVarChar(100), new_last_name.trim())
+          .input('email', sql.NVarChar(255), new_email.toLowerCase().trim())
+          .input('phone', sql.NVarChar(50), new_phone.trim())
+          .input('company', sql.NVarChar(255), new_company?.trim() || null)
+          .input('country', sql.NVarChar(100), new_country?.trim() || null)
+          .input('passwordHash', sql.NVarChar(255), tempHash)
+          .query(`
+            INSERT INTO customers (first_name, last_name, email, phone, company, country, password_hash, status)
+            OUTPUT INSERTED.id
+            VALUES (@firstName, @lastName, @email, @phone, @company, @country, @passwordHash, 'Active')
+          `);
+        finalCustomerId = newCust.recordset[0].id;
+      } else {
+        if (!customer_id) {
+          return res.redirect('/admin/rfqs/create?error='+encodeURIComponent('Please select a customer.'));
+        }
+        finalCustomerId = parseInt(customer_id);
+      }
+
+      // Generate RFQ number
+      const { generateNumber } = await import('../db/numbering.js');
+      const rfqNumber = await generateNumber('RFQ');
+
+      // Insert RFQ header
+      const rfqResult = await pool.request()
+        .input('customerId', sql.BigInt, finalCustomerId)
+        .input('rfqNumber', sql.NVarChar(20), rfqNumber)
+        .input('status', sql.NVarChar(50), status || 'Submitted')
+        .input('priority', sql.NVarChar(20), priority || 'Standard')
+        .input('notes', sql.NVarChar(sql.MAX), notes || null)
+        .input('source', sql.NVarChar(50), source || 'Phone')
+        .query(`
+          INSERT INTO rfq_headers (customer_id, rfq_number, status, priority, notes)
+          OUTPUT INSERTED.id
+          VALUES (@customerId, @rfqNumber, @status, @priority, @notes)
+        `);
+      const rfqId = rfqResult.recordset[0].id;
+
+      // Insert line items
+      for (let i = 0; i < linesArr.length; i++) {
+        const l = linesArr[i];
+        const partVal = (l.part || '').trim();
+        // Detect if it looks like an NSN (contains dashes and right length) or part number
+        const isNSN = /^\d{4}-\d{2}-\d{3}-\d{4}$/.test(partVal);
+        await pool.request()
+          .input('rfqId', sql.BigInt, rfqId)
+          .input('lineNum', sql.Int, i + 1)
+          .input('nsn', sql.NVarChar(20), isNSN ? partVal : null)
+          .input('partNum', sql.NVarChar(100), !isNSN && partVal ? partVal : null)
+          .input('itemName', sql.NVarChar(255), l.description?.trim() || null)
+          .input('qty', sql.Int, parseInt(l.quantity) || 1)
+          .input('condition', sql.NVarChar(5), l.condition || 'NE')
+          .input('targetPrice', sql.Decimal(10,2), parseFloat(l.target_price) || null)
+          .input('notes', sql.NVarChar(500), l.notes?.trim() || null)
+          .query(`
+            INSERT INTO rfq_lines (rfq_id, line_number, nsn, part_number, item_name, quantity, condition_code, target_price, notes)
+            VALUES (@rfqId, @lineNum, @nsn, @partNum, @itemName, @qty, @condition, @targetPrice, @notes)
+          `);
+      }
+
+      // Log initial status
+      await pool.request()
+        .input('rfqId', sql.BigInt, rfqId)
+        .input('status', sql.NVarChar(50), status || 'Submitted')
+        .input('note', sql.NVarChar(500), `Manual RFQ created by admin via ${source || 'Phone'}`)
+        .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, NULL, @status, @note)`);
+
+      res.redirect('/admin/rfqs/' + rfqId + '?created=1');
+    } catch(err) {
+      console.error('Manual RFQ create error:', err);
+      res.redirect('/admin/rfqs/create?error=' + encodeURIComponent(err.message));
+    }
+  });
+
   // RFQ Detail
   router.get('/rfqs/:id', async (req, res) => {
     if (!requireAuth(req, res)) return;
@@ -382,7 +706,7 @@ export async function buildAdminRouter() {
       const log = await pool.request().input('id', sql.BigInt, req.params.id)
         .query(`SELECT * FROM rfq_status_log WHERE rfq_id=@id ORDER BY created_at ASC`);
 
-      const successMsg = req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
+      const successMsg = req.query.created ? '<div class="alert alert-success">Manual RFQ created successfully!</div>' : req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
 
       const lineRows = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
