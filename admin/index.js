@@ -78,6 +78,7 @@ function adminNav(active) {
   <div class="sidebar">
     <a href="/admin/dashboard" class="${active==='dashboard'?'active':''}">📈 Dashboard</a>
     <a href="/admin/rfqs" class="${active==='rfqs'?'active':''}">📋 RFQs</a>
+    <a href="/admin/accounts" class="${active==='accounts'?'active':''}">🏢 Accounts</a>
     <a href="/admin/customers" class="${active==='customers'?'active':''}">👥 Customers</a>
     <a href="/admin/quotes" class="${active==='quotes'?'active':''}">💰 Quotes</a>
     <a href="/admin/orders" class="${active==='orders'?'active':''}">📦 Orders</a>
