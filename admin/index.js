@@ -695,10 +695,11 @@ export async function buildAdminRouter() {
         .input('priority', sql.NVarChar(20), priority || 'Standard')
         .input('notes', sql.NVarChar(sql.MAX), notes || null)
         .input('source', sql.NVarChar(50), source || 'Phone')
+        .input('customerRef', sql.NVarChar(100), customer_ref?.trim() || null)
         .query(`
-          INSERT INTO rfq_headers (customer_id, rfq_number, status, priority, notes)
+          INSERT INTO rfq_headers (customer_id, rfq_number, status, priority, notes, customer_ref)
           OUTPUT INSERTED.id
-          VALUES (@customerId, @rfqNumber, @status, @priority, @notes)
+          VALUES (@customerId, @rfqNumber, @status, @priority, @notes, @customerRef)
         `);
       const rfqId = rfqResult.recordset[0].id;
 
