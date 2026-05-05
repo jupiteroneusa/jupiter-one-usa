@@ -1268,6 +1268,11 @@ export async function buildAdminRouter() {
             VALUES (@rfqId, @customerId, @quoteNumber, @subtotal, @totalAmount, @totalCost, @totalMargin, @validUntil, @paymentTerms, @notes, 'Sent')
           `);
         quote = qr.recordset[0];
+        if (!quote) {
+          const fb = await pool.request().input('qnFb', sql.NVarChar(20), quoteNumber)
+            .query('SELECT id, quote_number FROM quotes WHERE quote_number=@qnFb');
+          quote = fb.recordset[0];
+        }
         // Delete draft if exists
         try {
           await pool.request().input('rfqIdDel3', sql.BigInt, rfq.id)
