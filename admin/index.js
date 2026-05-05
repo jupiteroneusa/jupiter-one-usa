@@ -1183,7 +1183,100 @@ export async function buildAdminRouter() {
     }
   });
 
-  router.post('/rfqs/:id/quote', async (req, res) => {
+  // Generate quote PDF
+  router.get('/rfqs/:id/quote-pdf/:quoteId', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qr = await pool.request()
+        .input('id', sql.BigInt, req.params.quoteId)
+        .query(`SELECT q.*, h.rfq_number, c.first_name+' '+c.last_name AS customer_name, c.company, c.email FROM quotes q JOIN rfq_headers h ON h.id=q.rfq_id JOIN customers c ON c.id=q.customer_id WHERE q.id=@id`);
+      if (!qr.recordset.length) return res.status(404).send('Quote not found');
+      const q = qr.recordset[0];
+      const lines = await pool.request().input('qid', sql.BigInt, req.params.quoteId)
+        .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      const lineRows = lines.recordset.map(l => `<tr>
+        <td style="padding:8px;border:1px solid #ddd;font-family:monospace;">${l.nsn||l.part_number||'—'}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${l.item_name||'—'}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:center;">${l.quantity}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${l.condition_code||'NE'}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right;">$${parseFloat(l.unit_price||0).toFixed(2)}</td>
+        <td style="padding:8px;border:1px solid #ddd;text-align:right;font-weight:bold;">$${parseFloat(l.line_total||0).toFixed(2)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${l.lead_time_text||l.lead_time_days||'—'}</td>
+      </tr>`).join('');
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/><style>
+        body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#222;}
+        .header{background:#0a1628;color:#c8932a;padding:20px;margin-bottom:20px;}
+        .header h1{margin:0;font-size:22px;letter-spacing:.06em;}
+        .header p{margin:4px 0 0;color:#aaa;font-size:12px;}
+        .two-col{display:flex;gap:20px;margin-bottom:20px;}
+        .col{flex:1;border:1px solid #ddd;padding:14px;}
+        .label{font-size:10px;text-transform:uppercase;color:#888;margin-bottom:6px;}
+        table{width:100%;border-collapse:collapse;margin:20px 0;}
+        th{background:#0a1628;color:#fff;padding:10px 8px;text-align:left;font-size:12px;}
+        .total-row td{font-weight:bold;background:#f5f5f5;}
+        .terms{font-size:10px;color:#777;border-top:1px solid #ddd;padding-top:12px;margin-top:20px;}
+      </style></head><body>
+        <div class="header"><h1>JUPITER ONE USA LLC</h1><p>Aerospace &amp; Defense Component Supplier</p></div>
+        <div class="two-col">
+          <div class="col">
+            <div class="label">Bill To</div>
+            <strong>${q.customer_name}</strong><br/>
+            ${q.company||''}<br/>
+            ${q.email}
+          </div>
+          <div class="col">
+            <div class="label">Quote Details</div>
+            <table style="margin:0;border:none;"><tbody>
+              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">Quote #</td><td style="padding:2px;border:none;font-weight:bold;">${q.quote_number}</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">RFQ #</td><td style="padding:2px;border:none;">${q.rfq_number}</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">Status</td><td style="padding:2px;border:none;">QUOTED</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">Issued</td><td style="padding:2px;border:none;">${new Date().toLocaleDateString()}</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">Valid Until</td><td style="padding:2px;border:none;font-weight:bold;">${new Date(q.valid_until).toLocaleDateString()}</td></tr>
+              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">Sales Rep</td><td style="padding:2px;border:none;">Derek Torchia</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>NSN / Part#</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Total</th><th>Lead Time</th>
+          </tr></thead>
+          <tbody>${lineRows}</tbody>
+          <tfoot><tr class="total-row">
+            <td colspan="5" style="padding:10px 8px;text-align:right;border:1px solid #ddd;">Quote Total:</td>
+            <td style="padding:10px 8px;text-align:right;border:1px solid #ddd;color:#c8932a;">$${parseFloat(q.total_amount||0).toFixed(2)}</td>
+            <td style="border:1px solid #ddd;"></td>
+          </tr></tfoot>
+        </table>
+        ${q.notes ? `<div style="background:#fff8e7;border-left:3px solid #c8932a;padding:12px;font-size:12px;color:#555;">${q.notes}</div>` : ''}
+        <div class="terms">
+          <strong>Terms &amp; Conditions:</strong> Payment: Credit Card or Wire Transfer (3.5% CC fee). 
+          All orders non-cancellable once confirmed. Delivery times estimated, not guaranteed. 
+          Claims within 7 days of receipt. Quote valid 30 days. Prices subject to availability.
+        </div>
+        <div style="margin-top:20px;font-size:11px;color:#888;">
+          Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412 | DTorchia@jupiteroneusa.com
+        </div>
+      </body></html>`;
+      const puppeteer = await import('puppeteer');
+      const browser = await puppeteer.default.launch({ 
+        executablePath: '/home/puppeteer-cache/chrome/linux-147.0.7727.57/chrome-linux64/chrome',
+        args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'] 
+      });
+      const page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      const pdf = await page.pdf({ format: 'A4', margin: { top:'10mm', bottom:'10mm', left:'10mm', right:'10mm' } });
+      await browser.close();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="Quote-${q.quote_number}.pdf"`);
+      res.send(pdf);
+    } catch(err) {
+      console.error('PDF error:', err.message);
+      res.status(500).send('PDF generation failed: ' + err.message);
+    }
+  });
+
+    router.post('/rfqs/:id/quote', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();

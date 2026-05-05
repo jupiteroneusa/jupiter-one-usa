@@ -43,9 +43,9 @@ async function logEmail({ to, subject, type, entityType, entityId, success, erro
   } catch (_) {}
 }
 
-async function send({ to, bcc, subject, html, type, entityType, entityId, sentBy }) {
+async function send({ to, bcc, cc, subject, html, type, entityType, entityId, sentBy }) {
   try {
-    const mailOpts = { from: FROM, to, subject, html }; if (bcc) mailOpts.bcc = bcc; await transporter.sendMail(mailOpts); if (cc) mailOpts.cc = cc;
+    const mailOpts = { from: FROM, to, subject, html }; if (bcc) mailOpts.bcc = bcc; if (cc) mailOpts.cc = cc; await transporter.sendMail(mailOpts);
     await logEmail({ to, subject, type, entityType, entityId, success: true, sentBy });
   } catch (err) {
     await logEmail({ to, subject, type, entityType, entityId, success: false, error: err.message, sentBy });
