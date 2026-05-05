@@ -918,7 +918,7 @@ export async function buildAdminRouter() {
           '<td><input type="number" min="1" name="lines['+n+'][quantity]" value="'+l.quantity+'" style="width:60px;" required/></td>' +
           '<td><input type="number" step="0.01" min="0" name="lines['+n+'][unit_cost]" value="'+l.unit_cost+'" style="width:80px;" required/></td>' +
           '<td><input type="number" step="0.01" min="0" name="lines['+n+'][unit_price]" value="'+l.unit_price+'" style="width:80px;" required/></td>' +
-          '<td><input type="text" name="lines['+n+'][lead_time_days]" value="'+(l.lead_time_days||'')+'" style="width:100px;"/></td>' +
+          '<td><input type="text" name="lines['+n+'][lead_time_days]" value="'+(l.lead_time_text||l.lead_time_days||'')+'" style="width:100px;"/></td>' +
           '<td><button type="button" onclick="removeQRow('+l.line_number+')" class="btn btn-outline btn-sm" style="color:#e05050;">X</button></td></tr>';
       }).join('');
       const nextLine = draftLines.recordset.length + 1;
@@ -1037,7 +1037,8 @@ export async function buildAdminRouter() {
             .input('marginPct', sql.Decimal(5,2), l.margin_pct)
             .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
             .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
-            .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,line_margin,markup_pct,margin_pct,lead_time_days) VALUES (@quoteId,@rfqLineId,@lineNum,@nsn,@partNum,@itemName,@condition,@qty,@unitCost,@unitPrice,@lineTotal,@lineCost,@lineMargin,@markupPct,@marginPct,@leadTime)`);
+            .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'')+'' || null)
+            .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,line_margin,markup_pct,margin_pct,lead_time_days,lead_time_text) VALUES (@quoteId,@rfqLineId,@lineNum,@nsn,@partNum,@itemName,@condition,@qty,@unitCost,@unitPrice,@lineTotal,@lineCost,@lineMargin,@markupPct,@marginPct,@leadTime,@leadTimeText)`);
         }
         return res.json({ ok: true, message: 'Draft updated' });
       } else {
@@ -1074,7 +1075,8 @@ export async function buildAdminRouter() {
             .input('marginPct', sql.Decimal(5,2), l.margin_pct)
             .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
             .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
-            .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,line_margin,markup_pct,margin_pct,lead_time_days) VALUES (@quoteId,@rfqLineId,@lineNum,@nsn,@partNum,@itemName,@condition,@qty,@unitCost,@unitPrice,@lineTotal,@lineCost,@lineMargin,@markupPct,@marginPct,@leadTime)`);
+            .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'')+'' || null)
+            .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,line_margin,markup_pct,margin_pct,lead_time_days,lead_time_text) VALUES (@quoteId,@rfqLineId,@lineNum,@nsn,@partNum,@itemName,@condition,@qty,@unitCost,@unitPrice,@lineTotal,@lineCost,@lineMargin,@markupPct,@marginPct,@leadTime,@leadTimeText)`);
         }
         return res.json({ ok: true, message: 'Draft saved' });
       }
@@ -1276,11 +1278,12 @@ export async function buildAdminRouter() {
           .input('markupPct', sql.Decimal(5,2), l.markup_pct)
           .input('marginPct', sql.Decimal(5,2), l.margin_pct)
           .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
+          .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'').toString() || null)
           .query(`
             INSERT INTO quote_lines
-              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, markup_pct, margin_pct, lead_time_days)
+              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, markup_pct, margin_pct, lead_time_days, lead_time_text)
             VALUES
-              (@quoteId, @rfqLineId, @lineNum, @nsn, @partNum, @itemName, @condition, @qty, @unitCost, @unitPrice, @lineTotal, @lineCost, @lineMargin, @markupPct, @marginPct, @leadTime)
+              (@quoteId, @rfqLineId, @lineNum, @nsn, @partNum, @itemName, @condition, @qty, @unitCost, @unitPrice, @lineTotal, @lineCost, @lineMargin, @markupPct, @marginPct, @leadTime, @leadTimeText)
           `);
       }
       await pool.request()
@@ -1478,7 +1481,7 @@ export async function buildAdminRouter() {
         <td style="color:#7a8a9a;">${parseFloat(l.unit_cost||0).toFixed(2)}</td>
         <td style="font-weight:600;">${parseFloat(l.unit_price||0).toFixed(2)}</td>
         <td style="font-weight:600;">${parseFloat(l.line_total||0).toFixed(2)}</td>
-        <td style="color:#7a8a9a;">${l.lead_time_days ? l.lead_time_days+' days' : '—'}</td>
+        <td style="color:#7a8a9a;">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '—')}</td>
         <td style="color:${parseFloat(l.margin_pct||0)>=20?'#4caf50':'#e05050'};">${parseFloat(l.margin_pct||0).toFixed(1)}%</td>
       </tr>`).join('');
       res.send(page(`Quote ${q.quote_number}`,'quotes',`
