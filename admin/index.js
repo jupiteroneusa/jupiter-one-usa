@@ -1009,8 +1009,8 @@ export async function buildAdminRouter() {
           line_total: lineTotal,
           line_cost: lineCost,
           line_margin: lineTotal - lineCost,
-          markup_pct: unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0,
-          margin_pct: lineTotal > 0 ? ((lineTotal - lineCost) / lineTotal) * 100 : 0,
+          markup_pct: unitCost > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((unitPrice - unitCost) / unitCost) * 100).toFixed(2)))) : 0,
+          margin_pct: lineTotal > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((lineTotal - lineCost) / lineTotal) * 100).toFixed(2)))) : 0,
         };
       });
       const totalCost = processedLines.reduce(function(s, l) { return s + l.line_cost; }, 0);
@@ -1221,8 +1221,8 @@ export async function buildAdminRouter() {
           line_total: lineTotal,
           line_cost: lineCost,
           line_margin: lineTotal - lineCost,
-          markup_pct: unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0,
-          margin_pct: lineTotal > 0 ? ((lineTotal - lineCost) / lineTotal) * 100 : 0,
+          markup_pct: unitCost > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((unitPrice - unitCost) / unitCost) * 100).toFixed(2)))) : 0,
+          margin_pct: lineTotal > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((lineTotal - lineCost) / lineTotal) * 100).toFixed(2)))) : 0,
         };
       });
       // Use same sequence number as RFQ for matching (RFQ-2026-00001 -> QT-2026-00001)
