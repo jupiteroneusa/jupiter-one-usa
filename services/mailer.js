@@ -205,7 +205,7 @@ export async function sendRfqNotificationAdmin({ rfq, customer, lines }) {
         <tr><td style="color:#888;padding:6px 0;">Lines</td><td>${lines.length}</td></tr>
         <tr><td style="color:#888;padding:6px 0;">Notes</td><td>${rfq.notes || '—'}</td></tr>
       </table>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap;">
         <thead>
           <tr style="background:#f0f0f0;">
             <th style="padding:8px 12px;text-align:left;">NSN / Part#</th>

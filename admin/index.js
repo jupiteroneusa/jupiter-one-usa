@@ -1321,7 +1321,12 @@ export async function buildAdminRouter() {
         };
       });
       // Use same sequence number as RFQ for matching (RFQ-2026-00001 -> QT-2026-00001)
-      const quoteNumber = rfq.rfq_number.replace(/^RFQ-/, 'QT-');
+      // Version-aware quote number: QT-2026-00001-v1, v2, v3...
+      const baseQtNum = rfq.rfq_number.replace(/^RFQ-/, 'QT-');
+      const existingVersions = await pool.request().input('rfqIdV', sql.BigInt, rfq.id)
+        .query("SELECT quote_number FROM quotes WHERE rfq_id=@rfqIdV AND quote_number NOT LIKE '%-D' ORDER BY created_at ASC");
+      const versionCount = existingVersions.recordset.length;
+      const quoteNumber = versionCount === 0 ? baseQtNum + '-v1' : baseQtNum + '-v' + (versionCount + 1);
       const validUntil = new Date(Date.now() + parseInt(valid_days) * 24 * 60 * 60 * 1000);
       const totalCost = processedLines.reduce((s, l) => s + l.line_cost, 0);
       // Check if quote already exists for this RFQ - if so, update it (revision)
@@ -1671,7 +1676,10 @@ export async function buildAdminRouter() {
       res.send(page(`Quote ${q.quote_number}`,'quotes',`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">Quote ${q.quote_number}</div>
+          <div style="display:flex;gap:8px;">
+          <a href="/admin/rfqs/${q.rfq_header_id}/quote-review" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">↺ Resend / Requote</a>
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
+        </div>
         </div>
         <div class="page-sub">Created ${new Date(q.created_at).toLocaleString()}</div>
         <div class="detail-grid">
