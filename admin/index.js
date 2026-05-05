@@ -1233,13 +1233,18 @@ export async function buildAdminRouter() {
               total_margin=@totalMargin, valid_until=@validUntil, payment_terms=@paymentTerms,
               notes=@notes, status='Sent', updated_at=GETDATE()
             OUTPUT INSERTED.id, INSERTED.quote_number
-            WHERE rfq_id=@rfqId
+            WHERE rfq_id=@rfqId AND status<>'Draft' AND quote_number NOT LIKE '%-D'
           `);
         quote = qr.recordset[0];
         // Delete old lines and reinsert
         await pool.request().input('qid', sql.BigInt, quote.id)
           .query('DELETE FROM quote_lines WHERE quote_id=@qid');
         console.log('Quote revised:', quote.quote_number);
+        // Delete draft if exists
+        await pool.request().input('rfqIdDel', sql.BigInt, rfq.id)
+          .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel AND quote_number LIKE '%-D')");
+        await pool.request().input('rfqIdDel2', sql.BigInt, rfq.id)
+          .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel2 AND quote_number LIKE '%-D'");
       } else {
         // Insert new quote
         const qr = await pool.request()
@@ -1259,6 +1264,11 @@ export async function buildAdminRouter() {
             VALUES (@rfqId, @customerId, @quoteNumber, @subtotal, @totalAmount, @totalCost, @totalMargin, @validUntil, @paymentTerms, @notes, 'Sent')
           `);
         quote = qr.recordset[0];
+        // Delete draft if exists
+        await pool.request().input('rfqIdDel3', sql.BigInt, rfq.id)
+          .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel3 AND quote_number LIKE '%-D')");
+        await pool.request().input('rfqIdDel4', sql.BigInt, rfq.id)
+          .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel4 AND quote_number LIKE '%-D'");
       }
       for (const l of processedLines) {
         await pool.request()
