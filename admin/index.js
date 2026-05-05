@@ -1236,6 +1236,12 @@ export async function buildAdminRouter() {
             WHERE rfq_id=@rfqId AND status<>'Draft' AND quote_number NOT LIKE '%-D'
           `);
         quote = qr.recordset[0];
+        if (!quote) {
+          // OUTPUT returned nothing - fetch the existing quote
+          const fallback = await pool.request().input('rfqIdFb', sql.BigInt, rfq.id)
+            .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqIdFb AND status='Sent' ORDER BY updated_at DESC");
+          quote = fallback.recordset[0];
+        }
         // Delete old lines and reinsert
         await pool.request().input('qid', sql.BigInt, quote.id)
           .query('DELETE FROM quote_lines WHERE quote_id=@qid');
