@@ -1435,15 +1435,44 @@ export async function buildAdminRouter() {
       let pdfBuffer = null;
       if (attach_pdf === '1' && quote && quote.id) {
         try {
-          const puppeteer = await import('puppeteer');
-          const pdfLineRows = processedLines.map(l => `<tr><td style='padding:6px 8px;border:1px solid #ddd;font-family:monospace;font-size:11px;'>${l.nsn||l.part_number||'—'}</td><td style='padding:6px 8px;border:1px solid #ddd;font-size:11px;'>${l.item_name||'—'}</td><td style='padding:6px 8px;border:1px solid #ddd;text-align:center;font-size:11px;'>${l.quantity}</td><td style='padding:6px 8px;border:1px solid #ddd;font-size:11px;'>${l.condition_code||'NE'}</td><td style='padding:6px 8px;border:1px solid #ddd;text-align:right;font-size:11px;'>$${parseFloat(l.unit_price||0).toFixed(2)}</td><td style='padding:6px 8px;border:1px solid #ddd;text-align:right;font-weight:bold;font-size:11px;'>$${parseFloat(l.line_total||0).toFixed(2)}</td><td style='padding:6px 8px;border:1px solid #ddd;font-size:11px;'>${l.lead_time_text||l.lead_time_days||'—'}</td></tr>`).join('');
-          const pdfHtml = `<!DOCTYPE html><html><head><meta charset='utf-8'/><style>body{font-family:Arial,sans-serif;margin:0;padding:20px;font-size:12px;}.hdr{background:#0a1628;color:#c8932a;padding:16px 20px;margin-bottom:16px;}.hdr h1{margin:0;font-size:18px;letter-spacing:.04em;}.hdr p{margin:3px 0 0;color:#aaa;font-size:11px;}table{width:100%;border-collapse:collapse;margin:16px 0;}th{background:#0a1628;color:#fff;padding:8px;text-align:left;font-size:11px;}.terms{font-size:9px;color:#777;border-top:1px solid #ddd;padding-top:10px;margin-top:16px;}</style></head><body><div class='hdr'><h1>JUPITER ONE USA LLC</h1><p>Aerospace &amp; Defense Component Supplier</p></div><table style='margin-bottom:10px;'><tr><td style='border:none;vertical-align:top;width:50%;padding-right:16px;'><div style='font-size:9px;color:#888;text-transform:uppercase;margin-bottom:4px;'>Bill To</div><strong>${rfq.first_name} ${rfq.last_name}</strong><br/>${rfq.company||''}<br/>${rfq.email}</td><td style='border:none;vertical-align:top;'><div style='font-size:9px;color:#888;text-transform:uppercase;margin-bottom:4px;'>Quote Details</div><table style='margin:0;'><tr><td style='border:none;padding:1px 8px 1px 0;color:#888;font-size:11px;'>Quote #</td><td style='border:none;font-weight:bold;font-size:11px;'>${quoteNumber}</td></tr><tr><td style='border:none;padding:1px 8px 1px 0;color:#888;font-size:11px;'>RFQ #</td><td style='border:none;font-size:11px;'>${rfq.rfq_number}</td></tr><tr><td style='border:none;padding:1px 8px 1px 0;color:#888;font-size:11px;'>Issued</td><td style='border:none;font-size:11px;'>${new Date().toLocaleDateString()}</td></tr><tr><td style='border:none;padding:1px 8px 1px 0;color:#888;font-size:11px;'>Valid Until</td><td style='border:none;font-weight:bold;font-size:11px;'>${new Date(validUntil).toLocaleDateString()}</td></tr><tr><td style='border:none;padding:1px 8px 1px 0;color:#888;font-size:11px;'>Sales Rep</td><td style='border:none;font-size:11px;'>Derek Torchia</td></tr></table></td></tr></table><table><thead><tr><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Total</th><th>Lead Time</th></tr></thead><tbody>${pdfLineRows}</tbody><tfoot><tr><td colspan='5' style='padding:8px;text-align:right;border:1px solid #ddd;font-weight:bold;'>Quote Total:</td><td style='padding:8px;text-align:right;border:1px solid #ddd;font-weight:bold;color:#c8932a;'>$${Number(subtotal).toFixed(2)}</td><td style='border:1px solid #ddd;'></td></tr></tfoot></table>${notes?`<div style='background:#fff8e7;border-left:3px solid #c8932a;padding:10px;font-size:11px;color:#555;margin-bottom:12px;'>${notes}</div>`:''}<div class='terms'>Payment: Credit Card or Wire Transfer (3.5% CC fee). All orders non-cancellable once confirmed. Delivery times estimated, not guaranteed. Claims within 7 days of receipt. Quote valid 30 days from issue. Prices subject to availability at time of order confirmation.</div><div style='margin-top:16px;font-size:10px;color:#888;'>Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412 | DTorchia@jupiteroneusa.com</div></body></html>`;
-          const browser = await puppeteer.default.launch({ executablePath: '/home/puppeteer-cache/chrome/linux-147.0.7727.57/chrome-linux64/chrome', args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'] });
-          const pdfPage = await browser.newPage();
-          await pdfPage.setContent(pdfHtml, { waitUntil: 'networkidle0' });
-          pdfBuffer = await pdfPage.pdf({ format: 'A4', margin: { top:'10mm', bottom:'10mm', left:'10mm', right:'10mm' } });
-          await browser.close();
-          console.log('PDF generated, size:', pdfBuffer.length);
+          // Use jsPDF via require for server-side PDF generation
+          const { jsPDF } = await import('jspdf');
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+          doc.setFontSize(16); doc.setTextColor(200, 147, 42);
+          doc.text('JUPITER ONE USA LLC', 15, 20);
+          doc.setFontSize(9); doc.setTextColor(150, 150, 150);
+          doc.text('Aerospace & Defense Component Supplier', 15, 27);
+          doc.setFontSize(10); doc.setTextColor(50, 50, 50);
+          doc.text('Quote #: ' + quoteNumber, 15, 40);
+          doc.text('RFQ #: ' + rfq.rfq_number, 15, 47);
+          doc.text('Customer: ' + rfq.first_name + ' ' + rfq.last_name, 15, 54);
+          doc.text('Valid Until: ' + new Date(validUntil).toLocaleDateString(), 15, 61);
+          doc.text('Sales Rep: Derek Torchia', 15, 68);
+          let y = 80;
+          doc.setFillColor(10, 22, 40); doc.rect(15, y-6, 180, 8, 'F');
+          doc.setTextColor(255, 255, 255); doc.setFontSize(8);
+          doc.text('NSN/Part', 17, y); doc.text('Description', 55, y); doc.text('Qty', 110, y); doc.text('Unit Price', 125, y); doc.text('Total', 155, y); doc.text('Lead Time', 170, y);
+          y += 4; doc.setTextColor(50, 50, 50); doc.setFontSize(8);
+          for (const l of processedLines) {
+            if (y > 260) { doc.addPage(); y = 20; }
+            doc.text(String(l.nsn||l.part_number||'—').substring(0,18), 17, y);
+            doc.text(String(l.item_name||'—').substring(0,22), 55, y);
+            doc.text(String(l.quantity), 110, y);
+            doc.text('$' + parseFloat(l.unit_price||0).toFixed(2), 125, y);
+            doc.text('$' + parseFloat(l.line_total||0).toFixed(2), 155, y);
+            doc.text(String(l.lead_time_text||l.lead_time_days||'—').substring(0,15), 170, y);
+            y += 7;
+          }
+          y += 4;
+          doc.setFontSize(10); doc.setTextColor(200, 147, 42);
+          doc.text('Total: $' + Number(subtotal).toFixed(2), 155, y);
+          if (notes) { y += 10; doc.setFontSize(8); doc.setTextColor(100,100,100); doc.text('Notes: ' + notes.substring(0,80), 15, y); }
+          y += 12; doc.setFontSize(7); doc.setTextColor(120,120,120);
+          doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All orders non-cancellable once confirmed.', 15, y);
+          doc.text('Delivery times estimated. Claims within 7 days. Quote valid 30 days.', 15, y+5);
+          doc.text('Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412', 15, y+10);
+          pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+          console.log('PDF generated with jsPDF, size:', pdfBuffer.length);
         } catch(pdfErr) { console.error('PDF gen error:', pdfErr.message); }
       }
       try {
