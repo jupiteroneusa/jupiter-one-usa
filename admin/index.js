@@ -1237,13 +1237,7 @@ export async function buildAdminRouter() {
             OUTPUT INSERTED.id, INSERTED.quote_number
             WHERE id=@existingId
           `);
-        quote = qr.recordset[0];
-        if (!quote) {
-          // OUTPUT returned nothing - fetch the existing quote
-          const fallback = await pool.request().input('rfqIdFb', sql.BigInt, rfq.id)
-            .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqIdFb AND status='Sent' ORDER BY updated_at DESC");
-          quote = fallback.recordset[0];
-        }
+        quote = { id: existingQ.id, quote_number: existingQ.quote_number };
         // Delete old lines and reinsert
         await pool.request().input('qid', sql.BigInt, quote.id)
           .query('DELETE FROM quote_lines WHERE quote_id=@qid');
