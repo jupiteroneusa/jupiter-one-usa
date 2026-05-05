@@ -1168,6 +1168,8 @@ export async function buildAdminRouter() {
       html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">' + nt + '</textarea></div>';
       html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional — shown at top of email)</span></div>';
       html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
+      html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(optional)</span></div><input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
+      html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
       html += '</div></div>';
       html += '<div style="display:flex;gap:10px;">';
       html += '<div style="display:flex;gap:10px;">';
@@ -1335,7 +1337,7 @@ export async function buildAdminRouter() {
         .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, 'Submitted', 'Quoted', @note)`);
       const { sendQuoteToCustomer } = await import('../services/mailer.js');
       const customer = { first_name: rfq.first_name, last_name: rfq.last_name, email: rfq.email };
-      const { personal_message } = req.body;
+      const { personal_message, cc_emails, attach_pdf } = req.body;
       try {
       await sendQuoteToCustomer({
         customer,
@@ -1343,6 +1345,8 @@ export async function buildAdminRouter() {
         lines: processedLines,
         rfq: { rfq_number: rfq.rfq_number, customer_ref: rfq.customer_ref, priority: rfq.priority },
         pdfUrl: null,
+        ccEmails: cc_emails || null,
+        attachPdf: attach_pdf === '1',
       });
       } catch(emailErr) { console.error('Email send error:', emailErr.message); }
       res.redirect(`/admin/rfqs/${req.params.id}?quoted=1`);
