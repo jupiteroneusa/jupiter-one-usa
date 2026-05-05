@@ -766,6 +766,10 @@ export async function buildAdminRouter() {
       const log = await pool.request().input('id', sql.BigInt, req.params.id)
         .query(`SELECT * FROM rfq_status_log WHERE rfq_id=@id ORDER BY created_at ASC`);
 
+      // Check for existing draft quote
+      const draftCheck = await pool.request().input('rfqIdDraft', sql.BigInt, req.params.id)
+        .query("SELECT id FROM quotes WHERE rfq_id=@rfqIdDraft AND status='Draft'");
+      const existingDraft = draftCheck.recordset.length > 0 ? draftCheck.recordset[0] : null;
       const successMsg = req.query.created ? '<div class="alert alert-success">Manual RFQ created successfully!</div>' : req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
 
       const lineRows = lines.recordset.map(l => `<tr>
@@ -830,7 +834,7 @@ export async function buildAdminRouter() {
         <div class="card">
           <div class="card-header">
             Create & Send Quote
-            <button class="btn btn-gold btn-sm" onclick="var f=document.getElementById('quote-form');f.style.display=f.style.display==='none'?'block':'none';">+ New Quote</button>
+            <button class="btn btn-gold btn-sm" onclick="var f=document.getElementById('quote-form');f.style.display=f.style.display==='none'?'block':'none';">+ New Quote</button>${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;margin-left:8px;">Resume Draft</a>` : ''}
           </div>
           <div id="quote-form" style="display:none;padding:18px;">
             <form method="POST" action="/admin/rfqs/${rfq.id}/quote-review">
@@ -880,7 +884,131 @@ export async function buildAdminRouter() {
   });
 
   // Create Quote from RFQ
-  router.post('/rfqs/:id/quote-review', async (req, res) => {
+  router.post('/rfqs/:id/quote-draft', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const rfqResult = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query(`SELECT h.*, c.first_name, c.last_name, c.email, c.company FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id`);
+      if (!rfqResult.recordset.length) return res.json({ ok: false, error: 'RFQ not found' });
+      const rfq = rfqResult.recordset[0];
+      const { payment_terms, valid_days, notes, personal_message } = req.body;
+      const linesRaw = req.body.lines || {};
+      const linesArr = Object.values(linesRaw);
+      let subtotal = 0;
+      const processedLines = linesArr.map(function(l, i) {
+        const unitPrice = parseFloat(l.unit_price) || 0;
+        const unitCost = parseFloat(l.unit_cost) || 0;
+        const qty = parseInt(l.quantity) || 1;
+        const lineTotal = unitPrice * qty;
+        const lineCost = unitCost * qty;
+        subtotal += lineTotal;
+        const fulfillPart = (l.fulfillment_part || '').trim().toUpperCase();
+        const isNSN = /^\d{4}-\d{2}-\d{3}-\d{4}$/.test(fulfillPart);
+        return {
+          ...l,
+          line_number: i + 1,
+          nsn: isNSN ? fulfillPart : (l.original_nsn || null),
+          part_number: !isNSN && fulfillPart ? fulfillPart : (l.original_part || null),
+          item_name: l.item_name || null,
+          unit_price: unitPrice,
+          unit_cost: unitCost,
+          quantity: qty,
+          line_total: lineTotal,
+          line_cost: lineCost,
+          line_margin: lineTotal - lineCost,
+          markup_pct: unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0,
+          margin_pct: lineTotal > 0 ? ((lineTotal - lineCost) / lineTotal) * 100 : 0,
+        };
+      });
+      const totalCost = processedLines.reduce(function(s, l) { return s + l.line_cost; }, 0);
+      const validUntil = new Date(Date.now() + parseInt(valid_days || 30) * 24 * 60 * 60 * 1000);
+      const quoteNumber = rfq.rfq_number.replace(/^RFQ-/, 'QT-');
+      // Check if draft exists for this RFQ
+      const existing = await pool.request().input('rfqId', sql.BigInt, rfq.id)
+        .query("SELECT id FROM quotes WHERE rfq_id=@rfqId AND status='Draft'");
+      if (existing.recordset.length) {
+        // Update existing draft
+        await pool.request()
+          .input('rfqId', sql.BigInt, rfq.id)
+          .input('subtotal', sql.Decimal(12,2), subtotal)
+          .input('totalAmount', sql.Decimal(12,2), subtotal)
+          .input('totalCost', sql.Decimal(12,2), totalCost)
+          .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
+          .input('validUntil', sql.Date, validUntil)
+          .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
+          .input('notes', sql.NVarChar(sql.MAX), notes || null)
+          .input('personalMessage', sql.NVarChar(sql.MAX), personal_message || null)
+          .query(`UPDATE quotes SET subtotal=@subtotal,total_amount=@totalAmount,total_cost=@totalCost,total_margin=@totalMargin,valid_until=@validUntil,payment_terms=@paymentTerms,notes=@notes,personal_message=@personalMessage,updated_at=GETDATE() WHERE rfq_id=@rfqId AND status='Draft'`);
+        // Delete old draft lines and reinsert
+        await pool.request().input('qid', sql.BigInt, existing.recordset[0].id)
+          .query('DELETE FROM quote_lines WHERE quote_id=@qid');
+        for (const l of processedLines) {
+          await pool.request()
+            .input('quoteId', sql.BigInt, existing.recordset[0].id)
+            .input('lineNum', sql.Int, l.line_number)
+            .input('nsn', sql.NVarChar(20), l.nsn || null)
+            .input('partNum', sql.NVarChar(100), l.part_number || null)
+            .input('itemName', sql.NVarChar(255), l.item_name || null)
+            .input('condition', sql.NVarChar(5), l.condition_code || 'NE')
+            .input('qty', sql.Int, l.quantity)
+            .input('unitCost', sql.Decimal(10,2), l.unit_cost)
+            .input('unitPrice', sql.Decimal(10,2), l.unit_price)
+            .input('lineTotal', sql.Decimal(12,2), l.line_total)
+            .input('lineCost', sql.Decimal(12,2), l.line_cost)
+            .input('lineMargin', sql.Decimal(12,2), l.line_margin)
+            .input('markupPct', sql.Decimal(5,2), l.markup_pct)
+            .input('marginPct', sql.Decimal(5,2), l.margin_pct)
+            .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
+            .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
+            .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,line_margin,markup_pct,margin_pct,lead_time_days) VALUES (@quoteId,@rfqLineId,@lineNum,@nsn,@partNum,@itemName,@condition,@qty,@unitCost,@unitPrice,@lineTotal,@lineCost,@lineMargin,@markupPct,@marginPct,@leadTime)`);
+        }
+        return res.json({ ok: true, message: 'Draft updated' });
+      } else {
+        // Create new draft
+        const qr = await pool.request()
+          .input('rfqId', sql.BigInt, rfq.id)
+          .input('customerId', sql.BigInt, rfq.customer_id)
+          .input('quoteNumber', sql.NVarChar(20), quoteNumber)
+          .input('subtotal', sql.Decimal(12,2), subtotal)
+          .input('totalAmount', sql.Decimal(12,2), subtotal)
+          .input('totalCost', sql.Decimal(12,2), totalCost)
+          .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
+          .input('validUntil', sql.Date, validUntil)
+          .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
+          .input('notes', sql.NVarChar(sql.MAX), notes || null)
+          .input('personalMessage', sql.NVarChar(sql.MAX), personal_message || null)
+          .query(`INSERT INTO quotes (rfq_id,customer_id,quote_number,subtotal,total_amount,total_cost,total_margin,valid_until,payment_terms,notes,personal_message,status) OUTPUT INSERTED.id VALUES (@rfqId,@customerId,@quoteNumber,@subtotal,@totalAmount,@totalCost,@totalMargin,@validUntil,@paymentTerms,@notes,@personalMessage,'Draft')`);
+        const quoteId = qr.recordset[0].id;
+        for (const l of processedLines) {
+          await pool.request()
+            .input('quoteId', sql.BigInt, quoteId)
+            .input('lineNum', sql.Int, l.line_number)
+            .input('nsn', sql.NVarChar(20), l.nsn || null)
+            .input('partNum', sql.NVarChar(100), l.part_number || null)
+            .input('itemName', sql.NVarChar(255), l.item_name || null)
+            .input('condition', sql.NVarChar(5), l.condition_code || 'NE')
+            .input('qty', sql.Int, l.quantity)
+            .input('unitCost', sql.Decimal(10,2), l.unit_cost)
+            .input('unitPrice', sql.Decimal(10,2), l.unit_price)
+            .input('lineTotal', sql.Decimal(12,2), l.line_total)
+            .input('lineCost', sql.Decimal(12,2), l.line_cost)
+            .input('lineMargin', sql.Decimal(12,2), l.line_margin)
+            .input('markupPct', sql.Decimal(5,2), l.markup_pct)
+            .input('marginPct', sql.Decimal(5,2), l.margin_pct)
+            .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
+            .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
+            .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,line_margin,markup_pct,margin_pct,lead_time_days) VALUES (@quoteId,@rfqLineId,@lineNum,@nsn,@partNum,@itemName,@condition,@qty,@unitCost,@unitPrice,@lineTotal,@lineCost,@lineMargin,@markupPct,@marginPct,@leadTime)`);
+        }
+        return res.json({ ok: true, message: 'Draft saved' });
+      }
+    } catch(err) {
+      console.error('Draft save error:', err);
+      res.json({ ok: false, error: err.message });
+    }
+  });
+
+    router.post('/rfqs/:id/quote-review', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
@@ -921,6 +1049,7 @@ export async function buildAdminRouter() {
         lineHtml += '</tr>';
       });
       const nextLine = dbLines.recordset.length + 1;
+      const draftScript = 'let isDirty=false;document.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",function(){isDirty=true;});});window.addEventListener("beforeunload",function(e){if(isDirty){e.preventDefault();e.returnValue="";}});function saveDraft(){isDirty=false;const form=document.querySelector("form");const fd=new FormData(form);fetch("/admin/rfqs/'+rfq.id+'/quote-draft",{method:"POST",body:fd}).then(function(r){return r.json();}).then(function(d){const btn=document.getElementById("save-draft-btn");if(btn){btn.textContent=d.ok?"Draft Saved \u2713":"Save Failed";btn.style.color=d.ok?"#4caf50":"#e05050";}setTimeout(function(){if(btn&&d.ok){btn.textContent="Save Draft";btn.style.color="";}},3000);}).catch(function(){isDirty=true;});}';
       const addRowScript = 'let qc=' + nextLine + ';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\'tr\');r.id=\'qrow-\'+n;r.innerHTML=\'<td>\'+n+\'</td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][fulfillment_part]\\\'  style=\\\'width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;\\\' oninput=\\\'this.value=this.value.toUpperCase()\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][rfq_line_id]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_nsn]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_part]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][condition_code]\\\' value=\\\'NE\\\'/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][item_name]\\\' style=\\\'width:150px;\\\'/></td><td><input type=\\\'number\\\' min=\\\'1\\\' name=\\\'lines[\'+i+\'][quantity]\\\' value=\\\'1\\\' style=\\\'width:60px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_cost]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_price]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][lead_time_days]\\\' style=\\\'width:100px;\\\'/></td><td><button type=\\\'button\\\' onclick=\\\'removeQRow(\'+n+\')\\\'  class=\\\'btn btn-outline btn-sm\\\' style=\\\'color:#e05050;\\\'>X</button></td>\';document.getElementById(\'qlines-tbody\').appendChild(r);}function removeQRow(n){const r=document.getElementById(\'qrow-\'+n);if(r&&document.getElementById(\'qlines-tbody\').children.length>1)r.remove();}';
       let html = SORT_SCRIPT;
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
@@ -947,9 +1076,11 @@ export async function buildAdminRouter() {
       html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
       html += '</div></div>';
       html += '<div style="display:flex;gap:10px;">';
+      html += '<div style="display:flex;gap:10px;">';
       html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Send Quote to Customer &rarr;</button>';
-      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Cancel</a></div></form>';
-      html += '<script>' + addRowScript + '</script>';
+      html += '<button type="button" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>';
+      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Back to RFQ</a></div>';
+      html += '<script>' + draftScript + addRowScript + '</script>';
       res.send(page('Quote Review — ' + rfq.rfq_number, 'rfqs', html));
     } catch(err) {
       res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
