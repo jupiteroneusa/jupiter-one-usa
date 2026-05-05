@@ -1213,7 +1213,7 @@ export async function buildAdminRouter() {
       // Check if quote already exists for this RFQ - if so, update it (revision)
       const existingQuote = await pool.request()
         .input('rfqId2', sql.BigInt, rfq.id)
-        .query('SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqId2');
+        .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqId2 AND status<>'Draft' AND quote_number NOT LIKE '%-D'");
 
       let quote;
       if (existingQuote.recordset.length) {
