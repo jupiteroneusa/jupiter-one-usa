@@ -833,7 +833,7 @@ export async function buildAdminRouter() {
             <button class="btn btn-gold btn-sm" onclick="var f=document.getElementById('quote-form');f.style.display=f.style.display==='none'?'block':'none';">+ New Quote</button>
           </div>
           <div id="quote-form" style="display:none;padding:18px;">
-            <form method="POST" action="/admin/rfqs/${rfq.id}/quote">
+            <form method="POST" action="/admin/rfqs/${rfq.id}/quote-review">
               <div style="overflow-x:auto;">
                 <table style="width:100%;margin-bottom:16px;">
                   <thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Unit Cost ($)</th><th>Unit Price ($)</th><th>Lead Time</th></tr></thead>
@@ -854,7 +854,7 @@ export async function buildAdminRouter() {
                 <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes / Terms</div>
                 <textarea name="notes" rows="3" style="width:100%;" placeholder="Quote terms, lead times, conditions..."></textarea>
               </div>
-              <button type="submit" class="btn btn-gold">Create & Send Quote to Customer →</button>
+              <button type="submit" class="btn btn-gold">Preview Quote &rarr;</button>
             </form>
           </div>
         </div>
