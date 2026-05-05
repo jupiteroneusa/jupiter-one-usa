@@ -652,16 +652,20 @@ export async function buildAdminRouter() {
               new_first_name, new_last_name, new_email, new_phone, new_company, new_country } = req.body;
       // Support both nested {lines:{0:{...}}} and flat body
       let linesRaw = req.body.lines || {};
+      console.log('RAW body lines type:', typeof req.body.lines, 'keys:', Object.keys(req.body).filter(k=>k.startsWith('lines')).slice(0,3));
       if (Object.keys(linesRaw).length === 0) {
         // Try to reconstruct from flat keys like lines[0][fulfillment_part]
         Object.keys(req.body).forEach(key => {
           const m = key.match(/^lines\[(\d+)\]\[(.+)\]$/);
           if (m) {
-            const idx = m[1], field = m[2];
-            if (!linesRaw[idx]) linesRaw[idx] = {};
-            linesRaw[idx][field] = req.body[key];
+            const i2 = m[1], field = m[2];
+            if (!linesRaw[i2]) linesRaw[i2] = {};
+            linesRaw[i2][field] = req.body[key];
           }
         });
+        console.log('After flat parse, linesRaw keys:', Object.keys(linesRaw));
+      } else {
+        console.log('Nested parse worked, keys:', Object.keys(linesRaw));
       }
       const linesArr = Object.values(linesRaw).filter(l => l.quantity && parseInt(l.quantity) > 0);
 
