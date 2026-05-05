@@ -1241,10 +1241,12 @@ export async function buildAdminRouter() {
           .query('DELETE FROM quote_lines WHERE quote_id=@qid');
         console.log('Quote revised:', quote.quote_number);
         // Delete draft if exists
-        await pool.request().input('rfqIdDel', sql.BigInt, rfq.id)
-          .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel AND quote_number LIKE '%-D')");
-        await pool.request().input('rfqIdDel2', sql.BigInt, rfq.id)
-          .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel2 AND quote_number LIKE '%-D'");
+        try {
+          await pool.request().input('rfqIdDel', sql.BigInt, rfq.id)
+            .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel AND quote_number LIKE '%-D')");
+          await pool.request().input('rfqIdDel2', sql.BigInt, rfq.id)
+            .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel2 AND quote_number LIKE '%-D'");
+        } catch(e) { console.log('Draft cleanup skipped:', e.message); }
       } else {
         // Insert new quote
         const qr = await pool.request()
@@ -1265,10 +1267,12 @@ export async function buildAdminRouter() {
           `);
         quote = qr.recordset[0];
         // Delete draft if exists
-        await pool.request().input('rfqIdDel3', sql.BigInt, rfq.id)
-          .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel3 AND quote_number LIKE '%-D')");
-        await pool.request().input('rfqIdDel4', sql.BigInt, rfq.id)
-          .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel4 AND quote_number LIKE '%-D'");
+        try {
+          await pool.request().input('rfqIdDel3', sql.BigInt, rfq.id)
+            .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel3 AND quote_number LIKE '%-D')");
+          await pool.request().input('rfqIdDel4', sql.BigInt, rfq.id)
+            .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel4 AND quote_number LIKE '%-D'");
+        } catch(e) { console.log('Draft cleanup skipped:', e.message); }
       }
       for (const l of processedLines) {
         await pool.request()
