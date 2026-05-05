@@ -815,6 +815,20 @@ export async function buildAdminRouter() {
         <td><input type="text" name="lines[${l.line_number-1}][lead_time_days]" placeholder="e.g. 7-10 days" style="width:110px;"/></td>
       </tr>`).join('');
 
+      // Load sent quotes for this RFQ
+      const sentQuotes = await pool.request().input('rfqIdSQ', sql.BigInt, rfq.id)
+        .query("SELECT id, quote_number, status, total_amount, valid_until, created_at FROM quotes WHERE rfq_id=@rfqIdSQ AND quote_number NOT LIKE '%-D' ORDER BY created_at DESC");
+      const sentQuotesHtml = sentQuotes.recordset.length === 0
+        ? '<div style="padding:16px;color:#7a8a9a;text-align:center;">No quotes sent yet</div>'
+        : '<table><thead><tr><th>Quote #</th><th>Status</th><th>Total</th><th>Valid Until</th><th>Sent</th><th></th></tr></thead><tbody>' +
+          sentQuotes.recordset.map(q => `<tr>
+            <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a></td>
+            <td>${statusBadge(q.status)}</td>
+            <td style="font-weight:600;">${parseFloat(q.total_amount||0).toFixed(2)}</td>
+            <td style="color:#7a8a9a;font-size:.78rem;">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</td>
+            <td style="color:#7a8a9a;font-size:.78rem;">${new Date(q.created_at).toLocaleDateString()}</td>
+            <td><a href="/admin/rfqs/${rfq.id}/quote-review" class="btn btn-outline btn-sm" style="font-size:.7rem;">Requote</a></td>
+          </tr>`).join('') + '</tbody></table>';
       const logRows = log.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
         <td>${statusBadge(l.new_status)}</td>
@@ -888,6 +902,10 @@ export async function buildAdminRouter() {
               <button type="submit" class="btn btn-gold">Update Status</button>
             </form>
           </div>
+        </div>
+        <div class="card">
+          <div class="card-header">Quote History</div>
+          ${sentQuotesHtml}
         </div>
         <div class="card">
           <div class="card-header">Status History</div>
@@ -1332,7 +1350,7 @@ export async function buildAdminRouter() {
       // Check if quote already exists for this RFQ - if so, update it (revision)
       const existingQuote = await pool.request()
         .input('rfqId2', sql.BigInt, rfq.id)
-        .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqId2 AND status<>'Draft' AND quote_number NOT LIKE '%-D'");
+        .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqId2 AND status<>'Draft' AND quote_number NOT LIKE '%-D' AND 1=0");
 
       let quote;
       if (existingQuote.recordset.length) {
