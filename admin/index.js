@@ -931,7 +931,9 @@ export async function buildAdminRouter() {
       html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + rfq.customer_id + '" style="color:#c8932a;">' + rfq.customer_name + '</a></div></div>';
       html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">' + (rfq.company||'—') + '</div></div>';
       html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + rfq.email + '" style="color:#c8932a;">' + rfq.email + '</a></div></div>';
-      html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div>';
+      html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">' + rfq.customer_ref + '</div></div>' : '';
+      html += '</div>';
       html += '<form method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
       html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
       html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
