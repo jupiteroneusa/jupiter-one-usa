@@ -923,10 +923,10 @@ export async function buildAdminRouter() {
       });
       const totalCost = processedLines.reduce(function(s, l) { return s + l.line_cost; }, 0);
       const validUntil = new Date(Date.now() + parseInt(valid_days || 30) * 24 * 60 * 60 * 1000);
-      const quoteNumber = rfq.rfq_number.replace(/^RFQ-/, 'QT-');
+      const quoteNumber = rfq.rfq_number.replace(/^RFQ-/, 'QT-') + '-D';
       // Check if draft exists for this RFQ
       const existing = await pool.request().input('rfqId', sql.BigInt, rfq.id)
-        .query("SELECT id FROM quotes WHERE rfq_id=@rfqId AND status='Draft'");
+        .query("SELECT id FROM quotes WHERE rfq_id=@rfqId AND quote_number LIKE '%-D'");
       if (existing.recordset.length) {
         // Update existing draft
         await pool.request()
@@ -939,7 +939,7 @@ export async function buildAdminRouter() {
           .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
           .input('notes', sql.NVarChar(sql.MAX), notes || null)
           .input('personalMessage', sql.NVarChar(sql.MAX), personal_message || null)
-          .query(`UPDATE quotes SET subtotal=@subtotal,total_amount=@totalAmount,total_cost=@totalCost,total_margin=@totalMargin,valid_until=@validUntil,payment_terms=@paymentTerms,notes=@notes,personal_message=@personalMessage,updated_at=GETDATE() WHERE rfq_id=@rfqId AND status='Draft'`);
+          .query(`UPDATE quotes SET subtotal=@subtotal,total_amount=@totalAmount,total_cost=@totalCost,total_margin=@totalMargin,valid_until=@validUntil,payment_terms=@paymentTerms,notes=@notes,personal_message=@personalMessage,updated_at=GETDATE() WHERE rfq_id=@rfqId AND quote_number LIKE '%-D'`);
         // Delete old draft lines and reinsert
         await pool.request().input('qid', sql.BigInt, existing.recordset[0].id)
           .query('DELETE FROM quote_lines WHERE quote_id=@qid');
