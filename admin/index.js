@@ -532,7 +532,7 @@ export async function buildAdminRouter() {
                 <tbody id="lines-tbody">
                   <tr id="line-1">
                     <td style="color:#7a8a9a;">1</td>
-                    <td><input type="text" name="lines[0][part]" placeholder="NSN or Part #" style="width:150px;"/></td>
+                    <td><input type="text" name="lines[0][part]" placeholder="NSN or Part #" style="width:150px;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"  oninput="this.value=this.value.toUpperCase()"/></td>
                     <td><input type="text" name="lines[0][description]" placeholder="Item description" style="width:180px;"/></td>
                     <td><input type="number" name="lines[0][quantity]" value="1" min="1" style="width:70px;" required/></td>
                     <td>
