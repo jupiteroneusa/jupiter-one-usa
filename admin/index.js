@@ -1085,10 +1085,12 @@ export async function buildAdminRouter() {
         .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, 'Submitted', 'Quoted', @note)`);
       const { sendQuoteToCustomer } = await import('../services/mailer.js');
       const customer = { first_name: rfq.first_name, last_name: rfq.last_name, email: rfq.email };
+      const { personal_message } = req.body;
       await sendQuoteToCustomer({
         customer,
-        quote: { ...quote, total_amount: subtotal, valid_until: validUntil, payment_terms, notes },
+        quote: { ...quote, total_amount: subtotal, valid_until: validUntil, payment_terms, notes, personal_message },
         lines: processedLines,
+        rfq: { rfq_number: rfq.rfq_number, customer_ref: rfq.customer_ref, priority: rfq.priority },
         pdfUrl: null,
       }).catch(console.error);
       res.redirect(`/admin/rfqs/${req.params.id}?quoted=1`);

@@ -43,9 +43,9 @@ async function logEmail({ to, subject, type, entityType, entityId, success, erro
   } catch (_) {}
 }
 
-async function send({ to, subject, html, type, entityType, entityId, sentBy }) {
+async function send({ to, bcc, subject, html, type, entityType, entityId, sentBy }) {
   try {
-    await transporter.sendMail({ from: FROM, to, subject, html });
+    const mailOpts = { from: FROM, to, subject, html }; if (bcc) mailOpts.bcc = bcc; await transporter.sendMail(mailOpts);
     await logEmail({ to, subject, type, entityType, entityId, success: true, sentBy });
   } catch (err) {
     await logEmail({ to, subject, type, entityType, entityId, success: false, error: err.message, sentBy });
@@ -227,7 +227,7 @@ export async function sendRfqNotificationAdmin({ rfq, customer, lines }) {
   });
 }
 
-export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl }) {
+export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq }) {
   const lineRows = lines.map(l => `
     <tr>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;font-family:monospace;">${l.nsn || l.part_number}</td>
@@ -236,15 +236,18 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl }) {
       <td style="padding:8px 12px;border-bottom:1px solid #eee;">${l.condition_code}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;">$${Number(l.unit_price).toFixed(2)}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;font-weight:bold;">$${Number(l.line_total).toFixed(2)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666;">${l.lead_time_days ? l.lead_time_days + ' days' : (l.lead_time_text || '—')}</td>
     </tr>
   `).join('');
 
   const subject = `Quote ${quote.quote_number} — Jupiter One USA`;
   await send({
-    to: customer.email, subject,
+    to: customer.email, bcc: COMPANY.email, subject,
     type: 'quote_sent', entityType: 'quote', entityId: quote.id,
     html: layout(`
       <p style="font-size:15px;">Hi ${customer.first_name},</p>
+      ${quote.personal_message ? `<div style="background:#f0f7ff;border-left:3px solid #4a90d9;padding:14px 20px;margin:16px 0;font-size:14px;color:#333;line-height:1.6;">${quote.personal_message}</div>` : ''}
+      ${rfq ? `<div style="background:#f9f9f9;border-left:3px solid #aaa;padding:10px 16px;font-size:12px;color:#666;margin-bottom:16px;"><strong>RFQ Ref:</strong> ${rfq.rfq_number||(quote&&quote.rfq_number)||''}${rfq.customer_ref?'<br/><strong>Your Ref:</strong> '+rfq.customer_ref:''}${rfq.priority?'<br/><strong>Priority:</strong> '+rfq.priority:''}</div>` : ''}
       <p style="font-size:14px;color:#444;line-height:1.7;">
         Please find your quote <strong>${quote.quote_number}</strong> below.
         This quote is valid until <strong>${new Date(quote.valid_until).toLocaleDateString()}</strong>.
@@ -258,6 +261,7 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl }) {
             <th style="padding:10px 12px;text-align:left;">Condition</th>
             <th style="padding:10px 12px;text-align:right;">Unit Price</th>
             <th style="padding:10px 12px;text-align:right;">Total</th>
+            <th style="padding:10px 12px;text-align:left;">Lead Time</th>
           </tr>
         </thead>
         <tbody>${lineRows}</tbody>
