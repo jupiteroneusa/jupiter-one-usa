@@ -1310,13 +1310,15 @@ export async function buildAdminRouter() {
       const { sendQuoteToCustomer } = await import('../services/mailer.js');
       const customer = { first_name: rfq.first_name, last_name: rfq.last_name, email: rfq.email };
       const { personal_message } = req.body;
+      try {
       await sendQuoteToCustomer({
         customer,
         quote: { ...quote, total_amount: subtotal, valid_until: validUntil, payment_terms, notes, personal_message },
         lines: processedLines,
         rfq: { rfq_number: rfq.rfq_number, customer_ref: rfq.customer_ref, priority: rfq.priority },
         pdfUrl: null,
-      }).catch(console.error);
+      });
+      } catch(emailErr) { console.error('Email send error:', emailErr.message); }
       res.redirect(`/admin/rfqs/${req.params.id}?quoted=1`);
     } catch(err) {
       console.error('Admin quote error:', err);
