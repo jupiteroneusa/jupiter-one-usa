@@ -1175,6 +1175,9 @@ export async function buildAdminRouter() {
       const rfq = rfqResult.recordset[0];
       const { valid_days = 30, payment_terms, notes } = req.body;
       const linesRaw = req.body.lines || {};
+      console.log('DEBUG body keys:', Object.keys(req.body));
+      console.log('DEBUG linesRaw:', JSON.stringify(linesRaw));
+      console.log('DEBUG linesArr length:', Object.values(linesRaw).length);
       const linesArr = Object.values(linesRaw);
       let subtotal = 0;
       const processedLines = linesArr.map((l, i) => {
