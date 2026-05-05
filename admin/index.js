@@ -1217,9 +1217,11 @@ export async function buildAdminRouter() {
 
       let quote;
       if (existingQuote.recordset.length) {
+        const existingQ = existingQuote.recordset[0];
         // Update existing quote
         const qr = await pool.request()
           .input('rfqId', sql.BigInt, rfq.id)
+          .input('existingId', sql.BigInt, existingQ.id)
           .input('subtotal', sql.Decimal(12,2), subtotal)
           .input('totalAmount', sql.Decimal(12,2), subtotal)
           .input('totalCost', sql.Decimal(12,2), totalCost)
@@ -1233,7 +1235,7 @@ export async function buildAdminRouter() {
               total_margin=@totalMargin, valid_until=@validUntil, payment_terms=@paymentTerms,
               notes=@notes, status='Sent', updated_at=GETDATE()
             OUTPUT INSERTED.id, INSERTED.quote_number
-            WHERE rfq_id=@rfqId AND status<>'Draft' AND quote_number NOT LIKE '%-D'
+            WHERE id=@existingId
           `);
         quote = qr.recordset[0];
         if (!quote) {
