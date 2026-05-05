@@ -822,7 +822,7 @@ export async function buildAdminRouter() {
         ? '<div style="padding:16px;color:#7a8a9a;text-align:center;">No quotes sent yet</div>'
         : '<table><thead><tr><th>Quote #</th><th>Status</th><th>Total</th><th>Valid Until</th><th>Sent</th><th></th></tr></thead><tbody>' +
           sentQuotes.recordset.map(q => `<tr>
-            <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a></td>
+            <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a> <span style="font-size:.68rem;background:#1e3a5f;color:#c8932a;border:1px solid #c8932a;padding:1px 7px;border-radius:10px;font-weight:700;margin-left:4px;vertical-align:middle;">${(()=>{const m=(q.quote_number||'').match(/-v(\d+)$/);return m?'v'+m[1]:(q.quote_number||'').endsWith('-D')?'DRAFT':''})()}</span></td>
             <td>${statusBadge(q.status)}</td>
             <td style="font-weight:600;">${parseFloat(q.total_amount||0).toFixed(2)}</td>
             <td style="color:#7a8a9a;font-size:.78rem;">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</td>
@@ -896,6 +896,12 @@ export async function buildAdminRouter() {
         <div class="card">
           <div class="card-header">Update Status</div>
           <div class="card-body">
+            <form method="POST" action="/admin/rfqs/${rfq.id}/status" style="display:inline;margin-bottom:12px;" onsubmit="return confirm('Close this RFQ? It will be marked Closed.');">
+              <input type="hidden" name="status" value="Closed"/>
+              <input type="hidden" name="note" value="RFQ closed manually."/>
+              <button type="submit" class="btn btn-sm" style="background:#c0392b;color:#fff;border:none;margin-bottom:12px;">✕ Close RFQ</button>
+            </form>
+            <hr style="border-color:#2a3a4a;margin-bottom:12px;"/>
             <form method="POST" action="/admin/rfqs/${rfq.id}/status" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
               <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">${statusOptions}</select></div>
               <div style="flex:1;min-width:200px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Note (optional)</div><input type="text" name="note" placeholder="Add a note..." style="width:100%;"/></div>
@@ -1304,9 +1310,6 @@ export async function buildAdminRouter() {
       const rfq = rfqResult.recordset[0];
       const { valid_days = 30, payment_terms, notes } = req.body;
       const linesRaw = req.body.lines || {};
-      console.log('DEBUG body keys:', Object.keys(req.body));
-      console.log('DEBUG linesRaw:', JSON.stringify(linesRaw));
-      console.log('DEBUG linesArr length:', Object.values(linesRaw).length);
       const linesArr = Object.values(linesRaw);
       let subtotal = 0;
       const processedLines = linesArr.map((l, i) => {
@@ -1632,7 +1635,7 @@ export async function buildAdminRouter() {
         ORDER BY q.created_at DESC
       `);
       const rows = result.recordset.map(q => `<tr>
-        <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a></td>
+        <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a> <span style="font-size:.68rem;background:#1e3a5f;color:#c8932a;border:1px solid #c8932a;padding:1px 7px;border-radius:10px;font-weight:700;margin-left:4px;vertical-align:middle;">${(()=>{const m=(q.quote_number||'').match(/-v(\d+)$/);return m?'v'+m[1]:(q.quote_number||'').endsWith('-D')?'DRAFT':''})()}</span></td>
         <td class="mono"><a href="/admin/rfqs/${q.rfq_id}" style="color:#c8932a;">${q.rfq_number}</a></td>
         <td><a href="/admin/customers/${q.customer_id}" style="color:#c8932a;">${q.customer_name}</a></td>
         <td style="color:#7a8a9a;font-size:.8rem;">${q.company||'—'}</td>
