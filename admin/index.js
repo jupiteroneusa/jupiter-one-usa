@@ -650,7 +650,19 @@ export async function buildAdminRouter() {
       const pool = await getPool();
       const { customer_type, customer_id, priority, status, source, notes, customer_ref,
               new_first_name, new_last_name, new_email, new_phone, new_company, new_country } = req.body;
-      const linesRaw = req.body.lines || {};
+      // Support both nested {lines:{0:{...}}} and flat body
+      let linesRaw = req.body.lines || {};
+      if (Object.keys(linesRaw).length === 0) {
+        // Try to reconstruct from flat keys like lines[0][fulfillment_part]
+        Object.keys(req.body).forEach(key => {
+          const m = key.match(/^lines\[(\d+)\]\[(.+)\]$/);
+          if (m) {
+            const idx = m[1], field = m[2];
+            if (!linesRaw[idx]) linesRaw[idx] = {};
+            linesRaw[idx][field] = req.body[key];
+          }
+        });
+      }
       const linesArr = Object.values(linesRaw).filter(l => l.quantity && parseInt(l.quantity) > 0);
 
       if (!linesArr.length) {
@@ -937,7 +949,7 @@ export async function buildAdminRouter() {
       html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">'+rfq.rfq_number+'</div></div>';
       html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">'+rfq.customer_ref+'</div></div>' : '';
       html += '</div>';
-      html += '<form method="POST" action="/admin/rfqs/'+rfq.id+'/quote">';
+      html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/'+rfq.id+'/quote">';
       html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
       html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
       html += '<tbody id="qlines-tbody">'+lineInputs+'</tbody></table></div></div>';
@@ -1141,7 +1153,7 @@ export async function buildAdminRouter() {
       html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div>';
       html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">' + rfq.customer_ref + '</div></div>' : '';
       html += '</div>';
-      html += '<form method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
+      html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
       html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
       html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
       html += '<tbody id="qlines-tbody">' + lineHtml + '</tbody></table></div></div>';
