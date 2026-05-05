@@ -227,7 +227,7 @@ export async function sendRfqNotificationAdmin({ rfq, customer, lines }) {
   });
 }
 
-export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq, ccEmails, attachPdf }) {
+export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq, ccEmails, attachPdf, pdfBuffer }) {
   const lineRows = lines.map(l => `
     <tr>
       <td style="padding:8px 12px;border-bottom:1px solid #eee;font-family:monospace;">${l.nsn || l.part_number || '—'}</td>
@@ -250,6 +250,7 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq,
     to: customer.email,
     bcc: COMPANY.email,
     cc: ccEmails ? ccEmails.split(',').map(e => e.trim()).filter(Boolean).join(',') : undefined,
+    attachments: pdfBuffer ? [{ filename: `Quote-${quote.quote_number}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }] : undefined,
     subject,
     type: 'quote_sent', entityType: 'quote', entityId: quote.id,
     html: layout(`
