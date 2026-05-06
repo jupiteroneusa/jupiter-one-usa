@@ -409,7 +409,7 @@ export async function sendInvoice({ customer, invoice, pdfUrl }) {
         <strong>Invoice #:</strong> ${invoice.invoice_number}<br/>
         <strong>Amount Due:</strong> $${Number(invoice.total_amount).toFixed(2)}<br/>
         <strong>Due Date:</strong> ${new Date(invoice.due_date).toLocaleDateString()}<br/>
-        <strong>Payment:</strong> ${invoice.payment_terms || 'Credit Card, COD, or Wire Transfer'}
+        <strong>Payment:</strong> ${invoice.payment_terms || 'Credit Card or Wire Transfer'}
       </div>
       ${pdfUrl ? `<p style="font-size:13px;">📎 <a href="${pdfUrl}">Download Invoice PDF</a></p>` : ''}
       <p style="font-size:13px;color:#444;">
