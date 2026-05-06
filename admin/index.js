@@ -1689,6 +1689,25 @@ export async function buildAdminRouter() {
             y += 8;
           }
 
+          // T&C section
+          if (y < 255) {
+            y += 4;
+            doc.setDrawColor(200,147,42); doc.setLineWidth(0.3);
+            doc.line(margin, y, pageW-margin, y); y += 5;
+            doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
+            doc.text('TERMS & CONDITIONS', margin, y); y += 4;
+            doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+            const tcLines = [
+              'Payment: Credit Card or Wire Transfer. CC payments subject to 3.5% processing fee.',
+              'Cancellation: All orders are non-cancellable and non-returnable once confirmed.',
+              'Delivery: Times are estimated and not guaranteed. Claims within 7 days of receipt.',
+              'Validity: Quote valid 30 days. Prices subject to availability at time of confirmation.',
+              'Export: All sales subject to US export control laws including EAR and ITAR.',
+              'Condition Codes: NE=New, NS=New Surplus, OH=Overhaul, AR=As Removed, SV=Serviceable.',
+            ];
+            for (const line of tcLines) { if (y > 272) break; doc.text('- ' + line, margin+2, y); y += 4.5; }
+          }
+
           // Footer
           doc.setFillColor(...navy);
           doc.rect(0, 282, pageW, 15, 'F');
