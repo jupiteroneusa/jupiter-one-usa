@@ -293,7 +293,7 @@ export async function buildAdminRouter() {
 
       const result = await r.query(`
         SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
-          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, h.customer_ref, h.customer_ref,
+          c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email, h.customer_ref,
           COUNT(l.id) AS line_count
         FROM rfq_headers h
         JOIN customers c ON c.id=h.customer_id
@@ -1753,6 +1753,13 @@ export async function buildAdminRouter() {
       const q = qr.recordset[0];
       const lines = await pool.request().input('id', sql.BigInt, req.params.id)
         .query('SELECT * FROM quote_lines WHERE quote_id=@id ORDER BY line_number');
+      const rfqLog = await pool.request().input('rfqIdLog', sql.BigInt, q.rfq_id)
+        .query('SELECT * FROM rfq_status_log WHERE rfq_id=@rfqIdLog ORDER BY created_at ASC');
+      const logRows = rfqLog.recordset.map(l => `<tr>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
+        <td>${statusBadge(l.new_status)}</td>
+        <td style="color:#7a8a9a;">${l.note||'—'}</td>
+      </tr>`).join('');
       const lineRows = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
         <td class="mono" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</td>
@@ -1800,6 +1807,12 @@ export async function buildAdminRouter() {
           </div>
         </div>
         ${q.notes?`<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">${q.notes}</div></div>`:''}
+        ${q.personal_message?`<div class="card"><div class="card-header">Personal Message</div><div class="card-body" style="color:#7a8a9a;font-style:italic;">&ldquo;${q.personal_message}&rdquo;</div></div>`:''}
+        <div class="card">
+          <div class="card-header">RFQ Status History</div>
+          <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
+          <tbody>${logRows||'<tr><td colspan="3" style="color:#7a8a9a;text-align:center;padding:16px;">No history yet</td></tr>'}</tbody></table>
+        </div>
       `));
     } catch(err) {
       res.send(page('Quote','quotes',`<div class="alert alert-error">${err.message}</div>`));
