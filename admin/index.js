@@ -1556,39 +1556,147 @@ export async function buildAdminRouter() {
           // Use jsPDF via require for server-side PDF generation
           const { jsPDF } = await import('jspdf');
           const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-          doc.setFontSize(16); doc.setTextColor(200, 147, 42);
-          doc.text('JUPITER ONE USA LLC', 15, 20);
-          doc.setFontSize(9); doc.setTextColor(150, 150, 150);
-          doc.text('Aerospace & Defense Component Supplier', 15, 27);
-          doc.setFontSize(10); doc.setTextColor(50, 50, 50);
-          doc.text('Quote #: ' + quoteNumber, 15, 40);
-          doc.text('RFQ #: ' + rfq.rfq_number, 15, 47);
-          doc.text('Customer: ' + rfq.first_name + ' ' + rfq.last_name, 15, 54);
-          doc.text('Valid Until: ' + new Date(validUntil).toLocaleDateString(), 15, 61);
-          doc.text('Sales Rep: Derek Torchia', 15, 68);
-          let y = 80;
-          doc.setFillColor(10, 22, 40); doc.rect(15, y-6, 180, 8, 'F');
-          doc.setTextColor(255, 255, 255); doc.setFontSize(8);
-          doc.text('NSN/Part', 17, y); doc.text('Description', 55, y); doc.text('Qty', 110, y); doc.text('Unit Price', 125, y); doc.text('Total', 155, y); doc.text('Lead Time', 170, y);
-          y += 4; doc.setTextColor(50, 50, 50); doc.setFontSize(8);
+          const gold = [200, 147, 42];
+          const navy = [10, 22, 40];
+          const pageW = 210;
+          const margin = 14;
+          const contentW = pageW - margin * 2;
+
+          // Header bar
+          doc.setFillColor(...navy);
+          doc.rect(0, 0, pageW, 28, 'F');
+          doc.setFillColor(...gold);
+          doc.rect(0, 28, pageW, 1.5, 'F');
+          doc.setTextColor(...gold);
+          doc.setFontSize(15);
+          doc.setFont('helvetica', 'bold');
+          doc.text('JUPITER ONE USA LLC', margin, 12);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(180, 180, 180);
+          doc.text('Aerospace & Defense Component Supplier', margin, 20);
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(9);
+          doc.text('QUOTATION', pageW - margin, 12, { align: 'right' });
+          doc.setFontSize(8);
+          doc.setTextColor(180, 180, 180);
+          doc.text(quoteNumber, pageW - margin, 20, { align: 'right' });
+
+          // Two-column info block
+          let y = 38;
+          doc.setFontSize(7);
+          doc.setTextColor(120, 120, 120);
+          doc.setFont('helvetica', 'bold');
+          doc.text('BILL TO', margin, y);
+          doc.text('QUOTE DETAILS', margin + contentW/2, y);
+          y += 5;
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(30, 30, 30);
+          doc.setFontSize(9);
+          doc.text(rfq.first_name + ' ' + rfq.last_name, margin, y);
+          doc.setFontSize(8);
+          doc.setTextColor(120, 120, 120);
+          const detailX = margin + contentW/2;
+          const valX = detailX + 28;
+          let ry = y;
+          const pdfDetails = [
+            ['Quote #:', quoteNumber],
+            ['RFQ #:', rfq.rfq_number],
+            ['Issued:', new Date().toLocaleDateString()],
+            ['Valid Until:', new Date(validUntil).toLocaleDateString()],
+            ['Sales Rep:', 'Derek Torchia'],
+          ];
+          for (const [lbl, val] of pdfDetails) {
+            doc.setTextColor(120,120,120); doc.text(lbl, detailX, ry);
+            doc.setTextColor(30,30,30); doc.text(String(val||''), valX, ry);
+            ry += 5;
+          }
+
+          // Divider
+          y = Math.max(ry, y + 18) + 4;
+          doc.setDrawColor(...gold);
+          doc.setLineWidth(0.5);
+          doc.line(margin, y, pageW - margin, y);
+          y += 6;
+
+          // Table columns
+          const pdfCols = [
+            { label: 'NSN / Part #', x: margin,     w: 32 },
+            { label: 'Description',  x: margin+32,  w: 50 },
+            { label: 'Qty',          x: margin+82,  w: 12 },
+            { label: 'Cond',         x: margin+94,  w: 14 },
+            { label: 'Unit Price',   x: margin+108, w: 24 },
+            { label: 'Total',        x: margin+132, w: 24 },
+            { label: 'Lead Time',    x: margin+156, w: 26 },
+          ];
+
+          // Table header row
+          doc.setFillColor(...navy);
+          doc.rect(margin, y-4, contentW, 7, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          for (const col of pdfCols) doc.text(col.label, col.x+1, y);
+          y += 5;
+
+          // Data rows
+          doc.setFont('helvetica', 'normal');
+          let rowAlt = false;
           for (const l of processedLines) {
-            if (y > 260) { doc.addPage(); y = 20; }
-            doc.text(String(l.nsn||l.part_number||'—').substring(0,18), 17, y);
-            doc.text(String(l.item_name||'—').substring(0,22), 55, y);
-            doc.text(String(l.quantity), 110, y);
-            doc.text('$' + parseFloat(l.unit_price||0).toFixed(2), 125, y);
-            doc.text('$' + parseFloat(l.line_total||0).toFixed(2), 155, y);
-            doc.text(String(l.lead_time_text||l.lead_time_days||'—').substring(0,15), 170, y);
+            if (y > 255) {
+              doc.addPage();
+              y = 20;
+              doc.setFillColor(...navy);
+              doc.rect(margin, y-4, contentW, 7, 'F');
+              doc.setTextColor(255,255,255);
+              doc.setFont('helvetica','bold');
+              for (const col of pdfCols) doc.text(col.label, col.x+1, y);
+              y += 5;
+              doc.setFont('helvetica','normal');
+            }
+            if (rowAlt) { doc.setFillColor(248,248,248); doc.rect(margin, y-3.5, contentW, 6.5, 'F'); }
+            rowAlt = !rowAlt;
+            doc.setTextColor(30, 30, 30);
+            doc.setFontSize(7.5);
+            doc.text(String(l.nsn||l.part_number||'—').substring(0,16), pdfCols[0].x+1, y);
+            doc.text(String(l.item_name||'—').substring(0,28), pdfCols[1].x+1, y);
+            doc.text(String(l.quantity||''), pdfCols[2].x+1, y);
+            doc.text(String(l.condition_code||'NE'), pdfCols[3].x+1, y);
+            doc.text('$'+parseFloat(l.unit_price||0).toFixed(2), pdfCols[4].x+1, y);
+            doc.text('$'+parseFloat(l.line_total||0).toFixed(2), pdfCols[5].x+1, y);
+            doc.text(String(l.lead_time_text||l.lead_time_days||'—').substring(0,14), pdfCols[6].x+1, y);
+            doc.setDrawColor(220,220,220); doc.setLineWidth(0.2);
+            doc.line(margin, y+2.5, pageW-margin, y+2.5);
             y += 7;
           }
-          y += 4;
-          doc.setFontSize(10); doc.setTextColor(200, 147, 42);
-          doc.text('Total: $' + Number(subtotal).toFixed(2), 155, y);
-          if (notes) { y += 10; doc.setFontSize(8); doc.setTextColor(100,100,100); doc.text('Notes: ' + notes.substring(0,80), 15, y); }
-          y += 12; doc.setFontSize(7); doc.setTextColor(120,120,120);
-          doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All orders non-cancellable once confirmed.', 15, y);
-          doc.text('Delivery times estimated. Claims within 7 days. Quote valid 30 days.', 15, y+5);
-          doc.text('Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412', 15, y+10);
+
+          // Total row
+          y += 2;
+          doc.setFillColor(...gold);
+          doc.rect(margin, y-4, contentW, 7, 'F');
+          doc.setTextColor(...navy);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.text('TOTAL', pdfCols[4].x+1, y);
+          doc.text('$' + Number(subtotal).toFixed(2), pdfCols[5].x+1, y);
+          y += 10;
+
+          // Notes
+          if (notes) {
+            doc.setFontSize(8); doc.setFont('helvetica','normal');
+            doc.setTextColor(100,100,100);
+            doc.text('Notes: ' + notes.substring(0,120), margin, y);
+            y += 8;
+          }
+
+          // Footer
+          doc.setFillColor(...navy);
+          doc.rect(0, 282, pageW, 15, 'F');
+          doc.setFontSize(7); doc.setTextColor(170,170,170);
+          doc.text('Jupiter One USA LLC  |  400 N Tampa St, Suite 1550, Tampa FL  |  +1 (347) 821-7412  |  DTorchia@jupiteroneusa.com', pageW/2, 288, { align: 'center' });
+          doc.setTextColor(130,130,130);
+          doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All orders non-cancellable. Quote valid 30 days.', pageW/2, 293, { align: 'center' });
+
           pdfBuffer = Buffer.from(doc.output('arraybuffer'));
           console.log('PDF generated with jsPDF, size:', pdfBuffer.length);
         } catch(pdfErr) { console.error('PDF gen error:', pdfErr.message); }

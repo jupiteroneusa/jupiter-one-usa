@@ -280,12 +280,14 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq,
       ${personalMsg}
       <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:20px;border:1px solid #ddd;">
         <tr>
-          <td style="padding:10px 14px;border-right:1px solid #eee;width:50%;vertical-align:top;">
+          <td style="padding:10px 14px;border-bottom:1px solid #eee;vertical-align:top;display:block;width:100%;">
             <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Bill To</div>
             <strong style="font-size:13px;">${customer.first_name} ${customer.last_name}</strong><br/>
             ${customer.company ? customer.company + '<br/>' : ''}
             <a href="mailto:${customer.email}" style="color:#c8932a;">${customer.email}</a>
           </td>
+        </tr>
+        <tr>
           <td style="padding:10px 14px;vertical-align:top;">
             <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Quote Details</div>
             <table style="font-size:12px;width:100%;border-collapse:collapse;">
@@ -301,27 +303,29 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq,
           </td>
         </tr>
       </table>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 20px 0;border:1px solid #ddd;">
+      <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 20px 0;">
+      <table style="width:100%;min-width:500px;border-collapse:collapse;font-size:12px;border:1px solid #ddd;">
         <thead>
           <tr style="background:#0a1628;color:#fff;">
-            <th style="padding:10px 12px;text-align:left;">NSN / Part#</th>
-            <th style="padding:10px 12px;text-align:left;">Description</th>
-            <th style="padding:10px 12px;text-align:center;">Qty</th>
-            <th style="padding:10px 12px;text-align:left;">Condition</th>
-            <th style="padding:10px 12px;text-align:right;">Unit Price</th>
-            <th style="padding:10px 12px;text-align:right;">Total</th>
-            <th style="padding:10px 12px;text-align:left;">Lead Time</th>
+            <th style="padding:8px 10px;text-align:left;">NSN / Part#</th>
+            <th style="padding:8px 10px;text-align:left;">Description</th>
+            <th style="padding:8px 10px;text-align:center;">Qty</th>
+            <th style="padding:8px 10px;text-align:left;">Cond</th>
+            <th style="padding:8px 10px;text-align:right;">Unit Price</th>
+            <th style="padding:8px 10px;text-align:right;">Total</th>
+            <th style="padding:8px 10px;text-align:left;">Lead Time</th>
           </tr>
         </thead>
         <tbody>${lineRows}</tbody>
         <tfoot>
           <tr style="background:#f5f5f5;">
-            <td colspan="5" style="padding:10px 12px;text-align:right;font-weight:bold;font-size:14px;">Quote Total:</td>
-            <td style="padding:10px 12px;text-align:right;font-weight:bold;color:#c8932a;font-size:14px;">$${Number(quote.total_amount).toFixed(2)}</td>
+            <td colspan="5" style="padding:10px 12px;text-align:right;font-weight:bold;font-size:13px;">Quote Total:</td>
+            <td style="padding:10px 12px;text-align:right;font-weight:bold;color:#c8932a;font-size:14px;">${Number(quote.total_amount).toFixed(2)}</td>
             <td></td>
           </tr>
         </tfoot>
       </table>
+      </div>
       ${quote.notes ? '<div style="background:#fff8e7;border-left:3px solid #c8932a;padding:12px 16px;font-size:13px;color:#555;margin-bottom:16px;">' + quote.notes + '</div>' : ''}
       <div style="margin:20px 0;">
         <a href="${process.env.FRONTEND_URL}/account/quotes/${quote.id}/accept"
