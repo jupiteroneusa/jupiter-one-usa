@@ -788,19 +788,6 @@ export async function buildAdminRouter() {
       const existingDraft = draftCheck.recordset.length > 0 ? draftCheck.recordset[0] : null;
       const successMsg = req.query.created ? '<div class="alert alert-success">Manual RFQ created successfully!</div>' : req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
 
-      const otherQuotesResult = await pool.request()
-        .input('rfqIdOQ', sql.BigInt, q.rfq_id)
-        .input('selfId', sql.BigInt, parseInt(req.params.id))
-        .query("SELECT id, quote_number, status, total_amount, created_at FROM quotes WHERE rfq_id=@rfqIdOQ AND id<>@selfId AND quote_number NOT LIKE '%-D' ORDER BY created_at DESC");
-      const otherQuotesHtml = otherQuotesResult.recordset.length === 0
-        ? '<div style="padding:16px;color:#7a8a9a;text-align:center;">No other versions</div>'
-        : '<table><thead><tr><th>Quote #</th><th>Status</th><th>Total</th><th>Created</th></tr></thead><tbody>' +
-          otherQuotesResult.recordset.map(oq => `<tr>
-            <td class="mono text-gold"><a href="/admin/quotes/${oq.id}" style="color:#c8932a;">${oq.quote_number}</a></td>
-            <td>${statusBadge(oq.status)}</td>
-            <td style="font-weight:600;">${parseFloat(oq.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
-            <td style="color:#7a8a9a;font-size:.78rem;">${new Date(oq.created_at).toLocaleDateString()}</td>
-          </tr>`).join('') + '</tbody></table>';
       const lineRows = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
         <td class="mono text-gold"><a href="/pages/nsn-detail.html?nsn=${l.nsn||l.part_number}" target="_blank" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</a></td>
@@ -1711,7 +1698,7 @@ export async function buildAdminRouter() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">Quote ${q.quote_number}</div>
           <div style="display:flex;gap:8px;">
-          <a href="/admin/rfqs/${q.rfq_header_id}" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">↺ Resend / Requote</a>
+          <a href="/admin/rfqs/${q.rfq_header_id}/quote-review" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">↺ Resend / Requote</a>
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
         </div>
@@ -1742,24 +1729,6 @@ export async function buildAdminRouter() {
           </div>
         </div>
         ${q.notes?`<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">${q.notes}</div></div>`:''}
-      
-        ${q.personal_message?`<div class="card"><div class="card-header">Personal Message</div><div class="card-body" style="color:#7a8a9a;font-style:italic;">&ldquo;${q.personal_message}&rdquo;</div></div>`:''}
-        <div class="card">
-          <div class="card-header">Quote Summary</div>
-          <div class="card-body">
-            <div class="detail-grid">
-              <div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">${q.payment_terms||'—'}</div></div>
-              <div class="detail-item"><div class="detail-label">Valid Until</div><div class="detail-value">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</div></div>
-              <div class="detail-item"><div class="detail-label">Subtotal</div><div class="detail-value">${parseFloat(q.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-              <div class="detail-item"><div class="detail-label">Total Cost</div><div class="detail-value">${parseFloat(q.total_cost||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-              <div class="detail-item"><div class="detail-label">Margin</div><div class="detail-value" style="color:#4caf50;">${parseFloat(q.total_margin||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
-            </div>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-header">Other Versions on This RFQ</div>
-          <div class="card-body" style="padding:0;">${otherQuotesHtml}</div>
-        </div>
       `));
     } catch(err) {
       res.send(page('Quote','quotes',`<div class="alert alert-error">${err.message}</div>`));
