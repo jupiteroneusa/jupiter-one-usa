@@ -189,8 +189,7 @@ export async function buildAdminRouter() {
           (SELECT COUNT(*) FROM rfq_headers WHERE status='Submitted') AS new_rfqs,
           (SELECT COUNT(*) FROM customers) AS total_customers,
           (SELECT COUNT(*) FROM rfq_headers WHERE status='Sourcing') AS active_sourcing,
-          (SELECT COUNT(*) FROM contact_messages WHERE status='New') AS new_messages,
-          (SELECT COUNT(*) FROM quotes WHERE status='Sent' AND valid_until < CAST(GETDATE() AS DATE)) AS expired_quotes
+          (SELECT COUNT(*) FROM contact_messages WHERE status='New') AS new_messages
       `);
       const s = stats.recordset[0];
       const recent = await pool.request().query(`
@@ -215,33 +214,6 @@ export async function buildAdminRouter() {
         <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
       </tr>`;
       }).join('');
-      // Load expired quotes
-      const expiredQ = await pool.request().query(`
-        SELECT q.id, q.quote_number, q.total_amount, q.valid_until, q.rfq_id,
-          c.first_name+' '+c.last_name AS customer_name, h.rfq_number
-        FROM quotes q
-        JOIN customers c ON c.id=q.customer_id
-        JOIN rfq_headers h ON h.id=q.rfq_id
-        WHERE q.status='Sent' AND q.valid_until < CAST(GETDATE() AS DATE)
-        ORDER BY q.valid_until DESC
-      `);
-      const expiredQuotesHtml = expiredQ.recordset.length === 0
-        ? '<div style="padding:16px;color:#7a8a9a;text-align:center;">No expired quotes</div>'
-        : '<table><thead><tr><th>Quote #</th><th>Customer</th><th>RFQ</th><th>Total</th><th>Expired</th><th></th></tr></thead><tbody>' +
-          expiredQ.recordset.map(q => `<tr>
-            <td class="mono" style="color:#e05050;">${q.quote_number}</td>
-            <td>${q.customer_name}</td>
-            <td class="mono"><a href="/admin/rfqs/${q.rfq_id}" style="color:#c8932a;">${q.rfq_number}</a></td>
-            <td style="font-weight:600;">${parseFloat(q.total_amount||0).toFixed(2)}</td>
-            <td style="color:#e05050;font-size:.78rem;">${new Date(q.valid_until).toLocaleDateString()}</td>
-            <td style="display:flex;gap:6px;">
-              <a href="/admin/rfqs/${q.rfq_id}/quote-review" class="btn btn-outline btn-sm" style="font-size:.7rem;">Requote</a>
-              <form method="POST" action="/admin/quotes/${q.id}/auto-requote" style="display:inline;">
-                <button type="submit" class="btn btn-sm" style="background:#c8932a;color:#000;font-size:.7rem;">Auto Requote</button>
-              </form>
-            </td>
-          </tr>`).join('') + '</tbody></table>';
-
       res.send(page('Dashboard', 'dashboard', `
         ${SORT_SCRIPT}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
@@ -255,7 +227,6 @@ export async function buildAdminRouter() {
           <div class="stat"><div class="stat-num">${s.active_sourcing}</div><div class="stat-label">Active</div></div>
           <div class="stat"><div class="stat-num">${s.total_customers}</div><div class="stat-label">Customers</div></div>
           <div class="stat"><div class="stat-num">${s.new_messages}</div><div class="stat-label">New Messages</div></div>
-          <div class="stat" style="border-top-color:#e05050;"><div class="stat-num" style="color:#e05050;">${s.expired_quotes||0}</div><div class="stat-label">Expired Quotes</div></div>
         </div>
         <div class="card">
           <div class="card-header">Recent RFQs <span style="font-size:.72rem;color:#7a8a9a;font-weight:400;">Click column headers to sort</span></div>
@@ -1032,7 +1003,7 @@ export async function buildAdminRouter() {
       html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
       html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="'+(draft.payment_terms||'Credit Card or Wire Transfer')+'" style="width:100%;"/></div>';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="30" style="width:100%;"/><div style="font-size:.65rem;color:#7a8a9a;margin-top:4px;">— or set exact date:</div><input type="date" name="valid_until_date" style="width:100%;margin-top:4px;" title="Override valid days with exact date"/></div></div>';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="30" style="width:100%;"/></div></div>';
       html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">'+(draft.notes||'')+'</textarea></div>';
       html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional)</span></div>';
       html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you...">'+(draft.personal_message||'')+'</textarea></div>';
@@ -1309,7 +1280,7 @@ export async function buildAdminRouter() {
       html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
       html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="' + pt + '" style="width:100%;"/></div>';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="' + vd + '" style="width:100%;"/><div style="font-size:.65rem;color:#7a8a9a;margin-top:4px;">— or set exact date:</div><input type="date" name="valid_until_date" style="width:100%;margin-top:4px;" title="Override valid days with exact date"/></div></div>';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="' + vd + '" style="width:100%;"/></div></div>';
       html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">' + nt + '</textarea></div>';
       html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional — shown at top of email)</span></div>';
       html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
@@ -1469,7 +1440,7 @@ export async function buildAdminRouter() {
         .query("SELECT quote_number FROM quotes WHERE rfq_id=@rfqIdV AND quote_number NOT LIKE '%-D' ORDER BY created_at ASC");
       const versionCount = existingVersions.recordset.length;
       const quoteNumber = versionCount === 0 ? baseQtNum + '-v1' : baseQtNum + '-v' + (versionCount + 1);
-      const validUntil = req.body.valid_until_date ? new Date(req.body.valid_until_date) : new Date(Date.now() + parseInt(valid_days) * 24 * 60 * 60 * 1000);
+      const validUntil = new Date(Date.now() + parseInt(valid_days) * 24 * 60 * 60 * 1000);
       const totalCost = processedLines.reduce((s, l) => s + l.line_cost, 0);
       // Check if quote already exists for this RFQ - if so, update it (revision)
       const existingQuote = await pool.request()
@@ -1750,23 +1721,6 @@ export async function buildAdminRouter() {
   });
 
   // RFQ Status Update
-  // Auto-Requote expired quote
-  router.post('/quotes/:id/auto-requote', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      await pool.request().input('id', sql.BigInt, req.params.id)
-        .query("UPDATE quotes SET status='Expired', updated_at=GETDATE() WHERE id=@id");
-      const qr = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query('SELECT rfq_id FROM quotes WHERE id=@id');
-      if (!qr.recordset.length) return res.redirect('/admin/dashboard');
-      res.redirect('/admin/rfqs/' + qr.recordset[0].rfq_id + '/quote-review');
-    } catch(err) {
-      console.error('Auto-requote error:', err);
-      res.redirect('/admin/dashboard?error=1');
-    }
-  });
-
   router.post('/rfqs/:id/status', async (req, res) => {
     if (!requireAuth(req, res)) return;
     const { status, note } = req.body;
@@ -2230,21 +2184,6 @@ export async function buildAdminRouter() {
       res.json([]);
     }
   });
-
-  // Daily cron: mark expired quotes
-  const runExpiryCron = async () => {
-    try {
-      const pool = await getPool();
-      const result = await pool.request()
-        .query("UPDATE quotes SET status='Expired', updated_at=GETDATE() WHERE status='Sent' AND valid_until < CAST(GETDATE() AS DATE)");
-      if (result.rowsAffected[0] > 0) {
-        console.log('[Expiry Cron] Marked', result.rowsAffected[0], 'quote(s) as Expired.');
-      }
-    } catch(err) { console.error('[Expiry Cron] Error:', err.message); }
-  };
-  // Run on startup and every 24 hours
-  runExpiryCron();
-  setInterval(runExpiryCron, 24 * 60 * 60 * 1000);
 
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }
