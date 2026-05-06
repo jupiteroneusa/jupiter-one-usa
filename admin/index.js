@@ -1798,7 +1798,6 @@ export async function buildAdminRouter() {
     }
   });
 
-  // Customer Detail
   router.get('/customers/:id', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -1807,8 +1806,21 @@ export async function buildAdminRouter() {
         .query('SELECT * FROM customers WHERE id=@id');
       if (!cr.recordset.length) return res.send(page('Customer','customers','<div class="alert alert-error">Not found.</div>'));
       const cust = cr.recordset[0];
+
+      // RFQ history
       const rfqs = await pool.request().input('id', sql.BigInt, req.params.id)
         .query('SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at, COUNT(l.id) AS line_count FROM rfq_headers h LEFT JOIN rfq_lines l ON l.rfq_id=h.id WHERE h.customer_id=@id GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at ORDER BY h.submitted_at DESC');
+
+      // Quote history
+      const quotes = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at, h.rfq_number FROM quotes q JOIN rfq_headers h ON h.id=q.rfq_id WHERE q.customer_id=@id AND q.quote_number NOT LIKE '%-D' ORDER BY q.created_at DESC");
+
+      const activeTab = req.query.tab || 'overview';
+      const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">✔ Customer updated successfully.</div>' :
+        req.query.setup_sent ? '<div class="alert alert-success" style="margin-bottom:16px;">✔ Setup email sent.</div>' :
+        req.query.reset_sent ? '<div class="alert alert-success" style="margin-bottom:16px;">✔ Password reset email sent.</div>' :
+        req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+req.query.error+'</div>' : '';
+
       const rfqRows = rfqs.recordset.map(r => `<tr>
         <td class="mono text-gold"><a href="/admin/rfqs/${r.id}" style="color:#c8932a;">${r.rfq_number}</a></td>
         <td>${r.line_count}</td>
@@ -1817,41 +1829,227 @@ export async function buildAdminRouter() {
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(r.submitted_at).toLocaleDateString()}</td>
         <td><a href="/admin/rfqs/${r.id}" class="btn btn-outline btn-sm">View</a></td>
       </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:16px;">No RFQs yet</td></tr>';
+
+      const quoteRows = quotes.recordset.map(q => `<tr>
+        <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a></td>
+        <td class="mono" style="font-size:.78rem;">${q.rfq_number}</td>
+        <td>${statusBadge(q.status)}</td>
+        <td style="font-weight:600;">${parseFloat(q.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(q.created_at).toLocaleDateString()}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:16px;">No quotes yet</td></tr>';
+
+      function tabLink(tab, label) {
+        const isActive = activeTab === tab;
+        return `<a href="/admin/customers/${cust.id}?tab=${tab}" style="display:inline-block;padding:8px 18px;font-size:.82rem;font-weight:600;letter-spacing:.04em;border-bottom:2px solid ${isActive?'#c8932a':'transparent'};color:${isActive?'#c8932a':'#7a8a9a'};text-decoration:none;white-space:nowrap;">${label}</a>`;
+      }
+
+      function field(label, value) {
+        return `<div class="detail-item"><div class="detail-label">${label}</div><div class="detail-value">${value||'—'}</div></div>`;
+      }
+
+      function inputField(label, name, value, type='text', extra='') {
+        return `<div class="form-group" style="margin-bottom:12px;">
+          <div style="font-size:.68rem;color:#7a8a9a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">${label}</div>
+          <input type="${type}" name="${name}" value="${value||''}" ${extra} style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;font-size:.85rem;"/>
+        </div>`;
+      }
+
+      let tabContent = '';
+
+      if (activeTab === 'overview') {
+        tabContent = `
+          <form method="POST" action="/admin/customers/${cust.id}/update">
+            <input type="hidden" name="tab" value="overview"/>
+            <div class="detail-grid">
+              ${inputField('First Name','first_name',cust.first_name)}
+              ${inputField('Last Name','last_name',cust.last_name)}
+              ${inputField('Email','email',cust.email,'email')}
+              ${inputField('Phone','phone',cust.phone)}
+              ${inputField('Country','country',cust.country||cust.billing_country)}
+            </div>
+            <div style="margin-top:8px;display:flex;gap:10px;align-items:center;">
+              <button type="submit" class="btn btn-gold">Save Changes</button>
+              <span style="font-size:.78rem;color:#7a8a9a;">Status: ${statusBadge(cust.status)}</span>
+              <span style="font-size:.78rem;color:#7a8a9a;">Last Login: ${cust.last_login_at?new Date(cust.last_login_at).toLocaleString():'Never'}</span>
+              <span style="font-size:.78rem;color:#7a8a9a;">Member Since: ${new Date(cust.created_at).toLocaleDateString()}</span>
+            </div>
+          </form>`;
+      } else if (activeTab === 'company') {
+        tabContent = `
+          <form method="POST" action="/admin/customers/${cust.id}/update">
+            <input type="hidden" name="tab" value="company"/>
+            <div class="detail-grid">
+              ${inputField('Company Name','company',cust.company)}
+              ${inputField('Job Title','job_title',cust.job_title)}
+              ${inputField('Website','website',cust.website)}
+              ${inputField('CAGE Code','cage_code',cust.cage_code)}
+              ${inputField('DUNS Number','duns_number',cust.duns_number)}
+              ${inputField('Account Manager','account_manager',cust.account_manager)}
+            </div>
+            <button type="submit" class="btn btn-gold" style="margin-top:8px;">Save Changes</button>
+          </form>`;
+      } else if (activeTab === 'addresses') {
+        tabContent = `
+          <form method="POST" action="/admin/customers/${cust.id}/update">
+            <input type="hidden" name="tab" value="addresses"/>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+              <div>
+                <div style="font-size:.72rem;color:#c8932a;letter-spacing:.15em;text-transform:uppercase;margin-bottom:12px;font-weight:600;">Billing Address</div>
+                ${inputField('Address Line 1','billing_address1',cust.billing_address1)}
+                ${inputField('Address Line 2','billing_address2',cust.billing_address2)}
+                ${inputField('City','billing_city',cust.billing_city)}
+                ${inputField('State','billing_state',cust.billing_state)}
+                ${inputField('ZIP','billing_zip',cust.billing_zip)}
+                ${inputField('Country','billing_country',cust.billing_country)}
+              </div>
+              <div>
+                <div style="font-size:.72rem;color:#c8932a;letter-spacing:.15em;text-transform:uppercase;margin-bottom:12px;font-weight:600;">Shipping Address</div>
+                ${inputField('Address Line 1','shipping_address1',cust.shipping_address1)}
+                ${inputField('Address Line 2','shipping_address2',cust.shipping_address2)}
+                ${inputField('City','shipping_city',cust.shipping_city)}
+                ${inputField('State','shipping_state',cust.shipping_state)}
+                ${inputField('ZIP','shipping_zip',cust.shipping_zip)}
+                ${inputField('Country','shipping_country',cust.shipping_country)}
+              </div>
+            </div>
+            <button type="submit" class="btn btn-gold" style="margin-top:16px;">Save Changes</button>
+          </form>`;
+      } else if (activeTab === 'payment') {
+        tabContent = `
+          <form method="POST" action="/admin/customers/${cust.id}/update">
+            <input type="hidden" name="tab" value="payment"/>
+            <div class="detail-grid">
+              ${inputField('Payment Terms','payment_terms',cust.payment_terms,'text','placeholder="e.g. Net 30, Credit Card"')}
+              ${inputField('Credit Limit ($)','credit_limit',cust.credit_limit,'number','step="0.01" min="0"')}
+              ${inputField('Tax Exempt Number','tax_exempt_number',cust.tax_exempt_number)}
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+              <input type="checkbox" name="tax_exempt" id="tax_exempt" value="1" ${cust.tax_exempt?'checked':''} style="width:auto;accent-color:#c8932a;"/>
+              <label for="tax_exempt" style="font-size:.85rem;cursor:pointer;">Tax Exempt</label>
+            </div>
+            <button type="submit" class="btn btn-gold">Save Changes</button>
+          </form>`;
+      } else if (activeTab === 'history') {
+        tabContent = `
+          <div style="margin-bottom:24px;">
+            <div style="font-size:.72rem;color:#c8932a;letter-spacing:.15em;text-transform:uppercase;margin-bottom:12px;font-weight:600;">RFQ History (${rfqs.recordset.length})</div>
+            <table><thead><tr><th>RFQ #</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
+            <tbody>${rfqRows}</tbody></table>
+          </div>
+          <div>
+            <div style="font-size:.72rem;color:#c8932a;letter-spacing:.15em;text-transform:uppercase;margin-bottom:12px;font-weight:600;">Quote History (${quotes.recordset.length})</div>
+            <table><thead><tr><th>Quote #</th><th>RFQ</th><th>Status</th><th>Total</th><th>Valid Until</th><th>Sent</th></tr></thead>
+            <tbody>${quoteRows}</tbody></table>
+          </div>`;
+      } else if (activeTab === 'notes') {
+        tabContent = `
+          <form method="POST" action="/admin/customers/${cust.id}/update">
+            <input type="hidden" name="tab" value="notes"/>
+            <div style="margin-bottom:12px;">
+              <div style="font-size:.68rem;color:#7a8a9a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">Internal Notes (not visible to customer)</div>
+              <textarea name="internal_notes" rows="10" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:12px;font-size:.85rem;resize:vertical;">${cust.internal_notes||''}</textarea>
+            </div>
+            <button type="submit" class="btn btn-gold">Save Notes</button>
+          </form>`;
+      }
+
       res.send(page('Customer: '+cust.first_name+' '+cust.last_name,'customers',`
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-          <div class="page-title">${cust.first_name} ${cust.last_name}</div>
-          <div style="display:flex;gap:8px;">
-          ${req.query.setup_sent ? '<span style="color:#4caf50;font-size:.82rem;align-self:center;">✔ Setup email sent</span>' : ''}
-          ${req.query.error ? '<span style="color:#e05050;font-size:.82rem;align-self:center;">Error: '+req.query.error+'</span>' : ''}
-          <form method="POST" action="/admin/customers/${cust.id}/send-setup" style="display:inline;" onsubmit="return confirm('Send account setup email to ${cust.email}?');">
-            <button type="submit" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;">✉ Send Setup Email</button>
-          </form>
-          <form method="POST" action="/admin/customers/${cust.id}/send-reset" style="display:inline;" onsubmit="return confirm('Send password reset email to ${cust.email}?');">
-            <button type="submit" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">🔑 Send Password Reset</button>
-          </form>
-          <a href="/admin/customers" class="btn btn-outline btn-sm">← Back</a>
+        ${successMsg}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
+          <div>
+            <div class="page-title">${cust.first_name} ${cust.last_name}</div>
+            <div class="page-sub" style="margin-bottom:0;">${cust.company||''} ${cust.email?'· '+cust.email:''}</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <form method="POST" action="/admin/customers/${cust.id}/send-setup" style="display:inline;" onsubmit="return confirm('Send account setup email to ${cust.email}?');">
+              <button type="submit" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;">✉ Send Setup</button>
+            </form>
+            <form method="POST" action="/admin/customers/${cust.id}/send-reset" style="display:inline;" onsubmit="return confirm('Send password reset to ${cust.email}?');">
+              <button type="submit" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">🔑 Send Reset</button>
+            </form>
+            <a href="/admin/customers" class="btn btn-outline btn-sm">← Back</a>
+          </div>
         </div>
+
+        <div style="border-bottom:1px solid #1e2d42;margin-bottom:24px;overflow-x:auto;white-space:nowrap;">
+          ${tabLink('overview','👤 Overview')}
+          ${tabLink('company','🏢 Company')}
+          ${tabLink('addresses','📍 Addresses')}
+          ${tabLink('payment','💳 Payment')}
+          ${tabLink('history','📋 History')}
+          ${tabLink('notes','📝 Notes')}
         </div>
-        <div class="page-sub">${cust.company||''}</div>
-        <div class="detail-grid">
-          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${cust.email}" style="color:#c8932a;">${cust.email}</a></div></div>
-          <div class="detail-item"><div class="detail-label">Phone</div><div class="detail-value">${cust.phone||'—'}</div></div>
-          <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${cust.company||'—'}</div></div>
-          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(cust.status)}</div></div>
-          <div class="detail-item"><div class="detail-label">Member Since</div><div class="detail-value">${new Date(cust.created_at).toLocaleDateString()}</div></div>
-          <div class="detail-item"><div class="detail-label">Country</div><div class="detail-value">${cust.country||'—'}</div></div>
-        </div>
+
         <div class="card">
-          <div class="card-header">RFQ History</div>
-          <table><thead><tr><th>RFQ #</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
-          <tbody>${rfqRows}</tbody></table>
-        </div>`));
+          <div class="card-body">
+            ${tabContent}
+          </div>
+        </div>
+      `));
     } catch(err) {
       res.send(page('Customer','customers',`<div class="alert alert-error">${err.message}</div>`));
     }
   });
 
-  // Send account setup email to customer
+  // Save customer updates
+  router.post('/customers/:id/update', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('firstName', sql.NVarChar(100), b.first_name||null)
+        .input('lastName', sql.NVarChar(100), b.last_name||null)
+        .input('email', sql.NVarChar(150), b.email||null)
+        .input('phone', sql.NVarChar(30), b.phone||null)
+        .input('country', sql.NVarChar(100), b.country||null)
+        .input('company', sql.NVarChar(150), b.company||null)
+        .input('jobTitle', sql.NVarChar(100), b.job_title||null)
+        .input('website', sql.NVarChar(150), b.website||null)
+        .input('cageCode', sql.NVarChar(10), b.cage_code||null)
+        .input('dunsNumber', sql.NVarChar(20), b.duns_number||null)
+        .input('accountManager', sql.NVarChar(100), b.account_manager||null)
+        .input('billingAddress1', sql.NVarChar(150), b.billing_address1||null)
+        .input('billingAddress2', sql.NVarChar(150), b.billing_address2||null)
+        .input('billingCity', sql.NVarChar(100), b.billing_city||null)
+        .input('billingState', sql.NVarChar(50), b.billing_state||null)
+        .input('billingZip', sql.NVarChar(20), b.billing_zip||null)
+        .input('billingCountry', sql.NVarChar(50), b.billing_country||null)
+        .input('shippingAddress1', sql.NVarChar(150), b.shipping_address1||null)
+        .input('shippingAddress2', sql.NVarChar(150), b.shipping_address2||null)
+        .input('shippingCity', sql.NVarChar(100), b.shipping_city||null)
+        .input('shippingState', sql.NVarChar(50), b.shipping_state||null)
+        .input('shippingZip', sql.NVarChar(20), b.shipping_zip||null)
+        .input('shippingCountry', sql.NVarChar(50), b.shipping_country||null)
+        .input('paymentTerms', sql.NVarChar(50), b.payment_terms||null)
+        .input('creditLimit', sql.Decimal(12,2), parseFloat(b.credit_limit)||null)
+        .input('taxExempt', sql.Bit, b.tax_exempt==='1'?1:0)
+        .input('taxExemptNumber', sql.NVarChar(50), b.tax_exempt_number||null)
+        .input('internalNotes', sql.NVarChar(sql.MAX), b.internal_notes||null)
+        .query(`UPDATE customers SET
+          first_name=@firstName, last_name=@lastName, email=@email, phone=@phone, country=@country,
+          company=@company, job_title=@jobTitle, website=@website, cage_code=@cageCode,
+          duns_number=@dunsNumber, account_manager=@accountManager,
+          billing_address1=@billingAddress1, billing_address2=@billingAddress2,
+          billing_city=@billingCity, billing_state=@billingState,
+          billing_zip=@billingZip, billing_country=@billingCountry,
+          shipping_address1=@shippingAddress1, shipping_address2=@shippingAddress2,
+          shipping_city=@shippingCity, shipping_state=@shippingState,
+          shipping_zip=@shippingZip, shipping_country=@shippingCountry,
+          payment_terms=@paymentTerms, credit_limit=@creditLimit,
+          tax_exempt=@taxExempt, tax_exempt_number=@taxExemptNumber,
+          internal_notes=@internalNotes, updated_at=GETDATE()
+          WHERE id=@id`);
+      res.redirect('/admin/customers/' + req.params.id + '?tab=' + (b.tab||'overview') + '&saved=1');
+    } catch(err) {
+      console.error('Customer update error:', err);
+      res.redirect('/admin/customers/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
+
+  // Send account setup email to customer// Send account setup email to customer
   router.post('/customers/:id/send-setup', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
