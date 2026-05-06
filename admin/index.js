@@ -1,5 +1,6 @@
 // admin/index.js
 import { Router } from 'express';
+import { mountOrderRoutes } from './orderRoutes.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
 
@@ -2244,7 +2245,7 @@ export async function buildAdminRouter() {
         ORDER BY o.confirmed_at DESC
       `);
       const rows = result.recordset.map(o => `<tr>
-        <td class="mono text-gold">${o.order_number}</td>
+        <td class="mono text-gold"><a href="/admin/orders/${o.id}" style="color:#c8932a;">${o.order_number}</a></td>
         <td>${o.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${o.company||''}</span></td>
         <td style="font-weight:600;">$${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td>${statusBadge(o.status)}</td>
@@ -2402,5 +2403,6 @@ export async function buildAdminRouter() {
     }
   });
 
+  mountOrderRoutes(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }
