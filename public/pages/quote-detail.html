@@ -56,7 +56,7 @@ try {
         ${[
           ['Quote Date', formatDate(q.sent_at) || '—'],
           ['Valid Until', formatDate(q.valid_until)],
-          ['Payment Terms', q.payment_terms || 'Credit Card, COD, Wire Transfer'],
+          ['Payment Terms', q.payment_terms || 'Credit Card or Wire Transfer'],
           ['Status', q.status],
         ].map(([l,v]) => `<div style="padding:16px 20px;border-right:1px solid var(--border);">
           <div style="font-family:var(--font-mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
