@@ -1642,10 +1642,10 @@ export async function buildAdminRouter() {
       const pool = await getPool();
       const result = await pool.request().query(`
         SELECT c.id, c.first_name+' '+c.last_name AS name, c.company, c.email, c.phone,
-          c.status, c.created_at, COUNT(h.id) AS rfq_count
+          c.status, c.created_at, c.last_login_at, COUNT(h.id) AS rfq_count
         FROM customers c
         LEFT JOIN rfq_headers h ON h.customer_id=c.id
-        GROUP BY c.id,c.first_name,c.last_name,c.company,c.email,c.phone,c.status,c.created_at
+        GROUP BY c.id,c.first_name,c.last_name,c.company,c.email,c.phone,c.status,c.created_at,c.last_login_at
         ORDER BY c.created_at DESC
       `);
       const rows = result.recordset.map(c => `<tr>
@@ -1656,12 +1656,12 @@ export async function buildAdminRouter() {
         <td>${c.rfq_count}</td>
         <td>${statusBadge(c.status)}</td>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(c.created_at).toLocaleDateString()}</td>
-      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:24px;">No customers yet</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;color:#7a8a9a;padding:24px;">No customers yet</td></tr>';
       res.send(page('Customers','customers',`
         <div class="page-title">Customers</div>
         <div class="page-sub">All registered customers</div>
         <div class="card">
-          <table><thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>RFQs</th><th>Status</th><th>Joined</th></tr></thead>
+          <table><thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>RFQs</th><th>Status</th><th>Joined</th><th>Login</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
         </div>`));
     } catch(err) {
@@ -1696,6 +1696,9 @@ export async function buildAdminRouter() {
           ${req.query.error ? '<span style="color:#e05050;font-size:.82rem;align-self:center;">Error: '+req.query.error+'</span>' : ''}
           <form method="POST" action="/admin/customers/${cust.id}/send-setup" style="display:inline;" onsubmit="return confirm('Send account setup email to ${cust.email}?');">
             <button type="submit" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;">✉ Send Setup Email</button>
+          </form>
+          <form method="POST" action="/admin/customers/${cust.id}/send-reset" style="display:inline;" onsubmit="return confirm('Send password reset email to ${cust.email}?');">
+            <button type="submit" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">🔑 Send Password Reset</button>
           </form>
           <a href="/admin/customers" class="btn btn-outline btn-sm">← Back</a>
         </div>
@@ -1742,6 +1745,33 @@ export async function buildAdminRouter() {
       res.redirect('/admin/customers/' + req.params.id + '?setup_sent=1');
     } catch(err) {
       console.error('Send setup email error:', err);
+      res.redirect('/admin/customers/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
+
+  // Send password reset email from admin
+  router.post('/customers/:id/send-reset', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const cr = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT id, first_name, email FROM customers WHERE id=@id');
+      if (!cr.recordset.length) return res.redirect('/admin/customers/' + req.params.id + '?error=Customer+not+found');
+      const customer = cr.recordset[0];
+      const crypto = await import('crypto');
+      const resetToken = crypto.default.randomBytes(32).toString('hex');
+      const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await pool.request()
+        .input('customerId', sql.BigInt, customer.id)
+        .input('token', sql.NVarChar, resetToken)
+        .input('expiresAt', sql.DateTime, resetExpiry)
+        .input('ip', sql.NVarChar(45), '0.0.0.0')
+        .query('INSERT INTO password_resets (customer_id, reset_token, expires_at, ip_address) VALUES (@customerId, @token, @expiresAt, @ip)');
+      const { sendPasswordReset } = await import('../services/mailer.js');
+      await sendPasswordReset({ customer, token: resetToken });
+      res.redirect('/admin/customers/' + req.params.id + '?reset_sent=1');
+    } catch(err) {
+      console.error('Send reset email error:', err);
       res.redirect('/admin/customers/' + req.params.id + '?error=' + encodeURIComponent(err.message));
     }
   });
