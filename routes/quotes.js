@@ -204,6 +204,50 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
       .input('id', sql.BigInt, req.params.id)
       .query(`UPDATE quotes SET status = 'Accepted', accepted_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`);
 
+    // Auto-create order from accepted quote
+    try {
+      const q = result.recordset[0];
+      const orderNumber = await generateNumber('ORD');
+      const orderResult = await pool.request()
+        .input('quoteId',      sql.BigInt,        req.params.id)
+        .input('rfqId',        sql.BigInt,        q.rfq_id)
+        .input('customerId',   sql.BigInt,        req.customerId)
+        .input('orderNumber',  sql.NVarChar(20),  orderNumber)
+        .input('subtotal',     sql.Decimal(12,2), q.subtotal || q.total_amount)
+        .input('totalAmount',  sql.Decimal(12,2), q.total_amount)
+        .input('paymentTerms', sql.NVarChar(100), q.payment_terms || 'Credit Card or Wire Transfer')
+        .query(`INSERT INTO orders (quote_id,rfq_id,customer_id,order_number,subtotal,total_amount,payment_terms,status)
+          OUTPUT INSERTED.id, INSERTED.order_number
+          VALUES (@quoteId,@rfqId,@customerId,@orderNumber,@subtotal,@totalAmount,@paymentTerms,'Confirmed')`);
+      const order = orderResult.recordset[0];
+      const qLines = await pool.request().input('qid', sql.BigInt, req.params.id)
+        .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      for (const l of qLines.recordset) {
+        await pool.request()
+          .input('orderId', sql.BigInt,        order.id)
+          .input('qlId',    sql.BigInt,        l.id)
+          .input('lineNum', sql.Int,           l.line_number)
+          .input('nsn',     sql.NVarChar(20),  l.nsn || null)
+          .input('pn',      sql.NVarChar(100), l.part_number || null)
+          .input('name',    sql.NVarChar(255), l.item_name || null)
+          .input('cond',    sql.NVarChar(5),   l.condition_code || null)
+          .input('qty',     sql.Int,           l.quantity)
+          .input('price',   sql.Decimal(10,2), l.unit_price)
+          .input('total',   sql.Decimal(12,2), l.line_total)
+          .query(`INSERT INTO order_lines (order_id,quote_line_id,line_number,nsn,part_number,item_name,condition_code,quantity_ordered,unit_price,line_total)
+            VALUES (@orderId,@qlId,@lineNum,@nsn,@pn,@name,@cond,@qty,@price,@total)`);
+      }
+      await pool.request().input('oid', sql.BigInt, order.id)
+        .query(`INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Confirmed','Auto-created from accepted quote')`);
+      const custR = await pool.request().input('cid', sql.BigInt, req.customerId)
+        .query('SELECT first_name, last_name, email FROM customers WHERE id=@cid');
+      if (custR.recordset.length) {
+        const { sendOrderConfirmation } = await import('../services/mailer.js');
+        sendOrderConfirmation({ customer: custR.recordset[0], order: { ...order, total_amount: q.total_amount, payment_terms: q.payment_terms } }).catch(console.error);
+      }
+      console.log('Order auto-created:', orderNumber);
+    } catch(orderErr) { console.error('Auto-order error:', orderErr.message); }
+
     await logAudit({
       userType: 'customer', userId: req.customerId,
       action: 'accepted', entityType: 'quote', entityId: req.params.id,
