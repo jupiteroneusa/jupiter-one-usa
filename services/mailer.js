@@ -147,6 +147,29 @@ export async function sendPasswordReset({ customer, token }) {
   });
 }
 
+export async function sendAccountSetup({ customer, token }) {
+  const link = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+  const subject = 'Set Up Your Jupiter One USA Account';
+  await send({
+    to: customer.email, subject,
+    type: 'account_setup', entityType: 'customer', entityId: customer.id,
+    html: layout(`
+      <p style="font-size:15px;">Hi ${customer.first_name},</p>
+      <p style="font-size:14px;color:#444;line-height:1.7;">
+        An account has been created for you on Jupiter One USA. Click the button below
+        to set your password and access your account — including your RFQs, quotes, and orders.
+      </p>
+      <div style="margin-top:24px;margin-bottom:24px;">
+        <a href="${link}"
+           style="background:#c8932a;color:#000;padding:12px 28px;text-decoration:none;font-weight:bold;font-size:13px;">
+          SET UP MY ACCOUNT →
+        </a>
+      </div>
+      <p style="font-size:12px;color:#aaa;">This link expires in 24 hours. If you did not expect this email, please contact us.</p>
+    `),
+  });
+}
+
 export async function sendRfqReceivedCustomer({ customer, rfq }) {
   const subject = `RFQ Received — ${rfq.rfq_number} | Jupiter One USA`;
   await send({

@@ -704,6 +704,25 @@ export async function buildAdminRouter() {
             VALUES (@firstName, @lastName, @email, @phone, @company, @country, @passwordHash, 'Active')
           `);
         finalCustomerId = newCust.recordset[0].id;
+        // Send account setup email to new customer
+        try {
+          const crypto = await import('crypto');
+          const setupToken = crypto.default.randomBytes(32).toString('hex');
+          const setupExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+          const poolSetup = await getPool();
+          await poolSetup.request()
+            .input('customerId', sql.BigInt, finalCustomerId)
+            .input('token', sql.NVarChar, setupToken)
+            .input('expiresAt', sql.DateTime, setupExpiry)
+            .input('ip', sql.NVarChar(45), '0.0.0.0')
+            .query('INSERT INTO password_resets (customer_id, reset_token, expires_at, ip_address) VALUES (@customerId, @token, @expiresAt, @ip)');
+          const { sendAccountSetup } = await import('../services/mailer.js');
+          await sendAccountSetup({
+            customer: { email: new_email.toLowerCase().trim(), first_name: new_first_name.trim(), id: finalCustomerId },
+            token: setupToken
+          });
+          console.log('Account setup email sent to:', new_email);
+        } catch(setupErr) { console.error('Account setup email error:', setupErr.message); }
       } else {
         if (!customer_id) {
           return res.redirect('/admin/rfqs/create?error='+encodeURIComponent('Please select a customer.'));
@@ -1672,7 +1691,14 @@ export async function buildAdminRouter() {
       res.send(page('Customer: '+cust.first_name+' '+cust.last_name,'customers',`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">${cust.first_name} ${cust.last_name}</div>
+          <div style="display:flex;gap:8px;">
+          ${req.query.setup_sent ? '<span style="color:#4caf50;font-size:.82rem;align-self:center;">✔ Setup email sent</span>' : ''}
+          ${req.query.error ? '<span style="color:#e05050;font-size:.82rem;align-self:center;">Error: '+req.query.error+'</span>' : ''}
+          <form method="POST" action="/admin/customers/${cust.id}/send-setup" style="display:inline;" onsubmit="return confirm('Send account setup email to ${cust.email}?');">
+            <button type="submit" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;">✉ Send Setup Email</button>
+          </form>
           <a href="/admin/customers" class="btn btn-outline btn-sm">← Back</a>
+        </div>
         </div>
         <div class="page-sub">${cust.company||''}</div>
         <div class="detail-grid">
@@ -1690,6 +1716,33 @@ export async function buildAdminRouter() {
         </div>`));
     } catch(err) {
       res.send(page('Customer','customers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Send account setup email to customer
+  router.post('/customers/:id/send-setup', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const cr = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT id, first_name, email FROM customers WHERE id=@id');
+      if (!cr.recordset.length) return res.redirect('/admin/customers/' + req.params.id + '?error=Customer+not+found');
+      const customer = cr.recordset[0];
+      const crypto = await import('crypto');
+      const setupToken = crypto.default.randomBytes(32).toString('hex');
+      const setupExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await pool.request()
+        .input('customerId', sql.BigInt, customer.id)
+        .input('token', sql.NVarChar, setupToken)
+        .input('expiresAt', sql.DateTime, setupExpiry)
+        .input('ip', sql.NVarChar(45), '0.0.0.0')
+        .query('INSERT INTO password_resets (customer_id, reset_token, expires_at, ip_address) VALUES (@customerId, @token, @expiresAt, @ip)');
+      const { sendAccountSetup } = await import('../services/mailer.js');
+      await sendAccountSetup({ customer, token: setupToken });
+      res.redirect('/admin/customers/' + req.params.id + '?setup_sent=1');
+    } catch(err) {
+      console.error('Send setup email error:', err);
+      res.redirect('/admin/customers/' + req.params.id + '?error=' + encodeURIComponent(err.message));
     }
   });
 

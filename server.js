@@ -99,6 +99,12 @@ async function start() {
   app.get('/account', (req, res) => {
     res.redirect('/pages/account.html');
   });
+  app.get('/account/quotes/:id/accept', (req, res) => {
+    res.redirect('/pages/quote-detail.html?id=' + req.params.id);
+  });
+  app.get('/account/quotes/:id', (req, res) => {
+    res.redirect('/pages/quote-detail.html?id=' + req.params.id);
+  });
   app.get('/account/*', (req, res) => {
     // Pass through query params and hash for SPA-style routing
     const sub = req.path.replace('/account/', '');
