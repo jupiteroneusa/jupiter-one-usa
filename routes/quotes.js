@@ -216,9 +216,9 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
         .input('subtotal',     sql.Decimal(12,2), q.subtotal || q.total_amount)
         .input('totalAmount',  sql.Decimal(12,2), q.total_amount)
         .input('paymentTerms', sql.NVarChar(100), q.payment_terms || 'Credit Card or Wire Transfer')
-        .query(`INSERT INTO orders (quote_id,rfq_id,customer_id,order_number,subtotal,total_amount,status,confirmed_at)
+        .query(`INSERT INTO orders (quote_id,rfq_id,customer_id,order_number,subtotal,total_amount)
           OUTPUT INSERTED.id, INSERTED.order_number
-          VALUES (@quoteId,@rfqId,@customerId,@orderNumber,@subtotal,@totalAmount,'Confirmed',GETDATE())`);
+          VALUES (@quoteId,@rfqId,@customerId,@orderNumber,@subtotal,@totalAmount)`);
       const order = orderResult.recordset[0];
       const qLines = await pool.request().input('qid', sql.BigInt, req.params.id)
         .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
