@@ -78,7 +78,34 @@ async function start() {
     console.log('✅ Admin panel ready');
 
     // Catch-all → frontend
-    app.get('*', (req, res) => {
+    // Auth + account page redirects — map clean URLs to /pages/*.html
+  app.get('/reset-password', (req, res) => {
+    const q = req.query.token ? '?token=' + req.query.token : '';
+    res.redirect('/pages/reset-password.html' + q);
+  });
+  app.get('/forgot-password', (req, res) => {
+    res.redirect('/pages/forgot-password.html');
+  });
+  app.get('/verify-email', (req, res) => {
+    const q = req.query.token ? '?token=' + req.query.token : '';
+    res.redirect('/pages/reset-password.html' + q);
+  });
+  app.get('/login', (req, res) => {
+    res.redirect('/pages/login.html');
+  });
+  app.get('/register', (req, res) => {
+    res.redirect('/pages/register.html');
+  });
+  app.get('/account', (req, res) => {
+    res.redirect('/pages/account.html');
+  });
+  app.get('/account/*', (req, res) => {
+    // Pass through query params and hash for SPA-style routing
+    const sub = req.path.replace('/account/', '');
+    res.redirect('/pages/account.html?path=' + encodeURIComponent(sub) + (req.search || ''));
+  });
+
+  app.get('*', (req, res) => {
       res.sendFile(path.join(__dirname, 'public/index.html'));
     });
 
