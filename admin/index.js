@@ -988,6 +988,8 @@ export async function buildAdminRouter() {
       html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">'+(draft.notes||'')+'</textarea></div>';
       html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional)</span></div>';
       html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you...">'+(draft.personal_message||'')+'</textarea></div>';
+            html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(optional)</span></div><input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
+      html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
       html += '</div></div>';
       html += '<div style="display:flex;gap:10px;">';
       html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Send Quote to Customer &rarr;</button>';
