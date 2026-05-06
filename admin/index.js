@@ -1656,6 +1656,8 @@ export async function buildAdminRouter() {
         <td>${c.rfq_count}</td>
         <td>${statusBadge(c.status)}</td>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(c.created_at).toLocaleDateString()}</td>
+        <td>${c.last_login_at ? '<span style="color:#4caf50;font-size:.75rem;">&#10004; Active</span>' : '<span style="background:#e05050;color:#fff;font-size:.65rem;padding:2px 7px;letter-spacing:.05em;">NO LOGIN</span>'}</td>
+        <td>${!c.last_login_at ? '<form method="POST" action="/admin/customers/'+c.id+'/send-setup" style="display:inline;"><button type="submit" class="btn btn-sm btn-outline" style="border-color:#c8932a;color:#c8932a;font-size:.65rem;padding:3px 8px;">&#9993; Setup</button></form>' : ''}</td>
       </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;color:#7a8a9a;padding:24px;">No customers yet</td></tr>';
       res.send(page('Customers','customers',`
         <div class="page-title">Customers</div>
