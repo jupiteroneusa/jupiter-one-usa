@@ -2246,15 +2246,1302 @@ export async function buildAdminRouter() {
       const rows = result.recordset.map(o => `<tr>
         <td class="mono text-gold">${o.order_number}</td>
         <td>${o.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${o.company||''}</span></td>
-        <td style="font-weight:600;">$${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;">${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${o.shipping_cost ? '<span style="color:#4caf50;font-size:.75rem;">+
+    } catch(err) {
+      res.send(page('Orders','orders',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Order Detail
+  router.get('/orders/:id', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const or = await pool.request().input('id', sql.BigInt, req.params.id).query(`
+        SELECT o.*, c.first_name+' '+c.last_name AS customer_name, c.company, c.email,
+          c.id AS customer_id, q.quote_number, h.rfq_number, q.id AS quote_id
+        FROM orders o
+        JOIN customers c ON c.id=o.customer_id
+        LEFT JOIN quotes q ON q.id=o.quote_id
+        LEFT JOIN rfq_headers h ON h.id=o.rfq_id
+        WHERE o.id=@id`);
+      if (!or.recordset.length) return res.send(page('Order','orders','<div class="alert alert-error">Order not found.</div>'));
+      const o = or.recordset[0];
+      const lines = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM order_lines WHERE order_id=@id ORDER BY line_number');
+      const shipments = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM shipments WHERE order_id=@id ORDER BY created_at DESC');
+      const statusLog = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM order_status_log WHERE order_id=@id ORDER BY created_at ASC');
+      const activeTab = req.query.tab || 'overview';
+      const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved successfully.</div>' :
+        req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '';
+      const lineRows = lines.recordset.map(l => `<tr>
+        <td style="color:#7a8a9a;">${l.line_number}</td>
+        <td class="mono" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</td>
+        <td>${l.item_name||'—'}</td>
+        <td>${l.quantity_ordered}</td>
+        <td style="color:#7a8a9a;">${l.condition_code||'—'}</td>
+        <td style="font-weight:600;">${parseFloat(l.unit_price||0).toFixed(2)}</td>
+        <td style="font-weight:600;">${parseFloat(l.line_total||0).toFixed(2)}</td>
+      </tr>`).join('');
+      const shipmentRows = shipments.recordset.map(s => `<tr>
+        <td class="mono">${s.shipment_number}</td>
+        <td>${s.carrier||'—'}</td>
+        <td>${s.tracking_number ? `<a href="${s.tracking_url||'#'}" target="_blank" style="color:#c8932a;">${s.tracking_number}</a>` : '—'}</td>
+        <td>${statusBadge(s.status||'Pending')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${s.ship_date?new Date(s.ship_date).toLocaleDateString():'—'}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${s.estimated_delivery?new Date(s.estimated_delivery).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:12px;">No shipments yet</td></tr>';
+      const logRows = statusLog.recordset.map(l => `<tr>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
+        <td>${statusBadge(l.new_status)}</td>
+        <td style="color:#7a8a9a;">${l.note||'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="3" style="text-align:center;color:#7a8a9a;padding:12px;">No history</td></tr>';
+      function tabLink(tab, label) {
+        const isActive = activeTab === tab;
+        return `<a href="/admin/orders/${o.id}?tab=${tab}" style="display:inline-block;padding:8px 18px;font-size:.82rem;font-weight:600;border-bottom:2px solid ${isActive?'#c8932a':'transparent'};color:${isActive?'#c8932a':'#7a8a9a'};text-decoration:none;white-space:nowrap;">${label}</a>`;
+      }
+      let tabContent = '';
+      if (activeTab === 'overview') {
+        const statuses = ['Confirmed','Processing','Ready to Ship','Shipped','Delivered','Cancelled'];
+        const statusOpts = statuses.map(s => `<option value="${s}"${o.status===s?' selected':''}>${s}</option>`).join('');
+        tabContent = `
+          <div class="detail-grid" style="margin-bottom:20px;">
+            <div class="detail-item"><div class="detail-label">Order #</div><div class="detail-value" style="font-family:monospace;color:#c8932a;">${o.order_number}</div></div>
+            <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${o.customer_id}" style="color:#c8932a;">${o.customer_name}</a></div></div>
+            <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${o.company||'—'}</div></div>
+            <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${o.email}" style="color:#c8932a;">${o.email}</a></div></div>
+            <div class="detail-item"><div class="detail-label">Quote</div><div class="detail-value">${o.quote_number?'<a href="/admin/quotes/'+o.quote_id+'" style="color:#c8932a;">'+o.quote_number+'</a>':'—'}</div></div>
+            <div class="detail-item"><div class="detail-label">RFQ</div><div class="detail-value">${o.rfq_number?'<a href="/admin/rfqs/'+o.rfq_id+'" style="color:#c8932a;">'+o.rfq_number+'</a>':'—'}</div></div>
+            <div class="detail-item"><div class="detail-label">Subtotal</div><div class="detail-value">${parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+            <div class="detail-item"><div class="detail-label">Shipping</div><div class="detail-value">${o.shipping_cost?', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2)+' ship</span>' : '<span style="color:#7a8a9a;font-size:.75rem;">—</span>'}</td>
         <td>${statusBadge(o.status)}</td>
         <td style="color:#7a8a9a;font-size:.78rem;">${o.confirmed_at?new Date(o.confirmed_at).toLocaleDateString():'—'}</td>
-      </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#7a8a9a;padding:24px;">No orders yet</td></tr>';
+        <td><a href="/admin/orders/${o.id}" class="btn btn-outline btn-sm">View</a></td>
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:24px;">No orders yet</td></tr>';
       res.send(page('Orders','orders',`
         <div class="page-title">Orders</div>
         <div class="page-sub">All customer orders</div>
         <div class="card">
-          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Shipping</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Orders','orders',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Invoices
+  router.get('/invoices', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2):'<span style="color:#e05050;">Not set</span>'}</div></div>
+            <div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+            <div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">${o.payment_terms||'—'}</div></div>
+            <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(o.status)}</div></div>
+            <div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">${o.confirmed_at?new Date(o.confirmed_at).toLocaleString():'—'}</div></div>
+          </div>
+          <div class="card" style="margin-bottom:16px;">
+            <div class="card-header">Update Status</div>
+            <div class="card-body">
+              <form method="POST" action="/admin/orders/${o.id}/status" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+                <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">${statusOpts}</select></div>
+                <div style="flex:1;min-width:200px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Note</div><input type="text" name="note" placeholder="Add a note..." style="width:100%;"/></div>
+                <button type="submit" class="btn btn-gold">Update</button>
+              </form>
+            </div>
+          </div>
+          <div class="card"><div class="card-header">Status History</div>
+            <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
+            <tbody>${logRows}</tbody></table>
+          </div>`;
+      } else if (activeTab === 'lines') {
+        tabContent = `
+          <table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+          <tbody>${lineRows||'<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>'}</tbody></table>
+          <div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;">
+            <span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong>${parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+            ${o.shipping_cost?'<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong>, async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2)+' ship</span>' : '<span style="color:#7a8a9a;font-size:.75rem;">—</span>'}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${o.confirmed_at?new Date(o.confirmed_at).toLocaleDateString():'—'}</td>
+        <td><a href="/admin/orders/${o.id}" class="btn btn-outline btn-sm">View</a></td>
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:24px;">No orders yet</td></tr>';
+      res.send(page('Orders','orders',`
+        <div class="page-title">Orders</div>
+        <div class="page-sub">All customer orders</div>
+        <div class="card">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Shipping</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Orders','orders',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Invoices
+  router.get('/invoices', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2)+'</strong></span>':''}
+            <span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+          </div>`;
+      } else if (activeTab === 'shipping') {
+        tabContent = `
+          <div class="card" style="margin-bottom:20px;"><div class="card-header">Shipping Info</div><div class="card-body">
+            <form method="POST" action="/admin/orders/${o.id}/shipping" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="${o.shipping_cost||''}" placeholder="0.00" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Ship To Address</div><input type="text" name="ship_to_address1" value="${o.ship_to_address1||''}" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">City</div><input type="text" name="ship_to_city" value="${o.ship_to_city||''}" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">State</div><input type="text" name="ship_to_state" value="${o.ship_to_state||''}" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">ZIP</div><input type="text" name="ship_to_zip" value="${o.ship_to_zip||''}" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Country</div><input type="text" name="ship_to_country" value="${o.ship_to_country||'USA'}" style="width:100%;"/></div>
+              <div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">Save Shipping</button></div>
+            </form>
+          </div></div>
+          <div class="card" style="margin-bottom:20px;"><div class="card-header">Add Tracking</div><div class="card-body">
+            <form method="POST" action="/admin/orders/${o.id}/tracking" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Carrier</div><input type="text" name="carrier" placeholder="FedEx, UPS, DHL..." style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Tracking Number</div><input type="text" name="tracking_number" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Tracking URL</div><input type="text" name="tracking_url" placeholder="https://..." style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Ship Date</div><input type="date" name="ship_date" style="width:100%;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Est. Delivery</div><input type="date" name="estimated_delivery" style="width:100%;"/></div>
+              <div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">Add Shipment</button></div>
+            </form>
+          </div></div>
+          <div class="card"><div class="card-header">Shipments</div>
+            <table><thead><tr><th>Shipment #</th><th>Carrier</th><th>Tracking</th><th>Status</th><th>Ship Date</th><th>Est. Delivery</th></tr></thead>
+            <tbody>${shipmentRows}</tbody></table>
+          </div>`;
+      } else if (activeTab === 'payment') {
+        tabContent = `
+          <div class="card"><div class="card-header">Mark as Paid</div><div class="card-body">
+            <div style="margin-bottom:16px;font-size:.88rem;color:#7a8a9a;">
+              Subtotal: <strong style="color:#eef1f5;">${parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
+              ${o.shipping_cost?' + Shipping: <strong style="color:#eef1f5;">, async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2)+' ship</span>' : '<span style="color:#7a8a9a;font-size:.75rem;">—</span>'}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${o.confirmed_at?new Date(o.confirmed_at).toLocaleDateString():'—'}</td>
+        <td><a href="/admin/orders/${o.id}" class="btn btn-outline btn-sm">View</a></td>
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:24px;">No orders yet</td></tr>';
+      res.send(page('Orders','orders',`
+        <div class="page-title">Orders</div>
+        <div class="page-sub">All customer orders</div>
+        <div class="card">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Shipping</th><th>Status</th><th>Date</th><th></th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Orders','orders',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Invoices
+  router.get('/invoices', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2)+'</strong>':'<span style="color:#e05050;"> (shipping not added yet)</span>'}
+              &nbsp;&nbsp; Total: <strong style="color:#c8932a;font-size:1rem;">${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong>
+            </div>
+            ${o.status==='Paid'?'<div class="alert alert-success">&#10004; This order is marked as Paid.</div>':''}
+            <form method="POST" action="/admin/orders/${o.id}/mark-paid" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;" onsubmit="return confirm('Mark this order as Paid?')">
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Method</div>
+                <select name="payment_method">
+                  <option>Wire Transfer</option><option>Credit Card</option><option>Check</option><option>Other</option>
+                </select>
+              </div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Date</div><input type="date" name="payment_date" value="${new Date().toISOString().split('T')[0]}" style="width:160px;"/></div>
+              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Reference / Notes</div><input type="text" name="payment_notes" placeholder="Wire ref, check #..." style="width:220px;"/></div>
+              <button type="submit" class="btn btn-gold">&#10004; Mark as Paid</button>
+            </form>
+          </div></div>`;
+      }
+      res.send(page(`Order ${o.order_number}`,'orders',`
+        ${successMsg}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
+          <div><div class="page-title">${o.order_number}</div>
+          <div class="page-sub" style="margin-bottom:0;">${o.customer_name} · ${o.company||''}</div></div>
+          <a href="/admin/orders" class="btn btn-outline btn-sm">&#8592; Back to Orders</a>
+        </div>
+        <div style="border-bottom:1px solid #1e2d42;margin-bottom:24px;overflow-x:auto;white-space:nowrap;">
+          ${tabLink('overview','&#128203; Overview')}
+          ${tabLink('lines','&#128230; Line Items')}
+          ${tabLink('shipping','&#128666; Shipping')}
+          ${tabLink('payment','&#128179; Payment')}
+        </div>
+        <div class="card"><div class="card-body">${tabContent}</div></div>
+      `));
+    } catch(err) {
+      res.send(page('Order','orders',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Order status update
+  router.post('/orders/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const { status, note } = req.body;
+    try {
+      const pool = await getPool();
+      await pool.request().input('id', sql.BigInt, req.params.id).input('status', sql.NVarChar, status)
+        .query('UPDATE orders SET status=@status, updated_at=GETDATE() WHERE id=@id');
+      await pool.request().input('id', sql.BigInt, req.params.id).input('status', sql.NVarChar, status).input('note', sql.NVarChar(500), note||null)
+        .query('INSERT INTO order_status_log (order_id, new_status, note) VALUES (@id, @status, @note)');
+      res.redirect('/admin/orders/'+req.params.id+'?tab=overview&saved=1');
+    } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  // Order shipping update
+  router.post('/orders/:id/shipping', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const shippingCost = parseFloat(b.shipping_cost)||0;
+      const or = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT subtotal FROM orders WHERE id=@id');
+      const subtotal = parseFloat(or.recordset[0]?.subtotal||0);
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('shipping', sql.Decimal(12,2), shippingCost)
+        .input('total', sql.Decimal(12,2), subtotal + shippingCost)
+        .input('addr1', sql.NVarChar(150), b.ship_to_address1||null)
+        .input('city', sql.NVarChar(100), b.ship_to_city||null)
+        .input('state', sql.NVarChar(50), b.ship_to_state||null)
+        .input('zip', sql.NVarChar(20), b.ship_to_zip||null)
+        .input('country', sql.NVarChar(50), b.ship_to_country||null)
+        .query('UPDATE orders SET shipping_cost=@shipping,total_amount=@total,ship_to_address1=@addr1,ship_to_city=@city,ship_to_state=@state,ship_to_zip=@zip,ship_to_country=@country,updated_at=GETDATE() WHERE id=@id');
+      res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
+    } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  // Add shipment/tracking
+  router.post('/orders/:id/tracking', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const { generateNumber } = await import('../db/numbering.js');
+      const shipNum = await generateNumber('SHP');
+      await pool.request()
+        .input('orderId', sql.BigInt, req.params.id)
+        .input('shipNum', sql.NVarChar(20), shipNum)
+        .input('carrier', sql.NVarChar(100), b.carrier||null)
+        .input('tracking', sql.NVarChar(100), b.tracking_number||null)
+        .input('trackingUrl', sql.NVarChar(500), b.tracking_url||null)
+        .input('shipDate', sql.Date, b.ship_date||null)
+        .input('estDelivery', sql.Date, b.estimated_delivery||null)
+        .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,status) VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,'Shipped')");
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE orders SET status='Shipped',updated_at=GETDATE() WHERE id=@id");
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','Shipment added with tracking')");
+      res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
+    } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  // Mark order paid
+  router.post('/orders/:id/mark-paid', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const note = 'Paid via '+(b.payment_method||'')+(b.payment_notes?' — '+b.payment_notes:'');
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE orders SET status='Paid',updated_at=GETDATE() WHERE id=@id");
+      await pool.request().input('id', sql.BigInt, req.params.id).input('note', sql.NVarChar(500), note)
+        .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Paid',@note)");
+      res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
+    } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  // Invoices
+  router.get('/invoices', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+          c.first_name+' '+c.last_name AS customer_name, c.company
+        FROM invoices i
+        JOIN customers c ON c.id=i.customer_id
+        ORDER BY i.created_at DESC
+      `);
+      const rows = result.recordset.map(i => `<tr>
+        <td class="mono text-gold">${i.invoice_number}</td>
+        <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+        <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+      res.send(page('Invoices','invoices',`
+        <div class="page-title">Invoices</div>
+        <div class="page-sub">All customer invoices</div>
+        <div class="card">
+          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Suppliers
+  router.get('/suppliers', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(o.shipping_cost).toFixed(2)+' ship</span>' : '<span style="color:#7a8a9a;font-size:.75rem;">—</span>'}</td>
+        <td>${statusBadge(o.status)}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${o.confirmed_at?new Date(o.confirmed_at).toLocaleDateString():'—'}</td>
+        <td><a href="/admin/orders/${o.id}" class="btn btn-outline btn-sm">View</a></td>
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:24px;">No orders yet</td></tr>';
+      res.send(page('Orders','orders',`
+        <div class="page-title">Orders</div>
+        <div class="page-sub">All customer orders</div>
+        <div class="card">
+          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Shipping</th><th>Status</th><th>Date</th><th></th></tr></thead>
           <tbody>${rows}</tbody></table>
         </div>`));
     } catch(err) {
