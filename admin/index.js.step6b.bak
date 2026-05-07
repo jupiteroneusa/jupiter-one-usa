@@ -2406,7 +2406,7 @@ export async function buildAdminRouter() {
       const pool = await getPool();
       const result = await pool.request().query(`
         SELECT id, name, contact_name, email, phone, country, status, created_at
-        FROM suppliers ORDER BY company_name ASC
+        FROM suppliers ORDER BY name ASC
       `);
       const rows = result.recordset.map(s => `<tr>
         <td style="font-weight:600;">${s.name}</td>
