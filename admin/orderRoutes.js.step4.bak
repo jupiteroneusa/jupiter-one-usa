@@ -4,7 +4,6 @@ import { getPool, sql } from '../db/connect.js';
 import { generateNumber } from '../db/numbering.js';
 import { renderOverviewTab } from './orderOverviewBlock.js';
 import { renderShippingTab } from './orderShippingBlock.js';
-import { renderPaymentTab } from './orderPaymentBlock.js';
 
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
@@ -27,7 +26,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const ships = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM shipments WHERE order_id=@id ORDER BY created_at DESC');
       const sLog = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM order_status_log WHERE order_id=@id ORDER BY created_at ASC');
       const invoices = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT id, invoice_number, status, total_amount, due_date FROM invoices WHERE order_id=@id ORDER BY created_at DESC');
-      const payments = await pool.request().input('idP', sql.BigInt, req.params.id).query('SELECT id, amount, payment_method, payment_reference, received_at, notes FROM payments WHERE order_id=@idP ORDER BY received_at DESC');
       const activeTab = req.query.tab || 'overview';
       const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' : req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '';
       const lineRows = oLines.recordset.map(function(l) {
@@ -63,7 +61,33 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } else if (activeTab === 'shipping') {
         html += renderShippingTab(o, ships);
       } else if (activeTab === 'payment') {
-        html += renderPaymentTab(o, invoices, payments);
+        html += '<div class="card" style="margin-bottom:16px;"><div class="card-header">Payment Summary</div><div class="card-body">';
+        html += '<div style="font-size:.88rem;color:#7a8a9a;margin-bottom:16px;">Subtotal: <strong style="color:#eef1f5;">$'+parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</strong>';
+        html += o.shipping_cost ? ' + Shipping: <strong style="color:#eef1f5;">$'+parseFloat(o.shipping_cost).toFixed(2)+'</strong>' : ' <span style="color:#e05050;">(shipping not added)</span>';
+        html += ' &nbsp; Total: <strong style="color:#c8932a;">$'+parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</strong></div>';
+        if (o.status === 'Paid') html += '<div class="alert alert-success">&#10004; Order is marked Paid.</div>';
+        html += '<form method="POST" action="/admin/orders/'+o.id+'/mark-paid" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;" onsubmit="return confirm(\'Mark as Paid?\')">';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Method</div><select name="payment_method"><option>Wire Transfer</option><option>Credit Card</option><option>Check</option><option>Other</option></select></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Date</div><input type="date" name="payment_date" value="'+new Date().toISOString().split('T')[0]+'" style="width:160px;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Ref / Notes</div><input type="text" name="payment_notes" placeholder="Wire ref, check #..." style="width:220px;"/></div>';
+        html += '<button type="submit" class="btn btn-gold">&#10004; Mark as Paid</button></form></div></div>';
+        if (invoices.recordset.length) {
+          html += '<div class="card"><div class="card-header">Invoices</div>';
+          html += '<table><thead><tr><th>Invoice #</th><th>Status</th><th>Total</th><th>Due Date</th></tr></thead><tbody>';
+          invoices.recordset.forEach(function(inv) {
+            html += '<tr><td class="mono"><a href="/admin/invoices/'+inv.id+'" style="color:#c8932a;text-decoration:none;">'+inv.invoice_number+'</a></td><td>'+statusBadge(inv.status)+'</td><td style="font-weight:600;">$'+parseFloat(inv.total_amount||0).toFixed(2)+'</td><td style="color:#7a8a9a;font-size:.78rem;">'+(inv.due_date?new Date(inv.due_date).toLocaleDateString():'&mdash;')+'</td></tr>';
+          });
+          html += '</tbody></table></div>';
+        } else {
+          html += '<div class="card"><div class="card-header">Generate Invoice</div><div class="card-body">';
+          html += '<p style="font-size:.85rem;color:#7a8a9a;margin-bottom:16px;">Generate and email a final invoice to the customer including all line items and shipping cost.</p>';
+          html += '<form method="POST" action="/admin/orders/'+o.id+'/generate-invoice" onsubmit="return confirm(\'Generate and send invoice to '+o.email+'?\')">';
+          html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
+          html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Due</div><select name="due_days"><option value="0">Due on Receipt</option><option value="15">Net 15</option><option value="30">Net 30</option></select></div>';
+          html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes (optional)</div><input type="text" name="notes" placeholder="Additional invoice notes..." style="width:100%;"/></div>';
+          html += '</div><button type="submit" class="btn btn-gold">&#128228; Generate &amp; Send Invoice</button></form>';
+          html += '</div></div>';
+        }
       }
       html += '</div></div>';
       res.send(page('Order '+o.order_number, 'orders', html));
@@ -179,53 +203,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Delivered','Delivery confirmed')");
       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&error='+encodeURIComponent(err.message)); }
-  });
-
-  router.post('/orders/:id/record-payment', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const b = req.body;
-      const amount = parseFloat(b.amount);
-      if (!amount || amount <= 0) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=Invalid+amount');
-      const receivedAt = b.received_at ? new Date(b.received_at) : new Date();
-      const ord = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT customer_id, total_amount FROM orders WHERE id=@id');
-      if (!ord.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?error=Order+not+found');
-      const cid = ord.recordset[0].customer_id;
-      const orderTotal = parseFloat(ord.recordset[0].total_amount || 0);
-      const invR = await pool.request().input('idI', sql.BigInt, req.params.id).query('SELECT TOP 1 id FROM invoices WHERE order_id=@idI');
-      const iid = invR.recordset[0] ? invR.recordset[0].id : null;
-      // Insert payment record
-      await pool.request()
-        .input('oid', sql.BigInt, req.params.id)
-        .input('iid', sql.BigInt, iid)
-        .input('cid', sql.BigInt, cid)
-        .input('amt', sql.Decimal(12,2), amount)
-        .input('pm', sql.NVarChar(50), b.payment_method || 'Other')
-        .input('pref', sql.NVarChar(100), b.payment_reference || null)
-        .input('rcv', sql.DateTime, receivedAt)
-        .input('notes', sql.NVarChar(500), b.notes || null)
-        .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
-      // Recalculate paid total
-      const sumR = await pool.request().input('idS', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS');
-      const totalPaid = parseFloat(sumR.recordset[0].total_paid || 0);
-      const isPaid = totalPaid >= orderTotal - 0.01;
-      const newStatus = isPaid ? 'Paid' : 'Partially Paid';
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('paidAmt', sql.Decimal(12,2), totalPaid)
-        .input('newStatus', sql.NVarChar(50), newStatus)
-        .input('paidAt', sql.DateTime, isPaid ? receivedAt : null)
-        .input('payMethod', sql.NVarChar(50), b.payment_method || null)
-        .input('payRef', sql.NVarChar(100), b.payment_reference || null)
-        .query("UPDATE orders SET paid_amount=@paidAmt, status=@newStatus, paid_at=ISNULL(paid_at,@paidAt), payment_method=ISNULL(payment_method,@payMethod), payment_reference=ISNULL(payment_reference,@payRef), updated_at=GETDATE() WHERE id=@id");
-      await pool.request().input('id', sql.BigInt, req.params.id).input('s', sql.NVarChar(50), newStatus).input('n', sql.NVarChar(500), 'Payment of $'+amount.toFixed(2)+' recorded ('+(b.payment_method||'')+')').query('INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,@s,@n)');
-      // If fully paid, mark invoices paid too
-      if (isPaid) {
-        await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
-      }
-      res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
-    } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
   });
 
   router.post('/orders/:id/mark-paid', async (req, res) => {
