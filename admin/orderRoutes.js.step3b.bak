@@ -211,34 +211,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const pool = await getPool();
       const b = req.body;
       const note = 'Paid via '+(b.payment_method||'')+(b.payment_notes ? ' - '+b.payment_notes : '');
-      const paidAt = b.payment_date ? new Date(b.payment_date) : new Date();
-      const orderTotal = await pool.request().input('idT', sql.BigInt, req.params.id).query('SELECT total_amount FROM orders WHERE id=@idT');
-      const totalAmount = parseFloat(orderTotal.recordset[0] && orderTotal.recordset[0].total_amount || 0);
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('paidAt', sql.DateTime, paidAt)
-        .input('paidAmount', sql.Decimal(12,2), totalAmount)
-        .input('payMethod', sql.NVarChar(50), b.payment_method||null)
-        .input('payRef', sql.NVarChar(100), b.payment_notes||null)
-        .query("UPDATE orders SET status='Paid', paid_at=@paidAt, paid_amount=@paidAmount, payment_method=@payMethod, payment_reference=@payRef, updated_at=GETDATE() WHERE id=@id");
-      // Also insert into payments table
-      try {
-        const custR = await pool.request().input('idC', sql.BigInt, req.params.id).query('SELECT customer_id FROM orders WHERE id=@idC');
-        const cid = custR.recordset[0] && custR.recordset[0].customer_id;
-        const invR = await pool.request().input('idI', sql.BigInt, req.params.id).query('SELECT TOP 1 id FROM invoices WHERE order_id=@idI');
-        const iid = invR.recordset[0] && invR.recordset[0].id;
-        if (cid) {
-          await pool.request()
-            .input('oid', sql.BigInt, req.params.id)
-            .input('iidP', sql.BigInt, iid || null)
-            .input('cid', sql.BigInt, cid)
-            .input('amt', sql.Decimal(12,2), totalAmount)
-            .input('pm', sql.NVarChar(50), b.payment_method||'Other')
-            .input('pref', sql.NVarChar(100), b.payment_notes||null)
-            .input('pAt', sql.DateTime, paidAt)
-            .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at) VALUES (@oid,@iidP,@cid,@amt,@pm,@pref,@pAt)');
-        }
-      } catch(payErr) { console.error('Payment insert error:', payErr.message); }
+      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Paid',updated_at=GETDATE() WHERE id=@id");
       await pool.request().input('id', sql.BigInt, req.params.id).input('note', sql.NVarChar(500), note).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Paid',@note)");
       // Mark invoice as Paid too
       await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
