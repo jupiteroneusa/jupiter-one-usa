@@ -56,7 +56,7 @@ try {
         ${[
           ['Quote Date', formatDate(q.sent_at) || '—'],
           ['Valid Until', formatDate(q.valid_until)],
-          ['Payment Terms', q.payment_terms || 'Credit Card or Wire Transfer'],
+          ['Payment Terms', q.payment_terms || 'Credit Card, COD, Wire Transfer'],
           ['Status', q.status],
         ].map(([l,v]) => `<div style="padding:16px 20px;border-right:1px solid var(--border);">
           <div style="font-family:var(--font-mono);font-size:.6rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">${l}</div>
@@ -107,7 +107,7 @@ try {
         <div style="font-size:.82rem;color:var(--muted);line-height:1.9;">
           <ol style="padding-left:18px;display:flex;flex-direction:column;gap:8px;">
             <li>This quotation is valid for <strong style="color:var(--white);">30 days</strong> from the date of issue. Prices are subject to availability at time of order confirmation.</li>
-            <li>All prices are quoted in USD. Payment accepted via Credit Card or Wire Transfer prior to shipment unless otherwise agreed in writing.</li>
+            <li>All prices are quoted in USD. Payment accepted via Credit Card, COD, or Wire Transfer prior to shipment unless otherwise agreed in writing.</li>
             <li>Parts supplied are sourced from verified suppliers and include applicable traceability documentation. Condition codes follow standard ITAR/EAR classifications.</li>
             <li>Lead times are estimates only and subject to supplier availability. Jupiter One USA will communicate any changes promptly.</li>
             <li>All sales are subject to applicable US export control laws including EAR and ITAR. Buyer is responsible for obtaining any required export licenses.</li>

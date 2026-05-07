@@ -3,7 +3,7 @@
 
 import { currency, shortDate, statusBadge } from './uiHelpers.js';
 
-export function renderShippingTab(o, ships, missingCerts) {
+export function renderShippingTab(o, ships) {
   const shipRows = ships.recordset.map(function(s) {
     const isDelivered = !!s.actual_delivery_at;
     const trackingDisplay = s.tracking_number
@@ -56,31 +56,6 @@ export function renderShippingTab(o, ships, missingCerts) {
   html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">ZIP</div><input type="text" name="ship_to_zip" value="' + (o.ship_to_zip || '') + '" style="width:100%;"/></div>';
   html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Country</div><input type="text" name="ship_to_country" value="' + (o.ship_to_country || 'USA') + '" style="width:100%;"/></div>';
   html += '<div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">Save Shipping</button></div></form></div></div>';
-
-  // Compliance warning + override option (Wire UX 2)
-  if (missingCerts && missingCerts.length) {
-    let blockingHtml = '<div style="background:rgba(224,80,80,0.08);border:1px solid #e05050;border-left:4px solid #e05050;padding:14px 18px;margin-bottom:20px;">';
-    blockingHtml += '<div style="font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:#e05050;margin-bottom:8px;font-weight:700;">\u26A0 COMPLIANCE BLOCK \u2014 Cannot Ship</div>';
-    blockingHtml += '<div style="font-size:.85rem;color:#eef1f5;margin-bottom:10px;">The following lines have required certifications that have not been received yet:</div>';
-    blockingHtml += '<ul style="margin:0 0 12px 18px;font-size:.82rem;color:#eef1f5;">';
-    missingCerts.forEach(function(m) {
-      const miss = []; if (m.cert_8130_required && !m.cert_8130_received) miss.push('8130-3');
-      if (m.coc_required && !m.coc_received) miss.push('CoC');
-      blockingHtml += '<li>Line ' + m.line_number + ' (' + (m.part_number || m.nsn || '') + '): missing ' + miss.join(', ') + '</li>';
-    });
-    blockingHtml += '</ul>';
-    blockingHtml += '<div style="font-size:.78rem;color:#7a8a9a;margin-bottom:10px;">Resolve by marking certs received on the Lines tab, or use the override below for documented emergencies.</div>';
-    blockingHtml += '<details style="margin-top:10px;"><summary style="cursor:pointer;color:#e05050;font-size:.78rem;font-weight:600;">\u26A0 Compliance Override (Audited)</summary>';
-    blockingHtml += '<form method="POST" action="/admin/orders/' + o.id + '/tracking" style="margin-top:12px;background:#0a1628;padding:14px;border:1px solid #1e2d42;">';
-    blockingHtml += '<input type="hidden" name="compliance_override" value="1"/>';
-    blockingHtml += '<input type="hidden" name="carrier" value="OVERRIDE"/>';
-    blockingHtml += '<div style="font-size:.7rem;color:#e05050;margin-bottom:6px;font-weight:600;">Override Reason (required, audited)</div>';
-    blockingHtml += '<textarea name="override_reason" required minlength="15" rows="3" placeholder="Document the reason for overriding compliance gate (min 15 chars)..." style="width:100%;background:#111e30;border:1px solid #e05050;color:#eef1f5;padding:8px 12px;font-size:.85rem;"></textarea>';
-    blockingHtml += '<div style="font-size:.7rem;color:#7a8a9a;margin:8px 0;">Note: This override bypasses the compliance gate for THIS shipment only. The order line still has cert flags unchanged. The override action and reason are logged.</div>';
-    blockingHtml += '<button type="submit" onclick="return confirm(\'Confirm: bypass compliance gate? This is logged.\')" class="btn btn-sm" style="background:#e05050;color:#fff;font-weight:600;">Override and Continue Shipping</button>';
-    blockingHtml += '</form></details></div>';
-    html += blockingHtml;
-  }
 
   // Add shipment form (with new fields)
   html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Add Tracking / Shipment</div><div class="card-body">';

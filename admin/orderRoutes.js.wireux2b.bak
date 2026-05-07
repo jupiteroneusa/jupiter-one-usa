@@ -58,8 +58,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } else if (activeTab === 'lines') {
         html += renderLinesTab(o, oLines, suppliers);
       } else if (activeTab === 'shipping') {
-        const missingCertsR = await pool.request().input('idMc', sql.BigInt, req.params.id).query("SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS part_number, nsn, cert_8130_required, cert_8130_received, coc_required, coc_received FROM order_lines WHERE order_id=@idMc AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))");
-        html += renderShippingTab(o, ships, missingCertsR.recordset);
+        html += renderShippingTab(o, ships);
       } else if (activeTab === 'payment') {
         html += renderPaymentTab(o, invoices, payments);
       }
@@ -133,12 +132,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
         "(coc_required & ~coc_received) AS mcoc " +
         "FROM order_lines WHERE order_id=@oid AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))"
       );
-      if (compR.recordset.length && req.body.compliance_override === '1') {
-        // Log the override to status log
-        const reason = (req.body.override_reason || '').substring(0, 500);
-        await pool.request().input('id', sql.BigInt, req.params.id).input('n', sql.NVarChar(500), 'COMPLIANCE OVERRIDE: ' + reason)
-          .query("INSERT INTO order_status_log (order_id, new_status, note) VALUES (@id, 'Compliance Override', @n)");
-      }
       if (compR.recordset.length && req.body.compliance_override !== '1') {
         const blocking = compR.recordset.map(function(l){
           var miss = []; if (l.m8130) miss.push('8130-3'); if (l.mcoc) miss.push('CoC');
