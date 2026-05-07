@@ -242,38 +242,7 @@ export async function buildAdminRouter() {
             <th></th>
           </tr></thead>
           <tbody>${rows}</tbody></table>
-        </div>
-        <script>
-          (function(){
-            document.querySelectorAll('tr[data-supplier-row]').forEach(function(tr){
-              tr.addEventListener('click', function(e){
-                if (e.target.tagName === 'A' || e.target.closest('a')) return;
-                window.location = tr.getAttribute('data-href');
-              });
-              tr.addEventListener('mouseenter', function(){ tr.style.background='rgba(200,147,42,0.08)'; });
-              tr.addEventListener('mouseleave', function(){ tr.style.background=''; });
-            });
-            var t = document.getElementById('suppliersTable');
-            if (!t) return;
-            var dirs = {};
-            t.querySelectorAll('th[data-sort]').forEach(function(h){
-              h.addEventListener('click', function(){
-                var col = parseInt(h.getAttribute('data-sort'));
-                var dir = dirs[col] = (dirs[col] === 'asc' ? 'desc' : 'asc');
-                var tbody = t.querySelector('tbody');
-                var rows = Array.from(tbody.querySelectorAll('tr[data-supplier-row]'));
-                rows.sort(function(a,b){
-                  var av = (a.children[col].textContent || '').trim().toLowerCase();
-                  var bv = (b.children[col].textContent || '').trim().toLowerCase();
-                  if (av < bv) return dir==='asc'?-1:1;
-                  if (av > bv) return dir==='asc'?1:-1;
-                  return 0;
-                });
-                rows.forEach(function(r){ tbody.appendChild(r); });
-              });
-            });
-          })();
-        </script>`));
+        </div>`));
     } catch(err) {
       res.send(page('Dashboard','dashboard',`<div class="alert alert-error">${err.message}</div>`));
     }
@@ -2439,8 +2408,8 @@ export async function buildAdminRouter() {
         SELECT id, company_name AS name, contact_name, email, phone, country, status, created_at
         FROM suppliers ORDER BY company_name ASC
       `);
-      const rows = result.recordset.map(s => `<tr data-supplier-row data-href="/admin/suppliers/${s.id}" style="cursor:pointer;">
-        <td style="font-weight:600;color:#c8932a;">${s.name}</td>
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
         <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
         <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
         <td style="color:#7a8a9a;">${s.phone||'—'}</td>
@@ -2451,7 +2420,7 @@ export async function buildAdminRouter() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div class="page-title">Suppliers</div><a href="/admin/suppliers/new" class="btn btn-gold">+ New Supplier</a></div>
         <div class="page-sub">Verified supplier network</div>
         <div class="card">
-          <table id="suppliersTable"><thead><tr><th data-sort="0" style="cursor:pointer;user-select:none;">Company &#x25B2;&#x25BC;</th><th data-sort="1" style="cursor:pointer;user-select:none;">Contact &#x25B2;&#x25BC;</th><th>Email</th><th>Phone</th><th data-sort="4" style="cursor:pointer;user-select:none;">Country &#x25B2;&#x25BC;</th><th data-sort="5" style="cursor:pointer;user-select:none;">Status &#x25B2;&#x25BC;</th></tr></thead>
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
           <tbody>${rows}</tbody></table>
         </div>`));
     } catch(err) {
