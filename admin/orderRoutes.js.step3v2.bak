@@ -3,7 +3,6 @@
 import { getPool, sql } from '../db/connect.js';
 import { generateNumber } from '../db/numbering.js';
 import { renderOverviewTab } from './orderOverviewBlock.js';
-import { renderShippingTab } from './orderShippingBlock.js';
 
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
@@ -59,7 +58,26 @@ export function mountOrderRoutes(router, requireAuth, page) {
         if (o.shipping_cost) html += '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong>$'+parseFloat(o.shipping_cost).toFixed(2)+'</strong></span>';
         html += '<span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">$'+parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</strong></span></div>';
       } else if (activeTab === 'shipping') {
-        html += renderShippingTab(o, ships);
+        html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Shipping Info</div><div class="card-body">';
+        html += '<form method="POST" action="/admin/orders/'+o.id+'/shipping" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="'+(o.shipping_cost||'')+'" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Address</div><input type="text" name="ship_to_address1" value="'+(o.ship_to_address1||'')+'" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">City</div><input type="text" name="ship_to_city" value="'+(o.ship_to_city||'')+'" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">State</div><input type="text" name="ship_to_state" value="'+(o.ship_to_state||'')+'" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">ZIP</div><input type="text" name="ship_to_zip" value="'+(o.ship_to_zip||'')+'" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Country</div><input type="text" name="ship_to_country" value="'+(o.ship_to_country||'USA')+'" style="width:100%;"/></div>';
+        html += '<div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">Save Shipping</button></div></form></div></div>';
+        html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Add Tracking</div><div class="card-body">';
+        html += '<form method="POST" action="/admin/orders/'+o.id+'/tracking" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Carrier</div><input type="text" name="carrier" placeholder="FedEx, UPS, DHL..." style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Tracking #</div><input type="text" name="tracking_number" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Tracking URL</div><input type="text" name="tracking_url" placeholder="https://..." style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Ship Date</div><input type="date" name="ship_date" style="width:100%;"/></div>';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Est. Delivery</div><input type="date" name="estimated_delivery" style="width:100%;"/></div>';
+        html += '<div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">Add Shipment</button></div></form></div></div>';
+        html += '<div class="card"><div class="card-header">Shipments</div>';
+        html += '<table><thead><tr><th>Shipment #</th><th>Carrier</th><th>Tracking</th><th>Status</th><th>Ship Date</th><th>Est. Delivery</th></tr></thead>';
+        html += '<tbody>'+shipRows+'</tbody></table></div>';
       } else if (activeTab === 'payment') {
         html += '<div class="card" style="margin-bottom:16px;"><div class="card-header">Payment Summary</div><div class="card-body">';
         html += '<div style="font-size:.88rem;color:#7a8a9a;margin-bottom:16px;">Subtotal: <strong style="color:#eef1f5;">$'+parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</strong>';
@@ -161,13 +179,8 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('trackingUrl', sql.NVarChar(500), b.tracking_url||null)
         .input('shipDate', sql.Date, b.ship_date||null)
         .input('estDelivery', sql.Date, b.estimated_delivery||null)
-        .input('weight', sql.Decimal(8,2), parseFloat(b.weight_lbs)||null)
-        .input('dims', sql.NVarChar(50), b.dimensions||null)
-        .input('pkgs', sql.Int, parseInt(b.package_count)||1)
-        .input('sigReq', sql.Bit, b.signature_required==='1'?1:0)
-        .input('ins', sql.Decimal(12,2), parseFloat(b.insurance_value)||null)
-        .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,weight_lbs,dimensions,package_count,signature_required,insurance_value,status) VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,@weight,@dims,@pkgs,@sigReq,@ins,'Shipped')");
-      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped',shipped_at=ISNULL(shipped_at,GETDATE()),updated_at=GETDATE() WHERE id=@id");
+        .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,status) VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,'Shipped')");
+      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped',updated_at=GETDATE() WHERE id=@id");
       await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','Shipment added')");
       // Send shipment notification to customer
       try {
@@ -181,28 +194,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } catch(shipEmailErr) { console.error('Shipment email error:', shipEmailErr.message); }
       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
-  });
-
-  router.post('/orders/:id/shipments/:sid/deliver', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const b = req.body;
-      const delAt = b.actual_delivery_at ? new Date(b.actual_delivery_at) : new Date();
-      await pool.request()
-        .input('sid', sql.BigInt, req.params.sid)
-        .input('delAt', sql.DateTime, delAt)
-        .input('rcvBy', sql.NVarChar(100), b.received_by_name||null)
-        .input('proof', sql.NVarChar(500), b.delivery_proof_url||null)
-        .query("UPDATE shipments SET actual_delivery_at=@delAt, received_by_name=@rcvBy, delivery_proof_url=@proof, status='Delivered' WHERE id=@sid");
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('delAt2', sql.DateTime, delAt)
-        .query("UPDATE orders SET status='Delivered', delivered_at=ISNULL(delivered_at,@delAt2), updated_at=GETDATE() WHERE id=@id");
-      await pool.request().input('id', sql.BigInt, req.params.id)
-        .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Delivered','Delivery confirmed')");
-      res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
-    } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&error='+encodeURIComponent(err.message)); }
   });
 
   router.post('/orders/:id/mark-paid', async (req, res) => {
