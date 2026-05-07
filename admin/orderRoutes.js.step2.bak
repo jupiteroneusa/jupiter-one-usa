@@ -2,7 +2,6 @@
 // Order detail routes for admin panel
 import { getPool, sql } from '../db/connect.js';
 import { generateNumber } from '../db/numbering.js';
-import { renderOverviewTab } from './orderOverviewBlock.js';
 
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
@@ -49,7 +48,26 @@ export function mountOrderRoutes(router, requireAuth, page) {
       html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping')+tabLink('payment','&#128179; Payment');
       html += '</div><div class="card"><div class="card-body">';
       if (activeTab === 'overview') {
-        html += renderOverviewTab(o, sLog);
+        html += '<div class="detail-grid" style="margin-bottom:20px;">';
+        html += '<div class="detail-item"><div class="detail-label">Order #</div><div class="detail-value" style="font-family:monospace;color:#c8932a;">'+o.order_number+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/'+o.customer_id+'" style="color:#c8932a;">'+o.customer_name+'</a></div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">'+(o.company||'&mdash;')+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:'+o.email+'" style="color:#c8932a;">'+o.email+'</a></div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Quote</div><div class="detail-value">'+(o.quote_number ? '<a href="/admin/quotes/'+o.quote_id+'" style="color:#c8932a;">'+o.quote_number+'</a>' : '&mdash;')+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">RFQ</div><div class="detail-value">'+(o.rfq_number ? '<a href="/admin/rfqs/'+o.rfq_id+'" style="color:#c8932a;">'+o.rfq_number+'</a>' : '&mdash;')+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Subtotal</div><div class="detail-value">$'+parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Shipping</div><div class="detail-value">'+(o.shipping_cost ? '$'+parseFloat(o.shipping_cost).toFixed(2) : '<span style="color:#e05050;">Not set</span>')+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">$'+parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">'+statusBadge(o.status)+'</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Created</div><div class="detail-value">'+(o.confirmed_at ? new Date(o.confirmed_at).toLocaleString() : '&mdash;')+'</div></div>';
+        html += '</div>';
+        html += '<div class="card" style="margin-bottom:16px;"><div class="card-header">Update Status</div><div class="card-body">';
+        html += '<form method="POST" action="/admin/orders/'+o.id+'/status" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">';
+        html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">'+statusOpts+'</select></div>';
+        html += '<div style="flex:1;min-width:200px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Note</div><input type="text" name="note" placeholder="Add a note..." style="width:100%;"/></div>';
+        html += '<button type="submit" class="btn btn-gold">Update</button></form></div></div>';
+        html += '<div class="card"><div class="card-header">Status History</div>';
+        html += '<table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead><tbody>'+logRows+'</tbody></table></div>';
       } else if (activeTab === 'lines') {
         html += '<table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>';
         html += '<tbody>'+(lineRows || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>')+'</tbody></table>';
@@ -112,24 +130,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
     } catch(err) {
       res.send(page('Order','orders','<div class="alert alert-error">'+err.message+'</div>'));
     }
-  });
-
-  router.post('/orders/:id/overview-update', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const b = req.body;
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('priority', sql.NVarChar(20), b.priority || 'Standard')
-        .input('assignedTo', sql.NVarChar(100), b.assigned_to || null)
-        .input('contractNumber', sql.NVarChar(100), b.contract_number || null)
-        .input('country', sql.NVarChar(50), b.country_of_destination || null)
-        .input('endUseCert', sql.Bit, b.end_use_cert_required === '1' ? 1 : 0)
-        .input('internalNotes', sql.NVarChar(sql.MAX), b.internal_notes || null)
-        .query('UPDATE orders SET priority=@priority, assigned_to=@assignedTo, contract_number=@contractNumber, country_of_destination=@country, end_use_cert_required=@endUseCert, internal_notes=@internalNotes, updated_at=GETDATE() WHERE id=@id');
-      res.redirect('/admin/orders/'+req.params.id+'?tab=overview&saved=1');
-    } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
   });
 
   router.post('/orders/:id/status', async (req, res) => {
