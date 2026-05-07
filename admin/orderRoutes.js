@@ -182,6 +182,16 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,status) VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,'Shipped')");
       await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped',updated_at=GETDATE() WHERE id=@id");
       await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','Shipment added')");
+      // Send shipment notification to customer
+      try {
+        const custR = await pool.request().input('id', sql.BigInt, req.params.id)
+          .query('SELECT o.order_number, c.first_name, c.last_name, c.email FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=@id');
+        if (custR.recordset.length) {
+          const { sendShipmentNotification } = await import('../services/mailer.js');
+          const cr = custR.recordset[0];
+          sendShipmentNotification({ customer: cr, order: { order_number: cr.order_number }, shipment: { carrier: b.carrier||'', tracking_number: b.tracking_number||'', tracking_url: b.tracking_url||null, estimated_delivery: b.estimated_delivery||null } }).catch(console.error);
+        }
+      } catch(shipEmailErr) { console.error('Shipment email error:', shipEmailErr.message); }
       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
   });
@@ -194,6 +204,8 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const note = 'Paid via '+(b.payment_method||'')+(b.payment_notes ? ' - '+b.payment_notes : '');
       await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Paid',updated_at=GETDATE() WHERE id=@id");
       await pool.request().input('id', sql.BigInt, req.params.id).input('note', sql.NVarChar(500), note).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Paid',@note)");
+      // Mark invoice as Paid too
+      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
   });
