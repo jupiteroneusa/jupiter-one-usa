@@ -2276,7 +2276,7 @@ export async function buildAdminRouter() {
         ORDER BY i.created_at DESC
       `);
       const rows = result.recordset.map(i => `<tr>
-        <td class="mono text-gold">${i.invoice_number}</td>
+        <td class="mono text-gold"><a href="/admin/invoices/${i.id}" style="color:#c8932a;">${i.invoice_number}</a></td>
         <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
         <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
         <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
