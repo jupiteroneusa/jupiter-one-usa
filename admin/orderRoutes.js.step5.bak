@@ -5,7 +5,6 @@ import { generateNumber } from '../db/numbering.js';
 import { renderOverviewTab } from './orderOverviewBlock.js';
 import { renderShippingTab } from './orderShippingBlock.js';
 import { renderPaymentTab } from './orderPaymentBlock.js';
-import { renderLinesTab } from './orderLinesBlock.js';
 
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
@@ -29,7 +28,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const sLog = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM order_status_log WHERE order_id=@id ORDER BY created_at ASC');
       const invoices = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT id, invoice_number, status, total_amount, due_date FROM invoices WHERE order_id=@id ORDER BY created_at DESC');
       const payments = await pool.request().input('idP', sql.BigInt, req.params.id).query('SELECT id, amount, payment_method, payment_reference, received_at, notes FROM payments WHERE order_id=@idP ORDER BY received_at DESC');
-      const suppliers = await pool.request().query("SELECT id, name, country FROM suppliers WHERE status='Active' ORDER BY name ASC");
       const activeTab = req.query.tab || 'overview';
       const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' : req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '';
       const lineRows = oLines.recordset.map(function(l) {
@@ -56,7 +54,12 @@ export function mountOrderRoutes(router, requireAuth, page) {
       if (activeTab === 'overview') {
         html += renderOverviewTab(o, sLog);
       } else if (activeTab === 'lines') {
-        html += renderLinesTab(o, oLines, suppliers);
+        html += '<table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>';
+        html += '<tbody>'+(lineRows || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>')+'</tbody></table>';
+        html += '<div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;">';
+        html += '<span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong>$'+parseFloat(o.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</strong></span>';
+        if (o.shipping_cost) html += '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong>$'+parseFloat(o.shipping_cost).toFixed(2)+'</strong></span>';
+        html += '<span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">$'+parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</strong></span></div>';
       } else if (activeTab === 'shipping') {
         html += renderShippingTab(o, ships);
       } else if (activeTab === 'payment') {
@@ -223,30 +226,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
       }
       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
     } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
-  });
-
-  router.post('/orders/:id/lines/:lineId/update', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const b = req.body;
-      await pool.request()
-        .input('id', sql.BigInt, req.params.lineId)
-        .input('oid', sql.BigInt, req.params.id)
-        .input('supId', sql.BigInt, b.supplier_id ? parseInt(b.supplier_id) : null)
-        .input('supCost', sql.Decimal(10,2), b.supplier_cost ? parseFloat(b.supplier_cost) : null)
-        .input('leadDays', sql.Int, b.supplier_lead_time_days ? parseInt(b.supplier_lead_time_days) : null)
-        .input('lotNum', sql.NVarChar(100), b.lot_number || null)
-        .input('coo', sql.NVarChar(50), b.country_of_origin || null)
-        .input('rcvAt', sql.DateTime, b.received_at ? new Date(b.received_at) : null)
-        .input('serials', sql.NVarChar(sql.MAX), b.serial_numbers || null)
-        .input('cert8R', sql.Bit, b.cert_8130_required === '1' ? 1 : 0)
-        .input('cert8G', sql.Bit, b.cert_8130_received === '1' ? 1 : 0)
-        .input('cocR', sql.Bit, b.coc_required === '1' ? 1 : 0)
-        .input('cocG', sql.Bit, b.coc_received === '1' ? 1 : 0)
-        .query('UPDATE order_lines SET supplier_id=@supId, supplier_cost=@supCost, supplier_lead_time_days=@leadDays, lot_number=@lotNum, country_of_origin=@coo, received_at=@rcvAt, serial_numbers=@serials, cert_8130_required=@cert8R, cert_8130_received=@cert8G, coc_required=@cocR, coc_received=@cocG WHERE id=@id AND order_id=@oid');
-      res.redirect('/admin/orders/'+req.params.id+'?tab=lines&saved=1');
-    } catch(err) { console.error('Line update error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=lines&error='+encodeURIComponent(err.message)); }
   });
 
   router.post('/orders/:id/mark-paid', async (req, res) => {
