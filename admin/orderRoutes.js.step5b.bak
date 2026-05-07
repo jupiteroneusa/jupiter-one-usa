@@ -29,7 +29,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const sLog = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM order_status_log WHERE order_id=@id ORDER BY created_at ASC');
       const invoices = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT id, invoice_number, status, total_amount, due_date FROM invoices WHERE order_id=@id ORDER BY created_at DESC');
       const payments = await pool.request().input('idP', sql.BigInt, req.params.id).query('SELECT id, amount, payment_method, payment_reference, received_at, notes FROM payments WHERE order_id=@idP ORDER BY received_at DESC');
-      const suppliers = await pool.request().query("SELECT id, company_name AS name, country FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
+      const suppliers = await pool.request().query("SELECT id, name, country FROM suppliers WHERE status='Active' ORDER BY name ASC");
       const activeTab = req.query.tab || 'overview';
       const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' : req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '';
       const lineRows = oLines.recordset.map(function(l) {
