@@ -220,9 +220,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const o = or.recordset[0];
       const existing = await pool.request().input('oid', sql.BigInt, req.params.id).query('SELECT id FROM invoices WHERE order_id=@oid');
       if (existing.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=Invoice+already+exists');
-      // EMPTY_GUARD - refuse to make invoice from order with no lines
-      const orderLineCount = await pool.request().input('oidCheck', sql.BigInt, req.params.id).query('SELECT COUNT(*) AS cnt FROM order_lines WHERE order_id=@oidCheck');
-      if (!orderLineCount.recordset[0].cnt) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=' + encodeURIComponent('Cannot generate invoice: this order has no line items. Add lines from the source quote first.'));
       const invoiceNumber = await generateNumber('INV');
       const dueDays = parseInt(req.body.due_days)||0;
       const issueDate = new Date();
