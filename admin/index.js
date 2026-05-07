@@ -2294,6 +2294,220 @@ export async function buildAdminRouter() {
       res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
     }
   });
+  // Invoice Detail
+  router.get('/invoices/:id', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const ir = await pool.request().input('id', sql.BigInt, req.params.id).query(`
+        SELECT i.*, o.order_number, o.id AS order_id,
+          c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone, c.id AS customer_id,
+          c.billing_address1, c.billing_address2, c.billing_city, c.billing_state, c.billing_zip, c.billing_country
+        FROM invoices i
+        LEFT JOIN orders o ON o.id=i.order_id
+        JOIN customers c ON c.id=i.customer_id
+        WHERE i.id=@id
+      `);
+      if (!ir.recordset.length) return res.send(page('Invoice','invoices','<div class="alert alert-error">Invoice not found.</div>'));
+      const inv = ir.recordset[0];
+      const lines = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM invoice_lines WHERE invoice_id=@id ORDER BY line_number');
+
+      const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' :
+        req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '';
+
+      const lineRows = lines.recordset.map(l => `<tr>
+        <td style="color:#7a8a9a;">${l.line_number}</td>
+        <td class="mono" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</td>
+        <td>${l.description||'—'}</td>
+        <td>${l.quantity}</td>
+        <td style="color:#7a8a9a;">${l.condition_code||'—'}</td>
+        <td style="font-weight:600;">${parseFloat(l.unit_price||0).toFixed(2)}</td>
+        <td style="font-weight:600;">${parseFloat(l.line_total||0).toFixed(2)}</td>
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>';
+
+      const billTo = [
+        inv.billing_address1,
+        inv.billing_address2,
+        [inv.billing_city, inv.billing_state, inv.billing_zip].filter(Boolean).join(', '),
+        inv.billing_country
+      ].filter(Boolean).join('<br>') || '<span style="color:#7a8a9a;">No billing address on file</span>';
+
+      const isPaid = inv.status === 'Paid';
+      const balanceDue = parseFloat(inv.balance_due||0);
+
+      let html = successMsg;
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div class="page-title">${inv.invoice_number}</div>
+          <div class="page-sub" style="margin-bottom:0;">${inv.customer_name} · ${inv.company||''}</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          ${inv.order_id ? '<a href="/admin/orders/'+inv.order_id+'?tab=payment" class="btn btn-outline btn-sm">View Order</a>' : ''}
+          <a href="/admin/invoices" class="btn btn-outline btn-sm">&larr; Back</a>
+        </div>
+      </div>`;
+
+      html += `<div class="detail-grid">
+        <div class="detail-item"><div class="detail-label">Invoice #</div><div class="detail-value" style="font-family:monospace;color:#c8932a;">${inv.invoice_number}</div></div>
+        <div class="detail-item"><div class="detail-label">Order</div><div class="detail-value">${inv.order_number ? '<a href="/admin/orders/'+inv.order_id+'" style="color:#c8932a;">'+inv.order_number+'</a>' : '—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${inv.customer_id}" style="color:#c8932a;">${inv.customer_name}</a></div></div>
+        <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${inv.email}" style="color:#c8932a;">${inv.email}</a></div></div>
+        <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(inv.status)}</div></div>
+        <div class="detail-item"><div class="detail-label">Issue Date</div><div class="detail-value">${inv.issue_date?new Date(inv.issue_date).toLocaleDateString():'—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Due Date</div><div class="detail-value">${inv.due_date?new Date(inv.due_date).toLocaleDateString():'—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Paid Date</div><div class="detail-value">${inv.paid_date?new Date(inv.paid_date).toLocaleDateString():'—'}</div></div>
+        <div class="detail-item"><div class="detail-label">Subtotal</div><div class="detail-value">${parseFloat(inv.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+        <div class="detail-item"><div class="detail-label">Shipping</div><div class="detail-value">${parseFloat(inv.shipping_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+        <div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">${parseFloat(inv.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+        <div class="detail-item"><div class="detail-label">Balance Due</div><div class="detail-value" style="font-weight:700;color:${balanceDue>0?'#e05050':'#4caf50'};font-size:1.1rem;">${balanceDue.toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+      </div>`;
+
+      html += `<div class="card"><div class="card-header">Bill To</div><div class="card-body" style="line-height:1.6;">
+        <strong>${inv.customer_name}</strong>${inv.company ? '<br>'+inv.company : ''}<br>
+        ${billTo}
+      </div></div>`;
+
+      html += `<div class="card"><div class="card-header">Line Items (${lines.recordset.length})</div>
+        <table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>
+        <tbody>${lineRows}</tbody></table>
+        <div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;">
+          <span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong>${parseFloat(inv.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+          ${parseFloat(inv.shipping_amount||0)>0 ? '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong>, async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, contact_name, email, phone, country, status, created_at
+        FROM suppliers ORDER BY name ASC
+      `);
+      const rows = result.recordset.map(s => `<tr>
+        <td style="font-weight:600;">${s.name}</td>
+        <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+        <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+        <td style="color:#7a8a9a;">${s.country||'—'}</td>
+        <td>${statusBadge(s.status)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+      res.send(page('Suppliers','suppliers',`
+        <div class="page-title">Suppliers</div>
+        <div class="page-sub">Verified supplier network</div>
+        <div class="card">
+          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  // Messages
+  router.get('/messages', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request().query(`
+        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+        FROM contact_messages
+        ORDER BY submitted_at DESC
+      `);
+      const rows = result.recordset.map(m => `<tr>
+        <td><strong>${m.name}</strong><br><span style="font-size:.75rem;color:#7a8a9a;">${m.company||''}</span></td>
+        <td style="color:#7a8a9a;font-size:.8rem;"><a href="mailto:${m.email}" style="color:#c8932a;">${m.email}</a></td>
+        <td style="color:#7a8a9a;">${m.phone||'—'}</td>
+        <td>${m.subject||'—'}</td>
+        <td style="color:#7a8a9a;font-size:.82rem;max-width:300px;">${(m.message||'').substring(0,100)}${m.message?.length>100?'...':''}</td>
+        <td>${statusBadge(m.status||'New')}</td>
+        <td style="color:#7a8a9a;font-size:.78rem;">${new Date(m.submitted_at).toLocaleDateString()}</td>
+        <td>
+          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+              <option value="New"${m.status==='New'?' selected':''}>New</option>
+              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+            </select>
+          </form>
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No messages yet</td></tr>';
+      res.send(page('Messages','messages',`
+        <div class="page-title">Messages</div>
+        <div class="page-sub">Contact form submissions</div>
+        <div class="card">
+          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+          <tbody>${rows}</tbody></table>
+        </div>`));
+    } catch(err) {
+      res.send(page('Messages','messages',`<div class="alert alert-error">${err.message}</div>`));
+    }
+  });
+
+  router.post('/messages/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('status', sql.NVarChar, req.body.status)
+        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+      res.redirect('/admin/messages');
+    } catch(err) {
+      res.redirect('/admin/messages');
+    }
+  });
+
+  // Customer typeahead search API
+  router.get('/api/customer-search', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('q', sql.NVarChar, '%' + q + '%')
+        .query(`
+          SELECT TOP 10 id,
+            first_name + ' ' + last_name AS name,
+            email, company
+          FROM customers
+          WHERE first_name LIKE @q OR last_name LIKE @q
+            OR email LIKE @q OR company LIKE @q
+            OR (first_name + ' ' + last_name) LIKE @q
+          ORDER BY last_name, first_name
+        `);
+      res.json(result.recordset);
+    } catch(err) {
+      res.json([]);
+    }
+  });
+
+  mountOrderRoutes(router, requireAuth, page);
+  return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
+}
++parseFloat(inv.shipping_amount).toFixed(2)+'</strong></span>' : ''}
+          <span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">${parseFloat(inv.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+        </div>
+      </div>`;
+
+      if (!isPaid && inv.order_id) {
+        html += `<div class="card"><div class="card-header">Payment</div><div class="card-body">
+          <p style="font-size:.85rem;color:#7a8a9a;margin-bottom:12px;">To mark this invoice paid, use the order payment tab.</p>
+          <a href="/admin/orders/${inv.order_id}?tab=payment" class="btn btn-gold">Go to Order Payment Tab &rarr;</a>
+        </div></div>`;
+      } else if (isPaid) {
+        html += '<div class="alert alert-success">&#10004; This invoice is paid in full.</div>';
+      }
+
+      if (inv.notes) {
+        html += `<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">${inv.notes}</div></div>`;
+      }
+
+      res.send(page('Invoice '+inv.invoice_number, 'invoices', html));
+    } catch(err) {
+      console.error('Invoice detail error:', err);
+      res.send(page('Invoice','invoices','<div class="alert alert-error">'+err.message+'</div>'));
+    }
+  });
+
 
   // Suppliers
   router.get('/suppliers', async (req, res) => {
