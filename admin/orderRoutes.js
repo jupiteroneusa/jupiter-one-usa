@@ -111,7 +111,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           html += '<div class="card"><div class="card-header">Invoices</div>';
           html += '<table><thead><tr><th>Invoice #</th><th>Status</th><th>Total</th><th>Due Date</th></tr></thead><tbody>';
           invoices.recordset.forEach(function(inv) {
-            html += '<tr><td class="mono" style="color:#c8932a;">'+inv.invoice_number+'</td><td>'+statusBadge(inv.status)+'</td><td style="font-weight:600;">$'+parseFloat(inv.total_amount||0).toFixed(2)+'</td><td style="color:#7a8a9a;font-size:.78rem;">'+(inv.due_date?new Date(inv.due_date).toLocaleDateString():'&mdash;')+'</td></tr>';
+            html += '<tr><td class="mono"><a href="/admin/invoices/'+inv.id+'" style="color:#c8932a;text-decoration:none;">'+inv.invoice_number+'</a></td><td>'+statusBadge(inv.status)+'</td><td style="font-weight:600;">$'+parseFloat(inv.total_amount||0).toFixed(2)+'</td><td style="color:#7a8a9a;font-size:.78rem;">'+(inv.due_date?new Date(inv.due_date).toLocaleDateString():'&mdash;')+'</td></tr>';
           });
           html += '</tbody></table></div>';
         } else {
