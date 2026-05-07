@@ -2,7 +2,6 @@
 import { Router } from 'express';
 import { mountOrderRoutes } from './orderRoutes.js';
 import { mountSupplierRoutes } from './supplierRoutes.js';
-import { mountSupplierPoRoutes } from './supplierPoRoutes.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
 
@@ -86,7 +85,6 @@ function adminNav(active) {
     <a href="/admin/quotes" class="${active==='quotes'?'active':''}">💰 Quotes</a>
     <a href="/admin/orders" class="${active==='orders'?'active':''}">📦 Orders</a>
     <a href="/admin/suppliers" class="${active==='suppliers'?'active':''}">🏭 Suppliers</a>
-    <a href="/admin/supplier-pos" class="${active==='supplier-pos'?'active':''}">📝 Supplier POs</a>
     <a href="/admin/invoices" class="${active==='invoices'?'active':''}">🧾 Invoices</a>
     <a href="/admin/messages" class="${active==='messages'?'active':''}">✉️ Messages</a>
   </div>`;
@@ -2542,6 +2540,5 @@ export async function buildAdminRouter() {
 
   mountOrderRoutes(router, requireAuth, page);
   mountSupplierRoutes(router, requireAuth, page);
-  mountSupplierPoRoutes(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }

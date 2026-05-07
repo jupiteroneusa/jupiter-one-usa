@@ -6,12 +6,7 @@ import { currency, statusBadge } from './uiHelpers.js';
 export function renderLinesTab(o, oLines, suppliers) {
   let html = '';
 
-  html += '<div class="card" style="margin-bottom:16px;"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>Order Line Items (' + oLines.recordset.length + ')</span>';
-  if (oLines.recordset.length > 0) {
-    const lineIds = oLines.recordset.map(function(l){return l.id;}).join(',');
-    html += '<a href="/admin/supplier-pos/new?from_order=' + o.id + '&line_ids=' + lineIds + '" class="btn btn-gold btn-sm" style="font-size:.7rem;">+ Create Supplier PO</a>';
-  }
-  html += '</div>';
+  html += '<div class="card" style="margin-bottom:16px;"><div class="card-header">Order Line Items (' + oLines.recordset.length + ')</div>';
 
   if (oLines.recordset.length === 0) {
     html += '<div style="padding:24px;text-align:center;color:#7a8a9a;">No line items on this order.</div>';
