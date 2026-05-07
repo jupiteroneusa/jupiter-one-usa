@@ -200,20 +200,7 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
     if (!result.recordset.length)
       return res.status(404).json({ error: 'Quote not found or no longer available.' });
 
-    // Phase A1: Block accept if expired or already finalized
-      const _qCheck = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query("SELECT valid_until, status FROM quotes WHERE id=@id");
-      if (!_qCheck.recordset.length) return res.status(404).json({ error: 'Quote not found' });
-      const _qq = _qCheck.recordset[0];
-      if (_qq.status === 'Accepted') return res.status(400).json({ error: 'Quote has already been accepted' });
-      if (_qq.status === 'Rejected') return res.status(400).json({ error: 'Quote has been rejected and cannot be accepted' });
-      if (_qq.status === 'Expired') return res.status(410).json({ error: 'Quote has expired - please contact us for a new quote' });
-      if (_qq.valid_until && new Date(_qq.valid_until) < new Date()) {
-        await pool.request().input('id', sql.BigInt, req.params.id)
-          .query("UPDATE quotes SET status='Expired', expired_at=GETDATE(), updated_at=GETDATE() WHERE id=@id");
-        return res.status(410).json({ error: 'Quote has expired - please contact us for a new quote' });
-      }
-      await pool.request()
+    await pool.request()
       .input('id', sql.BigInt, req.params.id)
       .query(`UPDATE quotes SET status = 'Accepted', accepted_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`);
 
@@ -275,26 +262,6 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
 });
 
 // ── GET /api/quotes/:id — quote detail (customer or admin) ────
-// POST /api/quotes/:id/reject - customer rejects a quote
-router.post('/:id/reject', requireCustomer, async (req, res) => {
-  const { reason } = req.body;
-  try {
-    const pool = await getPool();
-    const qR = await pool.request().input('id', sql.BigInt, req.params.id).input('cid', sql.BigInt, req.customerId)
-      .query('SELECT id, status FROM quotes WHERE id=@id AND customer_id=@cid');
-    if (!qR.recordset.length) return res.status(404).json({ error: 'Quote not found' });
-    const q = qR.recordset[0];
-    if (q.status === 'Accepted') return res.status(400).json({ error: 'Quote already accepted' });
-    if (q.status === 'Rejected') return res.status(400).json({ error: 'Quote already rejected' });
-    await pool.request()
-      .input('id', sql.BigInt, req.params.id)
-      .input('reason', sql.NVarChar(1000), reason || null)
-      .query("UPDATE quotes SET status='Rejected', rejected_at=GETDATE(), rejection_reason=@reason, updated_at=GETDATE() WHERE id=@id");
-    try { await logAudit({ entity_type: 'quote', entity_id: req.params.id, action: 'rejected', performed_by: req.customerId, performed_by_type: 'customer', ip_address: getIp(req), notes: reason || null }); } catch(e) {}
-    res.json({ ok: true });
-  } catch(err) { console.error('Quote reject error:', err); res.status(500).json({ error: err.message }); }
-});
-
 router.get('/:id', requireCustomer, async (req, res) => {
   try {
     const pool = await getPool();

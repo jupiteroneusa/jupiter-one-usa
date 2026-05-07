@@ -124,22 +124,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
-
-      // Phase A2: Compliance gate - block ship if certs required but not received
-      const compR = await pool.request().input('oid', sql.BigInt, req.params.id).query(
-        "SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS pn, " +
-        "(cert_8130_required & ~cert_8130_received) AS m8130, " +
-        "(coc_required & ~coc_received) AS mcoc " +
-        "FROM order_lines WHERE order_id=@oid AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))"
-      );
-      if (compR.recordset.length && req.body.compliance_override !== '1') {
-        const blocking = compR.recordset.map(function(l){
-          var miss = []; if (l.m8130) miss.push('8130-3'); if (l.mcoc) miss.push('CoC');
-          return 'Line ' + l.line_number + ' (' + l.pn + ') missing: ' + miss.join(', ');
-        }).join('; ');
-        return res.redirect('/admin/orders/' + req.params.id + '?tab=shipping&error=' + encodeURIComponent('Compliance blocked: ' + blocking + '. Mark certs received first or use override.'));
-      }
-      // (compliance_blocked check end)
       const b = req.body;
       const shipNum = await generateNumber('SHP');
       await pool.request()

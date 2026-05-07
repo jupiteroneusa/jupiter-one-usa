@@ -2580,37 +2580,6 @@ export async function buildAdminRouter() {
     } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
   });
 
-  // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
-  router.post('/quotes/:id/reissue', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const days = parseInt(req.body.valid_days || 30);
-      const newValid = new Date(Date.now() + days*24*60*60*1000);
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('vu', sql.Date, newValid)
-        .query("UPDATE quotes SET status='Sent', valid_until=@vu, expired_at=NULL, rejected_at=NULL, rejection_reason=NULL, reissued_count=ISNULL(reissued_count,0)+1, updated_at=GETDATE() WHERE id=@id");
-      res.redirect('/admin/quotes/'+req.params.id+'?reissued=1');
-    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
-  });
-
-  // Phase B3: Revise quote - mark old quote Superseded, redirect admin to new quote builder
-  router.post('/quotes/:id/revise', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const qR = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT rfq_id FROM quotes WHERE id=@id');
-      if (!qR.recordset.length) return res.redirect('/admin/quotes?error=Quote+not+found');
-      const rfqId = qR.recordset[0].rfq_id;
-      // Mark current quote as Superseded (keep history)
-      await pool.request().input('id', sql.BigInt, req.params.id)
-        .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
-      // Redirect to existing requote flow on the RFQ
-      res.redirect('/admin/rfqs/'+rfqId+'/quote-review');
-    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
-  });
-
   mountSupplierPoRoutes(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }

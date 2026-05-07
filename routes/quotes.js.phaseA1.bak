@@ -200,20 +200,7 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
     if (!result.recordset.length)
       return res.status(404).json({ error: 'Quote not found or no longer available.' });
 
-    // Phase A1: Block accept if expired or already finalized
-      const _qCheck = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query("SELECT valid_until, status FROM quotes WHERE id=@id");
-      if (!_qCheck.recordset.length) return res.status(404).json({ error: 'Quote not found' });
-      const _qq = _qCheck.recordset[0];
-      if (_qq.status === 'Accepted') return res.status(400).json({ error: 'Quote has already been accepted' });
-      if (_qq.status === 'Rejected') return res.status(400).json({ error: 'Quote has been rejected and cannot be accepted' });
-      if (_qq.status === 'Expired') return res.status(410).json({ error: 'Quote has expired - please contact us for a new quote' });
-      if (_qq.valid_until && new Date(_qq.valid_until) < new Date()) {
-        await pool.request().input('id', sql.BigInt, req.params.id)
-          .query("UPDATE quotes SET status='Expired', expired_at=GETDATE(), updated_at=GETDATE() WHERE id=@id");
-        return res.status(410).json({ error: 'Quote has expired - please contact us for a new quote' });
-      }
-      await pool.request()
+    await pool.request()
       .input('id', sql.BigInt, req.params.id)
       .query(`UPDATE quotes SET status = 'Accepted', accepted_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`);
 
