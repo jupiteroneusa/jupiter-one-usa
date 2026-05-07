@@ -1,7 +1,6 @@
 // admin/index.js
 import { Router } from 'express';
 import { mountOrderRoutes } from './orderRoutes.js';
-import { mountSupplierRoutes } from './supplierRoutes.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
 
@@ -2417,7 +2416,7 @@ export async function buildAdminRouter() {
         <td>${statusBadge(s.status)}</td>
       </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
       res.send(page('Suppliers','suppliers',`
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div class="page-title">Suppliers</div><a href="/admin/suppliers/new" class="btn btn-gold">+ New Supplier</a></div>
+        <div class="page-title">Suppliers</div>
         <div class="page-sub">Verified supplier network</div>
         <div class="card">
           <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
@@ -2508,6 +2507,5 @@ export async function buildAdminRouter() {
   });
 
   mountOrderRoutes(router, requireAuth, page);
-  mountSupplierRoutes(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }
