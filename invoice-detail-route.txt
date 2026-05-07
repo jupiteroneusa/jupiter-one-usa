@@ -1,0 +1,103 @@
+  // Invoice Detail
+  router.get('/invoices/:id', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const ir = await pool.request().input('id', sql.BigInt, req.params.id).query(`
+        SELECT i.*, o.order_number, o.id AS order_id,
+          c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone, c.id AS customer_id,
+          c.billing_address1, c.billing_address2, c.billing_city, c.billing_state, c.billing_zip, c.billing_country
+        FROM invoices i
+        LEFT JOIN orders o ON o.id=i.order_id
+        JOIN customers c ON c.id=i.customer_id
+        WHERE i.id=@id
+      `);
+      if (!ir.recordset.length) return res.send(page('Invoice','invoices','<div class="alert alert-error">Invoice not found.</div>'));
+      const inv = ir.recordset[0];
+      const lines = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM invoice_lines WHERE invoice_id=@id ORDER BY line_number');
+
+      const isPaid = inv.status === 'Paid';
+      const balanceDue = parseFloat(inv.balance_due||0);
+
+      let lineRows = '';
+      lines.recordset.forEach(function(l) {
+        lineRows += '<tr>';
+        lineRows += '<td style="color:#7a8a9a;">' + l.line_number + '</td>';
+        lineRows += '<td class="mono" style="color:#c8932a;">' + (l.nsn||l.part_number||'&mdash;') + '</td>';
+        lineRows += '<td>' + (l.description||'&mdash;') + '</td>';
+        lineRows += '<td>' + l.quantity + '</td>';
+        lineRows += '<td style="color:#7a8a9a;">' + (l.condition_code||'&mdash;') + '</td>';
+        lineRows += '<td style="font-weight:600;">$' + parseFloat(l.unit_price||0).toFixed(2) + '</td>';
+        lineRows += '<td style="font-weight:600;">$' + parseFloat(l.line_total||0).toFixed(2) + '</td>';
+        lineRows += '</tr>';
+      });
+      if (!lineRows) lineRows = '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>';
+
+      const billToParts = [];
+      if (inv.billing_address1) billToParts.push(inv.billing_address1);
+      if (inv.billing_address2) billToParts.push(inv.billing_address2);
+      const cityLine = [inv.billing_city, inv.billing_state, inv.billing_zip].filter(Boolean).join(', ');
+      if (cityLine) billToParts.push(cityLine);
+      if (inv.billing_country) billToParts.push(inv.billing_country);
+      const billTo = billToParts.length ? billToParts.join('<br>') : '<span style="color:#7a8a9a;">No billing address on file</span>';
+
+      let html = '';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">';
+      html += '<div><div class="page-title">' + inv.invoice_number + '</div>';
+      html += '<div class="page-sub" style="margin-bottom:0;">' + inv.customer_name + ' &middot; ' + (inv.company||'') + '</div></div>';
+      html += '<div style="display:flex;gap:8px;">';
+      if (inv.order_id) html += '<a href="/admin/orders/' + inv.order_id + '?tab=payment" class="btn btn-outline btn-sm">View Order</a>';
+      html += '<a href="/admin/invoices" class="btn btn-outline btn-sm">&larr; Back</a></div></div>';
+
+      html += '<div class="detail-grid">';
+      html += '<div class="detail-item"><div class="detail-label">Invoice #</div><div class="detail-value" style="font-family:monospace;color:#c8932a;">' + inv.invoice_number + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Order</div><div class="detail-value">' + (inv.order_number ? '<a href="/admin/orders/' + inv.order_id + '" style="color:#c8932a;">' + inv.order_number + '</a>' : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + inv.customer_id + '" style="color:#c8932a;">' + inv.customer_name + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + inv.email + '" style="color:#c8932a;">' + inv.email + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + statusBadge(inv.status) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Issue Date</div><div class="detail-value">' + (inv.issue_date ? new Date(inv.issue_date).toLocaleDateString() : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Due Date</div><div class="detail-value">' + (inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Paid Date</div><div class="detail-value">' + (inv.paid_date ? new Date(inv.paid_date).toLocaleDateString() : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Subtotal</div><div class="detail-value">$' + parseFloat(inv.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Shipping</div><div class="detail-value">$' + parseFloat(inv.shipping_amount||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">$' + parseFloat(inv.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Balance Due</div><div class="detail-value" style="font-weight:700;color:' + (balanceDue>0?'#e05050':'#4caf50') + ';font-size:1.1rem;">$' + balanceDue.toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '</div>';
+
+      html += '<div class="card"><div class="card-header">Bill To</div><div class="card-body" style="line-height:1.6;">';
+      html += '<strong>' + inv.customer_name + '</strong>';
+      if (inv.company) html += '<br>' + inv.company;
+      html += '<br>' + billTo + '</div></div>';
+
+      html += '<div class="card"><div class="card-header">Line Items (' + lines.recordset.length + ')</div>';
+      html += '<table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>';
+      html += '<tbody>' + lineRows + '</tbody></table>';
+      html += '<div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;">';
+      html += '<span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong>$' + parseFloat(inv.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</strong></span>';
+      if (parseFloat(inv.shipping_amount||0) > 0) {
+        html += '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong>$' + parseFloat(inv.shipping_amount).toFixed(2) + '</strong></span>';
+      }
+      html += '<span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">$' + parseFloat(inv.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</strong></span>';
+      html += '</div></div>';
+
+      if (!isPaid && inv.order_id) {
+        html += '<div class="card"><div class="card-header">Payment</div><div class="card-body">';
+        html += '<p style="font-size:.85rem;color:#7a8a9a;margin-bottom:12px;">To mark this invoice paid, use the order payment tab.</p>';
+        html += '<a href="/admin/orders/' + inv.order_id + '?tab=payment" class="btn btn-gold">Go to Order Payment Tab &rarr;</a>';
+        html += '</div></div>';
+      } else if (isPaid) {
+        html += '<div class="alert alert-success">&#10004; This invoice is paid in full.</div>';
+      }
+
+      if (inv.notes) {
+        html += '<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">' + inv.notes + '</div></div>';
+      }
+
+      res.send(page('Invoice ' + inv.invoice_number, 'invoices', html));
+    } catch(err) {
+      console.error('Invoice detail error:', err);
+      res.send(page('Invoice','invoices','<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
+
