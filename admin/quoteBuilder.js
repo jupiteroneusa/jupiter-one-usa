@@ -1,0 +1,584 @@
+// admin/quoteBuilder.js
+// Rewired quote builder with supplier sourcing per line + multi-source splits.
+// Replaces inline GET/POST quote-review + POST quote-save handlers in admin/index.js.
+//
+// Mounted by admin/index.js: mountQuoteBuilder(router, requireAuth, page)
+//
+// Form contract:
+//   lines[N][rfq_line_id]
+//   lines[N][fulfillment_part]
+//   lines[N][original_nsn]
+//   lines[N][original_part]
+//   lines[N][condition_code]
+//   lines[N][item_name]
+//   lines[N][quantity]                       <-- total customer-facing qty
+//   lines[N][unit_price]                     <-- price to customer
+//   lines[N][lead_time_text]                 <-- free-form ("5-7 days", "EST 2 weeks", ...)
+//   lines[N][sources][M][supplier_id]
+//   lines[N][sources][M][allocated_qty]
+//   lines[N][sources][M][unit_cost]
+//   lines[N][sources][M][lead_days]          <-- numeric, internal-only
+//   lines[N][sources][M][has_8130]
+//   lines[N][sources][M][has_coc]
+//   lines[N][sources][M][has_trace]
+//   lines[N][sources][M][notes]
+// At least 1 source per line. SUM(allocated_qty) must equal line quantity.
+
+import { getPool, sql } from '../db/connect.js';
+import { generateNumber } from '../db/numbering.js';
+import { sendQuoteToCustomer } from '../services/mailer.js';
+import { generateQuotePdf } from '../services/pdfService.js';
+
+export function mountQuoteBuilder(router, requireAuth, page) {
+
+  // ==========================================================================
+  // GET /rfqs/:id/quote-review
+  // Initial blank quote builder with supplier+cost columns + split UI
+  // ==========================================================================
+  router.get('/rfqs/:id/quote-review', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const ctx = await loadContext(req.params.id);
+      if (!ctx) return res.redirect('/admin/rfqs');
+      const errMsg = req.query.error ? '<div class="alert alert-error" style="margin-bottom:14px;">' + decodeURIComponent(req.query.error) + '</div>' : '';
+      res.send(page('New Quote', 'rfqs', errMsg + renderForm(ctx, null)));
+    } catch (err) {
+      console.error('quote-review GET error:', err);
+      res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
+
+  // ==========================================================================
+  // POST /rfqs/:id/quote-review
+  // Review screen - re-renders the form with whatever was submitted
+  // (used as a "preview / continue editing" path before final save)
+  // ==========================================================================
+  router.post('/rfqs/:id/quote-review', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const ctx = await loadContext(req.params.id);
+      if (!ctx) return res.redirect('/admin/rfqs');
+      res.send(page('Quote Review', 'rfqs', renderForm(ctx, req.body)));
+    } catch (err) {
+      console.error('quote-review POST error:', err);
+      res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
+
+  // ==========================================================================
+  // POST /rfqs/:id/quote - SAVE
+  // Validates + creates quote + quote_lines + quote_line_sources atomically
+  // ==========================================================================
+  router.post('/rfqs/:id/quote', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const result = await saveQuote(req.params.id, req.body, req.adminId);
+      res.redirect('/admin/quotes/' + result.quote_id + '?saved=1');
+    } catch (err) {
+      console.error('quote save error:', err);
+      res.redirect('/admin/rfqs/' + req.params.id + '/quote-review?error=' + encodeURIComponent(err.message));
+    }
+  });
+
+}
+
+// ============================================================================
+// loadContext - fetch RFQ + lines + suppliers (for dropdowns)
+// ============================================================================
+async function loadContext(rfqId) {
+  const pool = await getPool();
+  const h = await pool.request().input('id', sql.BigInt, rfqId)
+    .query("SELECT h.*, c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id");
+  if (!h.recordset.length) return null;
+  const rfq = h.recordset[0];
+
+  const dbLines = await pool.request().input('id2', sql.BigInt, rfqId)
+    .query('SELECT * FROM rfq_lines WHERE rfq_id=@id2 ORDER BY line_number');
+
+  const sup = await pool.request()
+    .query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
+
+  return { rfq, rfqLines: dbLines.recordset, suppliers: sup.recordset };
+}
+
+// ============================================================================
+// renderForm - build the quote builder HTML
+// ============================================================================
+function renderForm(ctx, submitted) {
+  const { rfq, rfqLines, suppliers } = ctx;
+  const sub = submitted ? (submitted.lines || {}) : {};
+
+  // Build supplier <option> string used in every dropdown
+  const supplierOpts = '<option value="">-- Select supplier --</option>' +
+    suppliers.map(function(s) { return '<option value="' + s.id + '">' + escHtml(s.company_name) + '</option>'; }).join('');
+
+  // Render each RFQ line as a "line group" (parent line + 1+ source rows)
+  let lineGroupsHtml = '';
+  rfqLines.forEach(function(rl, lineIdx) {
+    const sLine = sub[lineIdx] || {};
+    const part = (sLine.fulfillment_part || rl.nsn || rl.part_number || '').toUpperCase();
+    const desc = sLine.item_name || rl.item_name || '';
+    const qty = parseInt(sLine.quantity || rl.quantity || 1);
+    const unitPrice = sLine.unit_price || '';
+    const leadText = sLine.lead_time_text || '';
+
+    // Sources for this line - use submitted if present, else 1 blank source
+    let sources = [];
+    if (sLine.sources) {
+      sources = Object.values(sLine.sources);
+    }
+    if (sources.length === 0) {
+      sources = [{ supplier_id: '', allocated_qty: qty, unit_cost: '', lead_days: '', has_8130: '', has_coc: '', has_trace: '', notes: '' }];
+    }
+
+    lineGroupsHtml += '<div class="line-group" data-line-idx="' + lineIdx + '" data-line-num="' + rl.line_number + '" style="border:1px solid #1e2d42;background:#0a1628;margin-bottom:14px;">';
+
+    // Header (customer-facing fields)
+    lineGroupsHtml += '<div style="padding:12px;background:#111e30;border-bottom:1px solid #1e2d42;">';
+    lineGroupsHtml += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">';
+    lineGroupsHtml += '<div style="font-weight:700;color:#c8932a;font-size:.9rem;">Line ' + rl.line_number + '</div>';
+    lineGroupsHtml += '<div style="font-size:.7rem;color:#7a8a9a;">Customer requested: ' + escHtml(rl.nsn || rl.part_number || '\u2014') + '</div>';
+    lineGroupsHtml += '</div>';
+
+    // Hidden fields for line meta
+    lineGroupsHtml += '<input type="hidden" name="lines[' + lineIdx + '][rfq_line_id]" value="' + rl.id + '"/>';
+    lineGroupsHtml += '<input type="hidden" name="lines[' + lineIdx + '][original_nsn]" value="' + escAttr(rl.nsn || '') + '"/>';
+    lineGroupsHtml += '<input type="hidden" name="lines[' + lineIdx + '][original_part]" value="' + escAttr(rl.part_number || '') + '"/>';
+    lineGroupsHtml += '<input type="hidden" name="lines[' + lineIdx + '][condition_code]" value="' + escAttr(rl.condition_code || 'NE') + '"/>';
+
+    // Customer-facing inputs grid
+    lineGroupsHtml += '<div style="display:grid;grid-template-columns:170px 1fr 80px 110px 130px;gap:8px;align-items:end;">';
+    lineGroupsHtml += inputCell('NSN/Part #', 'lines[' + lineIdx + '][fulfillment_part]', part, 'text', 'style="text-transform:uppercase;font-family:monospace;color:#c8932a;" oninput="this.value=this.value.toUpperCase()"');
+    lineGroupsHtml += inputCell('Description', 'lines[' + lineIdx + '][item_name]', desc, 'text', '');
+    lineGroupsHtml += inputCell('Qty', 'lines[' + lineIdx + '][quantity]', qty, 'number', 'min="1" required class="line-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
+    lineGroupsHtml += inputCell('Unit Price ($)', 'lines[' + lineIdx + '][unit_price]', unitPrice, 'number', 'step="0.01" min="0" required class="line-price" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
+    lineGroupsHtml += inputCell('Lead Time (customer)', 'lines[' + lineIdx + '][lead_time_text]', leadText, 'text', 'placeholder="e.g. 7-10 days"');
+    lineGroupsHtml += '</div>';
+
+    // Margin display for this line
+    lineGroupsHtml += '<div class="line-margin" data-line-idx="' + lineIdx + '" style="margin-top:8px;font-size:.78rem;color:#7a8a9a;">' +
+      '<span class="margin-label">Margin: <span class="margin-pct">--</span></span>' +
+      '<span style="margin-left:14px;">Total Cost: <span class="margin-cost">$0.00</span></span>' +
+      '<span style="margin-left:14px;">Line Total: <span class="margin-total">$0.00</span></span>' +
+      '<span style="margin-left:14px;">Margin $: <span class="margin-amount">$0.00</span></span>' +
+      '</div>';
+
+    lineGroupsHtml += '</div>'; // end header
+
+    // Sources sub-table
+    lineGroupsHtml += '<div style="padding:10px 12px 14px;">';
+    lineGroupsHtml += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+    lineGroupsHtml += '<div style="font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;font-weight:700;">Sources (Internal Only)</div>';
+    lineGroupsHtml += '<div style="font-size:.7rem;color:#7a8a9a;">Sum allocated qty must equal line qty <span class="alloc-status" data-line-idx="' + lineIdx + '"></span></div>';
+    lineGroupsHtml += '</div>';
+
+    lineGroupsHtml += '<table style="width:100%;font-size:.82rem;"><thead><tr style="text-align:left;">' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;letter-spacing:.1em;">SUPPLIER</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:70px;">QTY</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:90px;">COST ($)</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:80px;">LEAD (d)</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:60px;text-align:center;">8130</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:50px;text-align:center;">CoC</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:60px;text-align:center;">Trace</th>' +
+      '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;">NOTES</th>' +
+      '<th style="padding:4px 6px;width:30px;"></th>' +
+      '</tr></thead><tbody class="sources-tbody" data-line-idx="' + lineIdx + '">';
+
+    sources.forEach(function(s, sIdx) {
+      lineGroupsHtml += renderSourceRow(lineIdx, sIdx, s, supplierOpts);
+    });
+
+    lineGroupsHtml += '</tbody></table>';
+    lineGroupsHtml += '<button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;font-size:.75rem;" onclick="addSource(' + lineIdx + ')">+ Split: Add Another Supplier</button>';
+    lineGroupsHtml += '</div>'; // end sources section
+
+    lineGroupsHtml += '</div>'; // end line-group
+  });
+
+  // Header values (customer-facing quote settings)
+  const pt = (submitted && submitted.payment_terms) || 'Credit Card or Wire Transfer';
+  const vd = (submitted && submitted.valid_days) || 30;
+  const nt = (submitted && submitted.notes) || '';
+  const pm = (submitted && submitted.personal_message) || '';
+  const cc = (submitted && submitted.cc_emails) || '';
+
+  // Top of form
+  let html = '';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+  html += '<div class="page-title">New Quote &mdash; ' + escHtml(rfq.rfq_number) + '</div>';
+  html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline btn-sm">&larr; Back to RFQ</a></div>';
+  html += '<div class="page-sub">Build quote with internal supplier sourcing &middot; customer never sees sources/costs</div>';
+
+  html += '<div class="detail-grid" style="margin-bottom:20px;">';
+  html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + rfq.customer_id + '" style="color:#c8932a;">' + escHtml(rfq.customer_name) + '</a></div></div>';
+  html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">' + escHtml(rfq.company || '\u2014') + '</div></div>';
+  html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + escAttr(rfq.email) + '" style="color:#c8932a;">' + escHtml(rfq.email) + '</a></div></div>';
+  html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + escHtml(rfq.rfq_number) + '</div></div>';
+  html += '</div>';
+
+  html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
+
+  html += '<div class="card" style="margin-bottom:20px;"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center;">' +
+    '<span>Line Items</span>' +
+    '<span style="font-size:.72rem;color:#7a8a9a;font-weight:400;">Each line tracks its own supplier source(s) internally</span>' +
+    '</div>' +
+    '<div class="card-body" style="padding:14px;">' + lineGroupsHtml + '</div></div>';
+
+  // Footer fields
+  html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Settings (Customer-Facing)</div><div class="card-body">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="' + escAttr(pt) + '" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="' + escAttr(vd) + '" style="width:100%;"/></div></div>';
+  html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">' + escHtml(nt) + '</textarea></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional &mdash; shown at top of email)</span></div>';
+  html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you...">' + escHtml(pm) + '</textarea></div>';
+  html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients</div><input type="text" name="cc_emails" value="' + escAttr(cc) + '" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
+  html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
+  html += '</div></div>';
+
+  html += '<div style="display:flex;gap:10px;">';
+  html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
+  html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Cancel</a>';
+  html += '</div>';
+  html += '</form>';
+
+  // Embed supplier opts as a hidden datalist for client-side row creation
+  html += '<select id="supplier-template" style="display:none;">' + supplierOpts + '</select>';
+
+  // Client-side scripts: add/remove sources, recalc margins, validate sums on submit
+  html += renderClientScript(rfqLines.length);
+
+  return html;
+}
+
+// ============================================================================
+// renderSourceRow - one row of the per-line sources table
+// ============================================================================
+function renderSourceRow(lineIdx, sIdx, s, supplierOpts) {
+  const sid = s.supplier_id || '';
+  const qty = s.allocated_qty || '';
+  const cost = s.unit_cost || '';
+  const lead = s.lead_days || '';
+  const has8130 = s.has_8130 ? 'checked' : '';
+  const hasCoc = s.has_coc ? 'checked' : '';
+  const hasTrace = s.has_trace ? 'checked' : '';
+  const notes = s.notes || '';
+
+  // Build dropdown with this row's supplier preselected
+  let dd = '<option value="">-- Select --</option>';
+  // Re-parse supplierOpts to add 'selected' to the matching one
+  // (cheaper than re-building from suppliers array - just text replace)
+  const selectedOpts = supplierOpts.replace('value="' + sid + '"', 'value="' + sid + '" selected').replace('-- Select supplier --', '-- Select --');
+
+  let html = '<tr class="source-row" data-line-idx="' + lineIdx + '" data-source-idx="' + sIdx + '">';
+  html += '<td style="padding:4px 6px;"><select name="lines[' + lineIdx + '][sources][' + sIdx + '][supplier_id]" required style="width:100%;font-size:.82rem;">' + selectedOpts + '</select></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" min="1" required name="lines[' + lineIdx + '][sources][' + sIdx + '][allocated_qty]" value="' + escAttr(qty) + '" class="src-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" required name="lines[' + lineIdx + '][sources][' + sIdx + '][unit_cost]" value="' + escAttr(cost) + '" class="src-cost" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" min="0" name="lines[' + lineIdx + '][sources][' + sIdx + '][lead_days]" value="' + escAttr(lead) + '" placeholder="days" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_8130]" value="1" ' + has8130 + ' style="accent-color:#c8932a;"/></td>';
+  html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_coc]" value="1" ' + hasCoc + ' style="accent-color:#c8932a;"/></td>';
+  html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_trace]" value="1" ' + hasTrace + ' style="accent-color:#c8932a;"/></td>';
+  html += '<td style="padding:4px 6px;"><input type="text" name="lines[' + lineIdx + '][sources][' + sIdx + '][notes]" value="' + escAttr(notes) + '" style="width:100%;font-size:.78rem;" placeholder="optional"/></td>';
+  html += '<td style="padding:4px 6px;text-align:center;"><button type="button" onclick="removeSource(this, ' + lineIdx + ')" class="btn btn-outline btn-sm" style="color:#e05050;font-size:.7rem;padding:2px 6px;">X</button></td>';
+  html += '</tr>';
+  return html;
+}
+
+// ============================================================================
+// renderClientScript - JS for: addSource, removeSource, recalcLine, validateSubmit
+// ============================================================================
+function renderClientScript(lineCount) {
+  return '<script>\n' +
+'  (function(){\n' +
+'    var supplierTemplate = document.getElementById("supplier-template").innerHTML;\n' +
+'    var nextSourceIdx = {};\n' +
+'    for (var i=0; i<' + lineCount + '; i++) {\n' +
+'      var tbody = document.querySelector(".sources-tbody[data-line-idx=\\""+i+"\\"]");\n' +
+'      nextSourceIdx[i] = tbody ? tbody.querySelectorAll("tr.source-row").length : 1;\n' +
+'    }\n' +
+'\n' +
+'    window.addSource = function(lineIdx) {\n' +
+'      var tbody = document.querySelector(".sources-tbody[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      if (!tbody) return;\n' +
+'      var sIdx = nextSourceIdx[lineIdx]++;\n' +
+'      var tr = document.createElement("tr");\n' +
+'      tr.className = "source-row";\n' +
+'      tr.setAttribute("data-line-idx", lineIdx);\n' +
+'      tr.setAttribute("data-source-idx", sIdx);\n' +
+'      tr.innerHTML =\n' +
+'        \'<td style="padding:4px 6px;"><select name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][supplier_id]" required style="width:100%;font-size:.82rem;">\'+supplierTemplate+\'</select></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" min="1" required name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][allocated_qty]" class="src-qty" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" required name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][unit_cost]" class="src-cost" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" min="0" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][lead_days]" placeholder="days" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_8130]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_coc]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_trace]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="text" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][notes]" style="width:100%;font-size:.78rem;" placeholder="optional"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;text-align:center;"><button type="button" onclick="removeSource(this, \'+lineIdx+\')" class="btn btn-outline btn-sm" style="color:#e05050;font-size:.7rem;padding:2px 6px;">X</button></td>\';\n' +
+'      tbody.appendChild(tr);\n' +
+'      recalcLine(lineIdx);\n' +
+'    };\n' +
+'\n' +
+'    window.removeSource = function(btn, lineIdx) {\n' +
+'      var tbody = document.querySelector(".sources-tbody[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      if (tbody && tbody.querySelectorAll("tr.source-row").length > 1) {\n' +
+'        btn.closest("tr").remove();\n' +
+'        recalcLine(lineIdx);\n' +
+'      } else {\n' +
+'        alert("Each line must have at least one supplier source.");\n' +
+'      }\n' +
+'    };\n' +
+'\n' +
+'    window.recalcLine = function(lineIdx) {\n' +
+'      var qtyInput = document.querySelector(".line-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      var priceInput = document.querySelector(".line-price[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      var marginBox = document.querySelector(".line-margin[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      var allocStatus = document.querySelector(".alloc-status[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      if (!qtyInput || !priceInput || !marginBox) return;\n' +
+'\n' +
+'      var lineQty = parseFloat(qtyInput.value) || 0;\n' +
+'      var unitPrice = parseFloat(priceInput.value) || 0;\n' +
+'      var lineTotal = lineQty * unitPrice;\n' +
+'\n' +
+'      var srcQtys = document.querySelectorAll(".src-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      var srcCosts = document.querySelectorAll(".src-cost[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'      var totalAlloc = 0, totalCost = 0;\n' +
+'      for (var i=0; i<srcQtys.length; i++) {\n' +
+'        var q = parseFloat(srcQtys[i].value) || 0;\n' +
+'        var c = parseFloat(srcCosts[i].value) || 0;\n' +
+'        totalAlloc += q;\n' +
+'        totalCost += q * c;\n' +
+'      }\n' +
+'\n' +
+'      // Margin display\n' +
+'      var marginAmt = lineTotal - totalCost;\n' +
+'      var marginPct = lineTotal > 0 ? (marginAmt / lineTotal * 100) : 0;\n' +
+'      var pctEl = marginBox.querySelector(".margin-pct");\n' +
+'      var costEl = marginBox.querySelector(".margin-cost");\n' +
+'      var totEl = marginBox.querySelector(".margin-total");\n' +
+'      var amtEl = marginBox.querySelector(".margin-amount");\n' +
+'      pctEl.textContent = marginPct.toFixed(1) + "%";\n' +
+'      pctEl.style.color = marginPct < 0 ? "#e05050" : (marginPct < 10 ? "#c8932a" : "#4caf50");\n' +
+'      pctEl.style.fontWeight = "700";\n' +
+'      costEl.textContent = "$" + totalCost.toFixed(2);\n' +
+'      totEl.textContent = "$" + lineTotal.toFixed(2);\n' +
+'      amtEl.textContent = "$" + marginAmt.toFixed(2);\n' +
+'\n' +
+'      // Allocation status\n' +
+'      if (allocStatus) {\n' +
+'        if (lineQty === 0) {\n' +
+'          allocStatus.textContent = "";\n' +
+'        } else if (totalAlloc === lineQty) {\n' +
+'          allocStatus.innerHTML = \' <span style="color:#4caf50;">\\u2713 \' + totalAlloc + \'/\' + lineQty + \'</span>\';\n' +
+'        } else {\n' +
+'          allocStatus.innerHTML = \' <span style="color:#e05050;">\\u26A0 \' + totalAlloc + \'/\' + lineQty + \'</span>\';\n' +
+'        }\n' +
+'      }\n' +
+'    };\n' +
+'\n' +
+'    // On submit: validate every line has SUM(allocated_qty) === quantity\n' +
+'    var form = document.getElementById("quote-send-form");\n' +
+'    if (form) {\n' +
+'      form.addEventListener("submit", function(e){\n' +
+'        var groups = document.querySelectorAll(".line-group");\n' +
+'        for (var i=0; i<groups.length; i++) {\n' +
+'          var lineIdx = groups[i].getAttribute("data-line-idx");\n' +
+'          var lineNum = groups[i].getAttribute("data-line-num");\n' +
+'          var qtyInput = document.querySelector(".line-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'          var lineQty = parseFloat(qtyInput.value) || 0;\n' +
+'          var srcQtys = document.querySelectorAll(".src-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
+'          var totalAlloc = 0;\n' +
+'          for (var j=0; j<srcQtys.length; j++) totalAlloc += parseFloat(srcQtys[j].value) || 0;\n' +
+'          if (totalAlloc !== lineQty) {\n' +
+'            e.preventDefault();\n' +
+'            alert("Line " + lineNum + ": supplier sources allocate " + totalAlloc + " units, but line quantity is " + lineQty + ". Please adjust.");\n' +
+'            return false;\n' +
+'          }\n' +
+'        }\n' +
+'      });\n' +
+'    }\n' +
+'\n' +
+'    // Initial recalc for all lines\n' +
+'    for (var k=0; k<' + lineCount + '; k++) recalcLine(k);\n' +
+'  })();\n' +
+'</script>';
+}
+
+// ============================================================================
+// saveQuote - validate + INSERT quote, quote_lines, quote_line_sources
+// ============================================================================
+async function saveQuote(rfqId, body, adminId) {
+  const pool = await getPool();
+  const linesObj = body.lines || {};
+  const lineKeys = Object.keys(linesObj).sort(function(a,b){ return parseInt(a) - parseInt(b); });
+  if (lineKeys.length === 0) throw new Error('No lines submitted');
+
+  // Build processed lines with validation
+  const processedLines = [];
+  let subtotal = 0, totalCost = 0;
+
+  lineKeys.forEach(function(k, idx) {
+    const lineNum = idx + 1;
+    const line = linesObj[k];
+    const lineQty = parseInt(line.quantity || 0);
+    const unitPrice = parseFloat(line.unit_price || 0);
+    if (lineQty <= 0) throw new Error('Line ' + lineNum + ': quantity must be > 0');
+    if (unitPrice < 0) throw new Error('Line ' + lineNum + ': unit price cannot be negative');
+
+    const sourcesObj = line.sources || {};
+    const sourceKeys = Object.keys(sourcesObj);
+    if (sourceKeys.length === 0) throw new Error('Line ' + lineNum + ': at least one supplier source required');
+
+    const sources = sourceKeys.map(function(sk) { return sourcesObj[sk]; });
+    let allocSum = 0, costSum = 0;
+    sources.forEach(function(s, sIdx) {
+      const sq = parseInt(s.allocated_qty || 0);
+      const sc = parseFloat(s.unit_cost || 0);
+      if (!s.supplier_id) throw new Error('Line ' + lineNum + ' source ' + (sIdx + 1) + ': supplier required');
+      if (sq <= 0) throw new Error('Line ' + lineNum + ' source ' + (sIdx + 1) + ': allocated qty must be > 0');
+      if (sc < 0) throw new Error('Line ' + lineNum + ' source ' + (sIdx + 1) + ': cost cannot be negative');
+      allocSum += sq;
+      costSum += sq * sc;
+    });
+    if (allocSum !== lineQty) throw new Error('Line ' + lineNum + ': sources allocate ' + allocSum + ' but line qty is ' + lineQty);
+
+    const lineTotal = unitPrice * lineQty;
+    const lineMargin = lineTotal - costSum;
+    const avgUnitCost = lineQty > 0 ? (costSum / lineQty) : 0;
+    const marginPct = lineTotal > 0 ? (lineMargin / lineTotal * 100) : 0;
+    const markupPct = avgUnitCost > 0 ? ((unitPrice - avgUnitCost) / avgUnitCost * 100) : 0;
+
+    subtotal += lineTotal;
+    totalCost += costSum;
+
+    processedLines.push({
+      line_number: lineNum,
+      rfq_line_id: line.rfq_line_id ? parseInt(line.rfq_line_id) : null,
+      nsn: line.original_nsn || null,
+      part_number: line.fulfillment_part || line.original_part || null,
+      item_name: line.item_name || null,
+      condition_code: line.condition_code || 'NE',
+      quantity: lineQty,
+      unit_cost: avgUnitCost,
+      unit_price: unitPrice,
+      line_total: lineTotal,
+      line_cost: costSum,
+      line_margin: lineMargin,
+      margin_pct: marginPct,
+      markup_pct: markupPct,
+      lead_time_text: line.lead_time_text || null,
+      sources: sources
+    });
+  });
+
+  // Get RFQ + customer info
+  const rfqR = await pool.request().input('id', sql.BigInt, rfqId)
+    .query('SELECT * FROM rfq_headers WHERE id=@id');
+  if (!rfqR.recordset.length) throw new Error('RFQ not found');
+  const rfq = rfqR.recordset[0];
+
+  const totalMargin = subtotal - totalCost;
+  const validDays = parseInt(body.valid_days || 30);
+  const validUntil = new Date(Date.now() + validDays * 86400 * 1000);
+  const quoteNumber = await generateNumber('QT');
+
+  // Insert quote header
+  const qhR = await pool.request()
+    .input('rfqId', sql.BigInt, rfqId)
+    .input('cid', sql.BigInt, rfq.customer_id)
+    .input('qn', sql.NVarChar(20), quoteNumber)
+    .input('sub', sql.Decimal(12,2), subtotal)
+    .input('tot', sql.Decimal(12,2), subtotal)
+    .input('tc', sql.Decimal(12,2), totalCost)
+    .input('tm', sql.Decimal(12,2), totalMargin)
+    .input('vu', sql.Date, validUntil)
+    .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
+    .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
+    .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
+    .query("INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, personal_message, status) OUTPUT INSERTED.id VALUES (@rfqId, @cid, @qn, @sub, @tot, @tc, @tm, @vu, @pt, @nt, @pm, 'Sent')");
+  const quoteId = qhR.recordset[0].id;
+
+  // Insert each quote line + its sources
+  for (const pl of processedLines) {
+    const qlR = await pool.request()
+      .input('qid', sql.BigInt, quoteId)
+      .input('rli', sql.BigInt, pl.rfq_line_id)
+      .input('ln', sql.Int, pl.line_number)
+      .input('nsn', sql.NVarChar(20), pl.nsn)
+      .input('pn', sql.NVarChar(100), pl.part_number)
+      .input('iname', sql.NVarChar(255), pl.item_name)
+      .input('cond', sql.NVarChar(5), pl.condition_code)
+      .input('qty', sql.Int, pl.quantity)
+      .input('uc', sql.Decimal(10,2), pl.unit_cost)
+      .input('mkp', sql.Decimal(5,2), pl.markup_pct)
+      .input('up', sql.Decimal(10,2), pl.unit_price)
+      .input('lt', sql.Decimal(12,2), pl.line_total)
+      .input('lc', sql.Decimal(12,2), pl.line_cost)
+      .input('lm', sql.Decimal(12,2), pl.line_margin)
+      .input('mpct', sql.Decimal(5,2), pl.margin_pct)
+      .input('ltt', sql.NVarChar(100), pl.lead_time_text)
+      .query("INSERT INTO quote_lines (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, markup_pct, unit_price, line_total, line_cost, line_margin, margin_pct, lead_time_text) OUTPUT INSERTED.id VALUES (@qid, @rli, @ln, @nsn, @pn, @iname, @cond, @qty, @uc, @mkp, @up, @lt, @lc, @lm, @mpct, @ltt)");
+    const quoteLineId = qlR.recordset[0].id;
+
+    let sortOrder = 1;
+    for (const s of pl.sources) {
+      await pool.request()
+        .input('qli', sql.BigInt, quoteLineId)
+        .input('sid', sql.BigInt, parseInt(s.supplier_id))
+        .input('aq', sql.Int, parseInt(s.allocated_qty))
+        .input('uc', sql.Decimal(10,2), parseFloat(s.unit_cost))
+        .input('ld', sql.Int, s.lead_days ? parseInt(s.lead_days) : null)
+        .input('h81', sql.Bit, s.has_8130 ? 1 : 0)
+        .input('hcoc', sql.Bit, s.has_coc ? 1 : 0)
+        .input('htr', sql.Bit, s.has_trace ? 1 : 0)
+        .input('nt', sql.NVarChar(500), s.notes || null)
+        .input('so', sql.Int, sortOrder++)
+        .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130, has_coc, has_trace, notes, sort_order) VALUES (@qli, @sid, @aq, @uc, @ld, @h81, @hcoc, @htr, @nt, @so)");
+    }
+  }
+
+  // Update RFQ status
+  await pool.request().input('rid', sql.BigInt, rfqId)
+    .query("UPDATE rfq_headers SET status='Quoted', updated_at=GETDATE() WHERE id=@rid");
+
+  // Try to send PDF + email (best-effort, don't fail save if email fails)
+  try {
+    const linesR = await pool.request().input('qid', sql.BigInt, quoteId)
+      .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+    const custR = await pool.request().input('cid', sql.BigInt, rfq.customer_id)
+      .query('SELECT first_name, last_name, email FROM customers WHERE id=@cid');
+    const quoteRow = (await pool.request().input('id', sql.BigInt, quoteId)
+      .query('SELECT * FROM quotes WHERE id=@id')).recordset[0];
+
+    const pdfUrl = await generateQuotePdf({ quote: quoteRow, lines: linesR.recordset });
+    await pool.request().input('id', sql.BigInt, quoteId).input('url', sql.NVarChar(500), pdfUrl)
+      .query('UPDATE quotes SET pdf_url=@url, sent_at=GETDATE() WHERE id=@id');
+    if (custR.recordset.length) {
+      sendQuoteToCustomer({ customer: custR.recordset[0], quote: quoteRow, lines: linesR.recordset, pdfUrl }).catch(function(e){ console.error('Email error:', e.message); });
+    }
+  } catch (sendErr) {
+    console.error('PDF/email best-effort error:', sendErr.message);
+  }
+
+  return { quote_id: quoteId, quote_number: quoteNumber };
+}
+
+// ============================================================================
+// HTML escape helpers
+// ============================================================================
+function escHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escAttr(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function inputCell(label, name, value, type, extra) {
+  return '<div>' +
+    '<div style="font-size:.65rem;color:#7a8a9a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">' + escHtml(label) + '</div>' +
+    '<input type="' + type + '" name="' + escAttr(name) + '" value="' + escAttr(value) + '" ' + extra + ' style="width:100%;"/>' +
+    '</div>';
+}

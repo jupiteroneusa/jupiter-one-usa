@@ -236,7 +236,7 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
       const qLines = await pool.request().input('qid', sql.BigInt, req.params.id)
         .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
       for (const l of qLines.recordset) {
-        const olR = await pool.request()
+        await pool.request()
           .input('orderId', sql.BigInt,        order.id)
           .input('qlId',    sql.BigInt,        l.id)
           .input('lineNum', sql.Int,           l.line_number)
@@ -248,31 +248,7 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
           .input('price',   sql.Decimal(10,2), l.unit_price)
           .input('total',   sql.Decimal(12,2), l.line_total)
           .query(`INSERT INTO order_lines (order_id,quote_line_id,line_number,nsn,part_number,item_name,condition_code,quantity_ordered,unit_price,line_total)
-            OUTPUT INSERTED.id
             VALUES (@orderId,@qlId,@lineNum,@nsn,@pn,@name,@cond,@qty,@price,@total)`);
-        // [Rewire 2] Copy quote_line_sources -> order_line_sources for this order line
-        try {
-          const newOrderLineId = olR && olR.recordset && olR.recordset[0] && olR.recordset[0].id;
-          if (newOrderLineId && l.id) {
-            const srcR = await pool.request().input('qli', sql.BigInt, l.id)
-              .query('SELECT * FROM quote_line_sources WHERE quote_line_id=@qli ORDER BY sort_order');
-            for (const _s of srcR.recordset) {
-              await pool.request()
-                .input('oli', sql.BigInt, newOrderLineId)
-                .input('qlsi', sql.BigInt, _s.id)
-                .input('sid', sql.BigInt, _s.supplier_id)
-                .input('aq', sql.Int, _s.allocated_qty)
-                .input('uc', sql.Decimal(10,2), _s.unit_cost)
-                .input('ld', sql.Int, _s.supplier_lead_time_days)
-                .input('h81r', sql.Bit, _s.has_8130 ? 1 : 0)
-                .input('hcocr', sql.Bit, _s.has_coc ? 1 : 0)
-                .input('htracr', sql.Bit, _s.has_trace ? 1 : 0)
-                .input('nt', sql.NVarChar(500), _s.notes)
-                .input('so', sql.Int, _s.sort_order)
-                .query('INSERT INTO order_line_sources (order_line_id, quote_line_source_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130_required, has_coc_required, has_trace_required, notes, sort_order) VALUES (@oli, @qlsi, @sid, @aq, @uc, @ld, @h81r, @hcocr, @htracr, @nt, @so)');
-            }
-          }
-        } catch(srcErr) { console.error('Copy sources error:', srcErr.message); }
       }
       await pool.request().input('oid', sql.BigInt, order.id)
         .query(`INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Confirmed','Auto-created from accepted quote')`);
