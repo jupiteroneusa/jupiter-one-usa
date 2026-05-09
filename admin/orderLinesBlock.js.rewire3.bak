@@ -2,24 +2,8 @@
 // Renders the Lines tab content for /admin/orders/:id
 
 import { currency, statusBadge } from './uiHelpers.js';
-  // [Rewire 3] Load order_line_sources for split-display
-  let _sourcesMap = {};
-  try {
-    const _pool = await getPool();
-    const _ids = (oLines.recordset || oLines).map(function(l){ return l.id; }).filter(Boolean);
-    if (_ids.length) {
-      const _r = await _pool.request().query(
-        "SELECT ols.*, s.company_name AS supplier_name FROM order_line_sources ols JOIN suppliers s ON s.id = ols.supplier_id WHERE ols.order_line_id IN (" + _ids.join(',') + ") ORDER BY ols.order_line_id, ols.sort_order"
-      );
-      _r.recordset.forEach(function(s) {
-        if (!_sourcesMap[s.order_line_id]) _sourcesMap[s.order_line_id] = [];
-        _sourcesMap[s.order_line_id].push(s);
-      });
-    }
-  } catch(e) { console.error('Sources load error:', e.message); }
 
-import { getPool, sql } from '../db/connect.js';
-export async function renderLinesTab(o, oLines, suppliers) {
+export function renderLinesTab(o, oLines, suppliers) {
   let html = '';
 
   html += '<div class="card" style="margin-bottom:16px;"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>Order Line Items (' + oLines.recordset.length + ')</span>';
@@ -34,39 +18,6 @@ export async function renderLinesTab(o, oLines, suppliers) {
   } else {
     html += '<div style="padding:16px;">';
     oLines.recordset.forEach(function(l) {
-      // [Rewire 3] Render source splits for this order line
-      const _lineSources = _sourcesMap[l.id] || [];
-      let _srcHtml = '';
-      if (_lineSources.length > 0) {
-        const _isSplit = _lineSources.length > 1;
-        _srcHtml += '<div style="background:#0a1628;border-top:1px solid #1e2d42;padding:10px 14px;margin-top:-1px;">';
-        _srcHtml += '<div style="font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;margin-bottom:6px;font-weight:700;">';
-        _srcHtml += '\uD83D\uDD12 INTERNAL SOURCES ' + (_isSplit ? '(SPLIT: ' + _lineSources.length + ' suppliers)' : '') + '</div>';
-        _srcHtml += '<table style="width:100%;font-size:.78rem;color:#cfd5dc;"><thead><tr style="text-align:left;">';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">SUPPLIER</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">QTY</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">RECVD</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">UNIT COST</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">LINE COST</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;text-align:center;">8130</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;text-align:center;">CoC</th>';
-        _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">PO</th>';
-        _srcHtml += '</tr></thead><tbody>';
-        _lineSources.forEach(function(_s) {
-          const _full = _s.received_qty >= _s.allocated_qty;
-          _srcHtml += '<tr>';
-          _srcHtml += '<td style="padding:3px 6px;"><a href="/admin/suppliers/' + _s.supplier_id + '" style="color:#c8932a;">' + _s.supplier_name + '</a></td>';
-          _srcHtml += '<td style="padding:3px 6px;font-weight:700;">' + _s.allocated_qty + '</td>';
-          _srcHtml += '<td style="padding:3px 6px;color:' + (_full ? '#4caf50' : '#7a8a9a') + ';">' + (_s.received_qty || 0) + '/' + _s.allocated_qty + (_full ? ' \u2713' : '') + '</td>';
-          _srcHtml += '<td style="padding:3px 6px;">$' + parseFloat(_s.unit_cost || 0).toFixed(2) + '</td>';
-          _srcHtml += '<td style="padding:3px 6px;">$' + parseFloat(_s.line_cost || (_s.allocated_qty * _s.unit_cost) || 0).toFixed(2) + '</td>';
-          _srcHtml += '<td style="padding:3px 6px;text-align:center;">' + (_s.has_8130_required ? (_s.has_8130_received ? '<span style="color:#4caf50;">\u2713</span>' : '<span style="color:#e05050;">!</span>') : '\u2014') + '</td>';
-          _srcHtml += '<td style="padding:3px 6px;text-align:center;">' + (_s.has_coc_required ? (_s.has_coc_received ? '<span style="color:#4caf50;">\u2713</span>' : '<span style="color:#e05050;">!</span>') : '\u2014') + '</td>';
-          _srcHtml += '<td style="padding:3px 6px;">' + (_s.supplier_po_line_id ? '<a href="/admin/supplier-pos" style="color:#c8932a;">View PO</a>' : '<span style="color:#7a8a9a;">Not yet</span>') + '</td>';
-          _srcHtml += '</tr>';
-        });
-        _srcHtml += '</tbody></table></div>';
-      }
       // Build supplier options for this line
       let supplierOpts = '<option value="">-- No supplier selected --</option>';
       suppliers.recordset.forEach(function(s) {
@@ -131,8 +82,7 @@ export async function renderLinesTab(o, oLines, suppliers) {
       html += '<div style="display:flex;justify-content:flex-end;"><button type="submit" class="btn btn-gold btn-sm">Save Line</button></div>';
       html += '</form>';
       html += '</div>'; // end line card
-          html += _srcHtml;
-      });
+    });
     html += '</div>'; // end padding
   }
 

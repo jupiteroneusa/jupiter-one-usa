@@ -3,7 +3,6 @@ import { Router } from 'express';
 import { mountOrderRoutes } from './orderRoutes.js';
 import { mountSupplierRoutes } from './supplierRoutes.js';
 import { mountSupplierPoRoutes } from './supplierPoRoutes.js';
-import { mountQuoteBuilder } from './quoteBuilder.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
 
@@ -1184,9 +1183,156 @@ export async function buildAdminRouter() {
   });
 
     // Quote Review — GET (load blank form for new quote or requote)
-  /* MOVED to admin/quoteBuilder.js: router.get('/rfqs/:id/quote-review', */
+  router.get('/rfqs/:id/quote-review', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const h = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT h.*, c.id AS customer_id, c.first_name+\' \'+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
+      if (!h.recordset.length) return res.redirect('/admin/rfqs');
+      const rfq = h.recordset[0];
+      const dbLines = await pool.request().input('id2', sql.BigInt, req.params.id)
+        .query('SELECT * FROM rfq_lines WHERE rfq_id=@id2 ORDER BY line_number');
+      const nextLine = dbLines.recordset.length + 1;
+      let lineHtml = '';
+      dbLines.recordset.forEach(function(l) {
+        const n = l.line_number - 1;
+        const part = (l.nsn || l.part_number || '').toUpperCase();
+        lineHtml += '<tr>';
+        lineHtml += '<td style="color:#7a8a9a;">' + l.line_number + '</td>';
+        lineHtml += '<td><div style="font-size:.65rem;color:#7a8a9a;">Req: ' + (l.nsn||l.part_number||'—') + '</div>';
+        lineHtml += '<input type="text" name="lines[' + n + '][fulfillment_part]" value="' + part + '" style="width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][rfq_line_id]" value="' + l.id + '"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][original_nsn]" value="' + (l.nsn||'') + '"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][original_part]" value="' + (l.part_number||'') + '"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][condition_code]" value="' + (l.condition_code||'NE') + '"/></td>';
+        lineHtml += '<td><input type="text" name="lines[' + n + '][item_name]" value="' + (l.item_name||'') + '" style="width:150px;"/></td>';
+        lineHtml += '<td><input type="number" min="1" name="lines[' + n + '][quantity]" value="' + l.quantity + '" style="width:60px;" required/></td>';
+        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_cost]" placeholder="0.00" style="width:80px;" required/></td>';
+        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_price]" placeholder="0.00" style="width:80px;" required/></td>';
+        lineHtml += '<td><input type="text" name="lines[' + n + '][lead_time_days]" placeholder="7-10 days" style="width:100px;"/></td>';
+        lineHtml += '<td><button type="button" onclick="removeQRow(' + l.line_number + ')" class="btn btn-outline btn-sm" style="color:#e05050;">X</button></td>';
+        lineHtml += '</tr>';
+      });
+      const draftScript = 'let isDirty=false;document.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",function(){isDirty=true;});});window.addEventListener("beforeunload",function(e){if(isDirty){e.preventDefault();e.returnValue="";}});function saveDraft(){isDirty=false;const form=document.querySelector("form");const fd=new URLSearchParams(new FormData(form));fetch("/admin/rfqs/' + rfq.id + '/quote-draft",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(d){const btn=document.getElementById("save-draft-btn");if(btn){btn.textContent=d.ok?"Draft Saved \u2713":"Save Failed";btn.style.color=d.ok?"#4caf50":"#e05050";}setTimeout(function(){if(btn&&d.ok){btn.textContent="Save Draft";btn.style.color="";}},3000);}).catch(function(){isDirty=true;});}';
+      const addRowScript = 'let qc=' + nextLine + ';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\'tr\');r.id=\'qrow-\'+n;r.innerHTML=\'<td>\'+n+\'</td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][fulfillment_part]\\\' style=\\\'width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;\\\' oninput=\\\'this.value=this.value.toUpperCase()\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][rfq_line_id]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_nsn]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_part]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][condition_code]\\\' value=\\\'NE\\\'/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][item_name]\\\' style=\\\'width:150px;\\\'/></td><td><input type=\\\'number\\\' min=\\\'1\\\' name=\\\'lines[\'+i+\'][quantity]\\\' value=\\\'1\\\' style=\\\'width:60px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_cost]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_price]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][lead_time_days]\\\' style=\\\'width:100px;\\\'/></td><td><button type=\\\'button\\\' onclick=\\\'removeQRow(\'+n+\')\\\' class=\\\'btn btn-outline btn-sm\\\' style=\\\'color:#e05050;\\\'>X</button></td>\';document.getElementById(\'qlines-tbody\').appendChild(r);}function removeQRow(n){const r=document.getElementById(\'qrow-\'+n);if(r&&document.getElementById(\'qlines-tbody\').children.length>1)r.remove();}';
+      let html = SORT_SCRIPT;
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+      html += '<div class="page-title">New Quote — ' + rfq.rfq_number + '</div>';
+      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline btn-sm">&larr; Back to RFQ</a></div>';
+      html += '<div class="page-sub">Fill in pricing and send quote to customer</div>';
+      html += '<div class="detail-grid" style="margin-bottom:20px;">';
+      html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + rfq.customer_id + '" style="color:#c8932a;">' + rfq.customer_name + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">' + (rfq.company||'—') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + rfq.email + '" style="color:#c8932a;">' + rfq.email + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div>';
+      html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">' + rfq.customer_ref + '</div></div>' : '';
+      html += '</div>';
+      html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
+      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
+      html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
+      html += '<tbody id="qlines-tbody">' + lineHtml + '</tbody></table></div></div>';
+      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="Credit Card or Wire Transfer" style="width:100%;"/></div>';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="30" style="width:100%;"/></div></div>';
+      html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;"></textarea></div>';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional — shown at top of email)</span></div>';
+      html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
+      html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(optional)</span></div><input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
+      html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
+      html += '</div></div>';
+      html += '<div style="display:flex;gap:10px;">';
+      html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Send Quote to Customer &rarr;</button>';
+      html += '<button type="button" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>';
+      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Back to RFQ</a></div>';
+      html += '<script>' + draftScript + addRowScript + '</script>';
+      res.send(page('New Quote — ' + rfq.rfq_number, 'rfqs', html));
+    } catch(err) {
+      res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
 
-  /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote-review', */
+  router.post('/rfqs/:id/quote-review', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const h = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT h.*, c.id AS customer_id, c.first_name+\' \'+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
+      if (!h.recordset.length) return res.redirect('/admin/rfqs');
+      const rfq = h.recordset[0];
+      const dbLines = await pool.request().input('id2', sql.BigInt, req.params.id)
+        .query('SELECT * FROM rfq_lines WHERE rfq_id=@id2 ORDER BY line_number');
+      const pt = req.body.payment_terms || 'Credit Card or Wire Transfer';
+      const vd = req.body.valid_days || 30;
+      const nt = req.body.notes || '';
+      const sub = Object.values(req.body.lines || {});
+      let lineHtml = '';
+      dbLines.recordset.forEach(function(l, i) {
+        const s = sub[i] || {};
+        const n = l.line_number - 1;
+        const part = (s.fulfillment_part || l.nsn || l.part_number || '').toUpperCase();
+        const desc = s.item_name || l.item_name || '';
+        const qty = s.quantity || l.quantity || 1;
+        const cost = s.unit_cost || '';
+        const price = s.unit_price || '';
+        const lead = s.lead_time_days || '';
+        lineHtml += '<tr>';
+        lineHtml += '<td style="color:#7a8a9a;">' + l.line_number + '</td>';
+        lineHtml += '<td><div style="font-size:.65rem;color:#7a8a9a;">Req: ' + (l.nsn||l.part_number||'—') + '</div>';
+        lineHtml += '<input type="text" name="lines[' + n + '][fulfillment_part]" value="' + part + '" style="width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][rfq_line_id]" value="' + l.id + '"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][original_nsn]" value="' + (l.nsn||'') + '"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][original_part]" value="' + (l.part_number||'') + '"/>';
+        lineHtml += '<input type="hidden" name="lines[' + n + '][condition_code]" value="' + (l.condition_code||'NE') + '"/></td>';
+        lineHtml += '<td><input type="text" name="lines[' + n + '][item_name]" value="' + desc + '" style="width:150px;"/></td>';
+        lineHtml += '<td><input type="number" min="1" name="lines[' + n + '][quantity]" value="' + qty + '" style="width:60px;" required/></td>';
+        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_cost]" value="' + cost + '" placeholder="0.00" style="width:80px;" required/></td>';
+        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_price]" value="' + price + '" placeholder="0.00" style="width:80px;" required/></td>';
+        lineHtml += '<td><input type="text" name="lines[' + n + '][lead_time_days]" value="' + lead + '" placeholder="7-10 days" style="width:100px;"/></td>';
+        lineHtml += '<td><button type="button" onclick="removeQRow(' + l.line_number + ')" class="btn btn-outline btn-sm" style="color:#e05050;">X</button></td>';
+        lineHtml += '</tr>';
+      });
+      const nextLine = dbLines.recordset.length + 1;
+      const draftScript = 'let isDirty=false;document.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",function(){isDirty=true;});});window.addEventListener("beforeunload",function(e){if(isDirty){e.preventDefault();e.returnValue="";}});function saveDraft(){isDirty=false;const form=document.querySelector("form");const fd=new URLSearchParams(new FormData(form));fetch("/admin/rfqs/'+rfq.id+'/quote-draft",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(d){const btn=document.getElementById("save-draft-btn");if(btn){btn.textContent=d.ok?"Draft Saved \u2713":"Save Failed";btn.style.color=d.ok?"#4caf50":"#e05050";}setTimeout(function(){if(btn&&d.ok){btn.textContent="Save Draft";btn.style.color="";}},3000);}).catch(function(){isDirty=true;});}';
+      const addRowScript = 'let qc=' + nextLine + ';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\'tr\');r.id=\'qrow-\'+n;r.innerHTML=\'<td>\'+n+\'</td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][fulfillment_part]\\\'  style=\\\'width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;\\\' oninput=\\\'this.value=this.value.toUpperCase()\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][rfq_line_id]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_nsn]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_part]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][condition_code]\\\' value=\\\'NE\\\'/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][item_name]\\\' style=\\\'width:150px;\\\'/></td><td><input type=\\\'number\\\' min=\\\'1\\\' name=\\\'lines[\'+i+\'][quantity]\\\' value=\\\'1\\\' style=\\\'width:60px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_cost]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_price]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][lead_time_days]\\\' style=\\\'width:100px;\\\'/></td><td><button type=\\\'button\\\' onclick=\\\'removeQRow(\'+n+\')\\\'  class=\\\'btn btn-outline btn-sm\\\' style=\\\'color:#e05050;\\\'>X</button></td>\';document.getElementById(\'qlines-tbody\').appendChild(r);}function removeQRow(n){const r=document.getElementById(\'qrow-\'+n);if(r&&document.getElementById(\'qlines-tbody\').children.length>1)r.remove();}';
+      let html = SORT_SCRIPT;
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+      html += '<div class="page-title">Quote Review — ' + rfq.rfq_number + '</div>';
+      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline btn-sm">&larr; Back to RFQ</a></div>';
+      html += '<div class="page-sub">Review and edit before sending to customer</div>';
+      html += '<div class="detail-grid" style="margin-bottom:20px;">';
+      html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + rfq.customer_id + '" style="color:#c8932a;">' + rfq.customer_name + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">' + (rfq.company||'—') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + rfq.email + '" style="color:#c8932a;">' + rfq.email + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div>';
+      html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">' + rfq.customer_ref + '</div></div>' : '';
+      html += '</div>';
+      html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
+      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
+      html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
+      html += '<tbody id="qlines-tbody">' + lineHtml + '</tbody></table></div></div>';
+      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="' + pt + '" style="width:100%;"/></div>';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="' + vd + '" style="width:100%;"/></div></div>';
+      html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">' + nt + '</textarea></div>';
+      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional — shown at top of email)</span></div>';
+      html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
+      html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(optional)</span></div><input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
+      html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
+      html += '</div></div>';
+      html += '<div style="display:flex;gap:10px;">';
+      html += '<div style="display:flex;gap:10px;">';
+      html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Send Quote to Customer &rarr;</button>';
+      html += '<button type="button" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>';
+      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Back to RFQ</a></div>';
+      html += '<script>' + draftScript + addRowScript + '</script>';
+      res.send(page('Quote Review — ' + rfq.rfq_number, 'rfqs', html));
+    } catch(err) {
+      res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
 
   // Generate quote PDF
   router.get('/rfqs/:id/quote-pdf/:quoteId', async (req, res) => {
@@ -1281,7 +1427,352 @@ export async function buildAdminRouter() {
     }
   });
 
-    /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote', */
+    router.post('/rfqs/:id/quote', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const rfqResult = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query(`SELECT h.*, c.first_name, c.last_name, c.email, c.company FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id`);
+      if (!rfqResult.recordset.length) return res.redirect('/admin/rfqs');
+      const rfq = rfqResult.recordset[0];
+      const { valid_days = 30, payment_terms, notes } = req.body;
+      const linesRaw = req.body.lines || {};
+      const linesArr = Object.values(linesRaw);
+      let subtotal = 0;
+      const processedLines = linesArr.map((l, i) => {
+        const unitPrice = parseFloat(l.unit_price) || 0;
+        const unitCost = parseFloat(l.unit_cost) || 0;
+        const qty = parseInt(l.quantity) || 1; // qty now editable in form
+        const lineTotal = unitPrice * qty;
+        const lineCost = unitCost * qty;
+        subtotal += lineTotal;
+        // Use fulfillment_part if provided (admin may substitute a different part)
+        const fulfillPart = (l.fulfillment_part || '').trim();
+        const isNSN = /^\d{4}-\d{2}-\d{3}-\d{4}$/.test(fulfillPart);
+        const resolvedNsn = isNSN ? fulfillPart : (l.original_nsn || l.nsn || null);
+        const resolvedPart = !isNSN && fulfillPart ? fulfillPart : (l.original_part || l.part_number || null);
+        return {
+          ...l,
+          line_number: i + 1,
+          nsn: resolvedNsn,
+          part_number: resolvedPart,
+          item_name: l.item_name || null,
+          lead_time_text: l.lead_time_days?.toString().trim() || null,
+          unit_price: unitPrice,
+          unit_cost: unitCost,
+          quantity: qty,
+          line_total: lineTotal,
+          line_cost: lineCost,
+          line_margin: lineTotal - lineCost,
+          markup_pct: unitCost > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((unitPrice - unitCost) / unitCost) * 100).toFixed(2)))) : 0,
+          margin_pct: lineTotal > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((lineTotal - lineCost) / lineTotal) * 100).toFixed(2)))) : 0,
+        };
+      });
+      // Use same sequence number as RFQ for matching (RFQ-2026-00001 -> QT-2026-00001)
+      // Version-aware quote number: QT-2026-00001-v1, v2, v3...
+      const baseQtNum = rfq.rfq_number.replace(/^RFQ-/, 'QT-');
+      const existingVersions = await pool.request().input('rfqIdV', sql.BigInt, rfq.id)
+        .query("SELECT quote_number FROM quotes WHERE rfq_id=@rfqIdV AND quote_number NOT LIKE '%-D' ORDER BY created_at ASC");
+      const versionCount = existingVersions.recordset.length;
+      const quoteNumber = versionCount === 0 ? baseQtNum + '-v1' : baseQtNum + '-v' + (versionCount + 1);
+      const validUntil = new Date(Date.now() + parseInt(valid_days) * 24 * 60 * 60 * 1000);
+      const totalCost = processedLines.reduce((s, l) => s + l.line_cost, 0);
+      // Check if quote already exists for this RFQ - if so, update it (revision)
+      const existingQuote = await pool.request()
+        .input('rfqId2', sql.BigInt, rfq.id)
+        .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqId2 AND status<>'Draft' AND quote_number NOT LIKE '%-D' AND 1=0");
+
+      let quote;
+      if (existingQuote.recordset.length) {
+        const existingQ = existingQuote.recordset[0];
+        // Update existing quote
+        const qr = await pool.request()
+          .input('rfqId', sql.BigInt, rfq.id)
+          .input('existingId', sql.BigInt, existingQ.id)
+          .input('subtotal', sql.Decimal(12,2), subtotal)
+          .input('totalAmount', sql.Decimal(12,2), subtotal)
+          .input('totalCost', sql.Decimal(12,2), totalCost)
+          .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
+          .input('validUntil', sql.Date, validUntil)
+          .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
+          .input('notes', sql.NVarChar(sql.MAX), notes || null)
+          .query(`
+            UPDATE quotes SET
+              subtotal=@subtotal, total_amount=@totalAmount, total_cost=@totalCost,
+              total_margin=@totalMargin, valid_until=@validUntil, payment_terms=@paymentTerms,
+              notes=@notes, status='Sent', updated_at=GETDATE()
+            OUTPUT INSERTED.id, INSERTED.quote_number
+            WHERE id=@existingId
+          `);
+        quote = { id: existingQ.id, quote_number: existingQ.quote_number };
+        // Delete old lines and reinsert
+        await pool.request().input('qid', sql.BigInt, quote.id)
+          .query('DELETE FROM quote_lines WHERE quote_id=@qid');
+        console.log('Quote revised:', quote.quote_number);
+        // Delete draft if exists
+        try {
+          await pool.request().input('rfqIdDel', sql.BigInt, rfq.id)
+            .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel AND quote_number LIKE '%-D')");
+          await pool.request().input('rfqIdDel2', sql.BigInt, rfq.id)
+            .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel2 AND quote_number LIKE '%-D'");
+        } catch(e) { console.log('Draft cleanup skipped:', e.message); }
+      } else {
+        // Insert new quote
+        const qr = await pool.request()
+          .input('rfqId', sql.BigInt, rfq.id)
+          .input('customerId', sql.BigInt, rfq.customer_id)
+          .input('quoteNumber', sql.NVarChar(20), quoteNumber)
+          .input('subtotal', sql.Decimal(12,2), subtotal)
+          .input('totalAmount', sql.Decimal(12,2), subtotal)
+          .input('totalCost', sql.Decimal(12,2), totalCost)
+          .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
+          .input('validUntil', sql.Date, validUntil)
+          .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
+          .input('notes', sql.NVarChar(sql.MAX), notes || null)
+          .query(`
+            INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, status)
+            OUTPUT INSERTED.id, INSERTED.quote_number
+            VALUES (@rfqId, @customerId, @quoteNumber, @subtotal, @totalAmount, @totalCost, @totalMargin, @validUntil, @paymentTerms, @notes, 'Sent')
+          `);
+        quote = qr.recordset[0];
+        if (!quote) {
+          const fb = await pool.request().input('qnFb', sql.NVarChar(20), quoteNumber)
+            .query('SELECT id, quote_number FROM quotes WHERE quote_number=@qnFb');
+          quote = fb.recordset[0];
+        }
+        // Delete draft if exists
+        try {
+          await pool.request().input('rfqIdDel3', sql.BigInt, rfq.id)
+            .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel3 AND quote_number LIKE '%-D')");
+          await pool.request().input('rfqIdDel4', sql.BigInt, rfq.id)
+            .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel4 AND quote_number LIKE '%-D'");
+        } catch(e) { console.log('Draft cleanup skipped:', e.message); }
+      }
+      for (const l of processedLines) {
+        await pool.request()
+          .input('quoteId', sql.BigInt, quote.id)
+          .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
+          .input('lineNum', sql.Int, l.line_number)
+          .input('nsn', sql.NVarChar(20), l.nsn || null)
+          .input('partNum', sql.NVarChar(100), l.part_number || null)
+          .input('itemName', sql.NVarChar(255), l.item_name || null)
+          .input('condition', sql.NVarChar(5), l.condition_code || 'NE')
+          .input('qty', sql.Int, l.quantity)
+          .input('unitCost', sql.Decimal(10,2), l.unit_cost)
+          .input('unitPrice', sql.Decimal(10,2), l.unit_price)
+          .input('lineTotal', sql.Decimal(12,2), l.line_total)
+          .input('lineCost', sql.Decimal(12,2), l.line_cost)
+          .input('lineMargin', sql.Decimal(12,2), l.line_margin)
+          .input('markupPct', sql.Decimal(5,2), l.markup_pct)
+          .input('marginPct', sql.Decimal(5,2), l.margin_pct)
+          .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
+          .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'').toString() || null)
+          .query(`
+            INSERT INTO quote_lines
+              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, markup_pct, margin_pct, lead_time_days, lead_time_text)
+            VALUES
+              (@quoteId, @rfqLineId, @lineNum, @nsn, @partNum, @itemName, @condition, @qty, @unitCost, @unitPrice, @lineTotal, @lineCost, @lineMargin, @markupPct, @marginPct, @leadTime, @leadTimeText)
+          `);
+      }
+      await pool.request()
+        .input('rfqId', sql.BigInt, rfq.id)
+        .query(`UPDATE rfq_headers SET status='Quoted', updated_at=GETDATE() WHERE id=@rfqId`);
+      await pool.request()
+        .input('rfqId', sql.BigInt, rfq.id)
+        .input('note', sql.NVarChar(500), `Quote ${quoteNumber} created and sent`)
+        .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, 'Submitted', 'Quoted', @note)`);
+      const { sendQuoteToCustomer } = await import('../services/mailer.js');
+      const customer = { first_name: rfq.first_name, last_name: rfq.last_name, email: rfq.email };
+      const { personal_message, cc_emails, attach_pdf } = req.body;
+      // Generate PDF if requested
+      let pdfBuffer = null;
+      if (attach_pdf === '1' && quote && quote.id) {
+        try {
+          // Use jsPDF via require for server-side PDF generation
+          const { jsPDF } = await import('jspdf');
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+          const gold = [200, 147, 42];
+          const navy = [10, 22, 40];
+          const pageW = 210;
+          const margin = 14;
+          const contentW = pageW - margin * 2;
+
+          // Header bar
+          doc.setFillColor(...navy);
+          doc.rect(0, 0, pageW, 28, 'F');
+          doc.setFillColor(...gold);
+          doc.rect(0, 28, pageW, 1.5, 'F');
+          doc.setTextColor(...gold);
+          doc.setFontSize(15);
+          doc.setFont('helvetica', 'bold');
+          doc.text('JUPITER ONE USA LLC', margin, 12);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(180, 180, 180);
+          doc.text('Aerospace & Defense Component Supplier', margin, 20);
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(9);
+          doc.text('QUOTATION', pageW - margin, 12, { align: 'right' });
+          doc.setFontSize(8);
+          doc.setTextColor(180, 180, 180);
+          doc.text(quoteNumber, pageW - margin, 20, { align: 'right' });
+
+          // Two-column info block
+          let y = 38;
+          doc.setFontSize(7);
+          doc.setTextColor(120, 120, 120);
+          doc.setFont('helvetica', 'bold');
+          doc.text('BILL TO', margin, y);
+          doc.text('QUOTE DETAILS', margin + contentW/2, y);
+          y += 5;
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(30, 30, 30);
+          doc.setFontSize(9);
+          doc.text(rfq.first_name + ' ' + rfq.last_name, margin, y);
+          doc.setFontSize(8);
+          doc.setTextColor(120, 120, 120);
+          const detailX = margin + contentW/2;
+          const valX = detailX + 28;
+          let ry = y;
+          const pdfDetails = [
+            ['Quote #:', quoteNumber],
+            ['RFQ #:', rfq.rfq_number],
+            ['Issued:', new Date().toLocaleDateString()],
+            ['Valid Until:', new Date(validUntil).toLocaleDateString()],
+            ['Sales Rep:', 'Derek Torchia'],
+          ];
+          for (const [lbl, val] of pdfDetails) {
+            doc.setTextColor(120,120,120); doc.text(lbl, detailX, ry);
+            doc.setTextColor(30,30,30); doc.text(String(val||''), valX, ry);
+            ry += 5;
+          }
+
+          // Divider
+          y = Math.max(ry, y + 18) + 4;
+          doc.setDrawColor(...gold);
+          doc.setLineWidth(0.5);
+          doc.line(margin, y, pageW - margin, y);
+          y += 6;
+
+          // Table columns
+          const pdfCols = [
+            { label: 'NSN / Part #', x: margin,     w: 32 },
+            { label: 'Description',  x: margin+32,  w: 50 },
+            { label: 'Qty',          x: margin+82,  w: 12 },
+            { label: 'Cond',         x: margin+94,  w: 14 },
+            { label: 'Unit Price',   x: margin+108, w: 24 },
+            { label: 'Total',        x: margin+132, w: 24 },
+            { label: 'Lead Time',    x: margin+156, w: 26 },
+          ];
+
+          // Table header row
+          doc.setFillColor(...navy);
+          doc.rect(margin, y-4, contentW, 7, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7);
+          doc.setFont('helvetica', 'bold');
+          for (const col of pdfCols) doc.text(col.label, col.x+1, y);
+          y += 5;
+
+          // Data rows
+          doc.setFont('helvetica', 'normal');
+          let rowAlt = false;
+          for (const l of processedLines) {
+            if (y > 255) {
+              doc.addPage();
+              y = 20;
+              doc.setFillColor(...navy);
+              doc.rect(margin, y-4, contentW, 7, 'F');
+              doc.setTextColor(255,255,255);
+              doc.setFont('helvetica','bold');
+              for (const col of pdfCols) doc.text(col.label, col.x+1, y);
+              y += 5;
+              doc.setFont('helvetica','normal');
+            }
+            if (rowAlt) { doc.setFillColor(248,248,248); doc.rect(margin, y-3.5, contentW, 6.5, 'F'); }
+            rowAlt = !rowAlt;
+            doc.setTextColor(30, 30, 30);
+            doc.setFontSize(7.5);
+            doc.text(String(l.nsn||l.part_number||'—').substring(0,16), pdfCols[0].x+1, y);
+            doc.text(String(l.item_name||'—').substring(0,28), pdfCols[1].x+1, y);
+            doc.text(String(l.quantity||''), pdfCols[2].x+1, y);
+            doc.text(String(l.condition_code||'NE'), pdfCols[3].x+1, y);
+            doc.text('$'+parseFloat(l.unit_price||0).toFixed(2), pdfCols[4].x+1, y);
+            doc.text('$'+parseFloat(l.line_total||0).toFixed(2), pdfCols[5].x+1, y);
+            doc.text(String(l.lead_time_text||l.lead_time_days||'—').substring(0,14), pdfCols[6].x+1, y);
+            doc.setDrawColor(220,220,220); doc.setLineWidth(0.2);
+            doc.line(margin, y+2.5, pageW-margin, y+2.5);
+            y += 7;
+          }
+
+          // Total row
+          y += 2;
+          doc.setFillColor(...gold);
+          doc.rect(margin, y-4, contentW, 7, 'F');
+          doc.setTextColor(...navy);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.text('TOTAL', pdfCols[4].x+1, y);
+          doc.text('$' + Number(subtotal).toFixed(2), pdfCols[5].x+1, y);
+          y += 10;
+
+          // Notes
+          if (notes) {
+            doc.setFontSize(8); doc.setFont('helvetica','normal');
+            doc.setTextColor(100,100,100);
+            doc.text('Notes: ' + notes.substring(0,120), margin, y);
+            y += 8;
+          }
+
+          // T&C section
+          if (y < 255) {
+            y += 4;
+            doc.setDrawColor(200,147,42); doc.setLineWidth(0.3);
+            doc.line(margin, y, pageW-margin, y); y += 5;
+            doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
+            doc.text('TERMS & CONDITIONS', margin, y); y += 4;
+            doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
+            const tcLines = [
+              'Payment: Credit Card or Wire Transfer. CC payments subject to 3.5% processing fee.',
+              'Cancellation: All orders are non-cancellable and non-returnable once confirmed.',
+              'Delivery: Times are estimated and not guaranteed. Claims within 7 days of receipt.',
+              'Validity: Quote valid 30 days. Prices subject to availability at time of confirmation.',
+              'Export: All sales subject to US export control laws including EAR and ITAR.',
+              'Condition Codes: NE=New, NS=New Surplus, OH=Overhaul, AR=As Removed, SV=Serviceable.',
+            ];
+            for (const line of tcLines) { if (y > 272) break; doc.text('- ' + line, margin+2, y); y += 4.5; }
+          }
+
+          // Footer
+          doc.setFillColor(...navy);
+          doc.rect(0, 282, pageW, 15, 'F');
+          doc.setFontSize(7); doc.setTextColor(170,170,170);
+          doc.text('Jupiter One USA LLC  |  400 N Tampa St, Suite 1550, Tampa FL  |  +1 (347) 821-7412  |  DTorchia@jupiteroneusa.com', pageW/2, 288, { align: 'center' });
+          doc.setTextColor(130,130,130);
+          doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All orders non-cancellable. Quote valid 30 days.', pageW/2, 293, { align: 'center' });
+
+          pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+          console.log('PDF generated with jsPDF, size:', pdfBuffer.length);
+        } catch(pdfErr) { console.error('PDF gen error:', pdfErr.message); }
+      }
+      try {
+      await sendQuoteToCustomer({
+        customer,
+        quote: { ...quote, total_amount: subtotal, valid_until: validUntil, payment_terms, notes, personal_message },
+        lines: processedLines,
+        rfq: { rfq_number: rfq.rfq_number, customer_ref: rfq.customer_ref, priority: rfq.priority },
+        pdfUrl: null,
+        pdfBuffer,
+        ccEmails: cc_emails || null,
+        attachPdf: attach_pdf === '1',
+      });
+      } catch(emailErr) { console.error('Email send error:', emailErr.message); }
+      res.redirect(`/admin/rfqs/${req.params.id}?quoted=1`);
+    } catch(err) {
+      console.error('Admin quote error:', err);
+      res.redirect(`/admin/rfqs/${req.params.id}?error=1`);
+    }
+  });
 
   // RFQ Status Update
   router.post('/rfqs/:id/status', async (req, res) => {
@@ -2136,6 +2627,5 @@ export async function buildAdminRouter() {
   });
 
   mountSupplierPoRoutes(router, requireAuth, page);
-  mountQuoteBuilder(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }
