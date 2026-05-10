@@ -181,7 +181,6 @@ function renderForm(ctx, submitted) {
       '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:50px;text-align:center;">CoC</th>' +
       '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;width:60px;text-align:center;">Trace</th>' +
       '<th style="padding:4px 6px;color:#7a8a9a;font-size:.65rem;">NOTES</th>' +
-      '<th style="padding:4px 6px;color:#c8932a;font-size:.65rem;width:50px;text-align:center;font-weight:700;">USE?</th>' +
       '<th style="padding:4px 6px;width:30px;"></th>' +
       '</tr></thead><tbody class="sources-tbody" data-line-idx="' + lineIdx + '">';
 
@@ -280,9 +279,6 @@ function renderSourceRow(lineIdx, sIdx, s, supplierOpts) {
   html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_coc]" value="1" ' + hasCoc + ' style="accent-color:#c8932a;"/></td>';
   html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_trace]" value="1" ' + hasTrace + ' style="accent-color:#c8932a;"/></td>';
   html += '<td style="padding:4px 6px;"><input type="text" name="lines[' + lineIdx + '][sources][' + sIdx + '][notes]" value="' + escAttr(notes) + '" style="width:100%;font-size:.78rem;" placeholder="optional"/></td>';
-  // [Rewire 7] USE checkbox - default checked
-  const _isUsed = (s.is_selected === undefined || s.is_selected === null) ? true : !!s.is_selected;
-  html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][is_selected]" value="1" ' + (_isUsed ? 'checked' : '') + ' class="src-use" data-line-idx="' + lineIdx + '" onchange="recalcLine(' + lineIdx + ')" style="accent-color:#4caf50;width:18px;height:18px;"/></td>';
   html += '<td style="padding:4px 6px;text-align:center;"><button type="button" onclick="removeSource(this, ' + lineIdx + ')" class="btn btn-outline btn-sm" style="color:#e05050;font-size:.7rem;padding:2px 6px;">X</button></td>';
   html += '</tr>';
   return html;
@@ -318,7 +314,6 @@ function renderClientScript(lineCount) {
 '        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_coc]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_trace]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;"><input type="text" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][notes]" style="width:100%;font-size:.78rem;" placeholder="optional"/></td>\' +\n' +
-'        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][is_selected]" value="1" checked class="src-use" data-line-idx="\'+lineIdx+\'" onchange="recalcLine(\'+lineIdx+\')" style="accent-color:#4caf50;width:18px;height:18px;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;text-align:center;"><button type="button" onclick="removeSource(this, \'+lineIdx+\')" class="btn btn-outline btn-sm" style="color:#e05050;font-size:.7rem;padding:2px 6px;">X</button></td>\';\n' +
 '      tbody.appendChild(tr);\n' +
 '      recalcLine(lineIdx);\n' +
@@ -347,11 +342,8 @@ function renderClientScript(lineCount) {
 '\n' +
 '      var srcQtys = document.querySelectorAll(".src-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
 '      var srcCosts = document.querySelectorAll(".src-cost[data-line-idx=\\""+lineIdx+"\\"]");\n' +
-'      var srcUses = document.querySelectorAll(".src-use[data-line-idx=\\""+lineIdx+"\\"]");\n' +
 '      var totalAlloc = 0, totalCost = 0;\n' +
 '      for (var i=0; i<srcQtys.length; i++) {\n' +
-'        var isUsed = srcUses[i] ? srcUses[i].checked : true;\n' +
-'        if (!isUsed) continue;\n' +
 '        var q = parseFloat(srcQtys[i].value) || 0;\n' +
 '        var c = parseFloat(srcCosts[i].value) || 0;\n' +
 '        totalAlloc += q;\n' +
@@ -395,12 +387,8 @@ function renderClientScript(lineCount) {
 '          var qtyInput = document.querySelector(".line-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
 '          var lineQty = parseFloat(qtyInput.value) || 0;\n' +
 '          var srcQtys = document.querySelectorAll(".src-qty[data-line-idx=\\""+lineIdx+"\\"]");\n' +
-'          var srcUses = document.querySelectorAll(".src-use[data-line-idx=\\""+lineIdx+"\\"]");\n' +
 '          var totalAlloc = 0;\n' +
-'          for (var j=0; j<srcQtys.length; j++) {\n' +
-'            var isUsed = srcUses[j] ? srcUses[j].checked : true;\n' +
-'            if (isUsed) totalAlloc += parseFloat(srcQtys[j].value) || 0;\n' +
-'          }\n' +
+'          for (var j=0; j<srcQtys.length; j++) totalAlloc += parseFloat(srcQtys[j].value) || 0;\n' +
 '          if (totalAlloc !== lineQty) {\n' +
 '            e.preventDefault();\n' +
 '            alert("Line " + lineNum + ": supplier sources allocate " + totalAlloc + " units, but line quantity is " + lineQty + ". Please adjust.");\n' +
@@ -442,23 +430,17 @@ async function saveQuote(rfqId, body, adminId) {
     if (sourceKeys.length === 0) throw new Error('Line ' + lineNum + ': at least one supplier source required');
 
     const sources = sourceKeys.map(function(sk) { return sourcesObj[sk]; });
-    // [Rewire 7] Only checked sources count toward allocation
-    let allocSum = 0, costSum = 0, selectedCount = 0;
+    let allocSum = 0, costSum = 0;
     sources.forEach(function(s, sIdx) {
       const sq = parseInt(s.allocated_qty || 0);
       const sc = parseFloat(s.unit_cost || 0);
-      const isUsed = s.is_selected === '1' || s.is_selected === 1 || s.is_selected === true;
       if (!s.supplier_id) throw new Error('Line ' + lineNum + ' source ' + (sIdx + 1) + ': supplier required');
       if (sq <= 0) throw new Error('Line ' + lineNum + ' source ' + (sIdx + 1) + ': allocated qty must be > 0');
       if (sc < 0) throw new Error('Line ' + lineNum + ' source ' + (sIdx + 1) + ': cost cannot be negative');
-      if (isUsed) {
-        allocSum += sq;
-        costSum += sq * sc;
-        selectedCount++;
-      }
+      allocSum += sq;
+      costSum += sq * sc;
     });
-    if (selectedCount === 0) throw new Error('Line ' + lineNum + ': at least one supplier must be checked (USE)');
-    if (allocSum !== lineQty) throw new Error('Line ' + lineNum + ': checked sources allocate ' + allocSum + ' but line qty is ' + lineQty);
+    if (allocSum !== lineQty) throw new Error('Line ' + lineNum + ': sources allocate ' + allocSum + ' but line qty is ' + lineQty);
 
     const lineTotal = unitPrice * lineQty;
     const lineMargin = lineTotal - costSum;
@@ -538,10 +520,6 @@ async function saveQuote(rfqId, body, adminId) {
       .query("INSERT INTO quote_lines (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, markup_pct, unit_price, line_total, line_cost, line_margin, margin_pct, lead_time_text) OUTPUT INSERTED.id VALUES (@qid, @rli, @ln, @nsn, @pn, @iname, @cond, @qty, @uc, @mkp, @up, @lt, @lc, @lm, @mpct, @ltt)");
     const quoteLineId = qlR.recordset[0].id;
 
-    // [Rewire 7] Ensure is_selected column exists
-    try {
-      await pool.request().query("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('quote_line_sources') AND name='is_selected') ALTER TABLE quote_line_sources ADD is_selected BIT NOT NULL DEFAULT 1");
-    } catch(e) { console.error('is_selected col check:', e.message); }
     let sortOrder = 1;
     for (const s of pl.sources) {
       await pool.request()
@@ -555,8 +533,7 @@ async function saveQuote(rfqId, body, adminId) {
         .input('htr', sql.Bit, s.has_trace ? 1 : 0)
         .input('nt', sql.NVarChar(500), s.notes || null)
         .input('so', sql.Int, sortOrder++)
-        .input('issel', sql.Bit, (s.is_selected === '1' || s.is_selected === 1 || s.is_selected === true) ? 1 : 0)
-        .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130, has_coc, has_trace, notes, sort_order, is_selected) VALUES (@qli, @sid, @aq, @uc, @ld, @h81, @hcoc, @htr, @nt, @so, @issel)");
+        .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130, has_coc, has_trace, notes, sort_order) VALUES (@qli, @sid, @aq, @uc, @ld, @h81, @hcoc, @htr, @nt, @so)");
     }
   }
 
