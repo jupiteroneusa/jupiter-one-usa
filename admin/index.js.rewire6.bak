@@ -916,13 +916,35 @@ export async function buildAdminRouter() {
           <tbody>${lineRows}</tbody></table>
         </div>
 
-        <div class="card"><!-- [Rewire 6] -->
-          <div class="card-header">Sourcing &amp; Quoting</div>
-          <div class="card-body" style="padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-            <a href="/admin/rfqs/${rfq.id}/sourcing" class="btn btn-outline" style="padding:10px 18px;">\u{1F50D} Source Suppliers</a>
-            <a href="/admin/rfqs/${rfq.id}/quote-review" class="btn btn-gold" style="padding:10px 22px;">Build Quote &rarr;</a>
-            ${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft" class="btn btn-outline" style="border-color:#4caf50;color:#4caf50;padding:10px 18px;">Resume Draft</a>` : ''}
-            <div style="flex:1;min-width:200px;font-size:.75rem;color:#7a8a9a;text-align:right;">Record supplier responses on the Sourcing page first, then build the quote with internal cost/source data.</div>
+        <div class="card">
+          <div class="card-header">
+            Create & Send Quote
+            <button class="btn btn-gold btn-sm" onclick="var f=document.getElementById('quote-form');f.style.display=f.style.display==='none'?'block':'none';">+ New Quote</button>${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;margin-left:8px;">Resume Draft</a>` : ''}
+          </div>
+          <div id="quote-form" style="display:none;padding:18px;">
+            <form method="POST" action="/admin/rfqs/${rfq.id}/quote-review">
+              <div style="overflow-x:auto;">
+                <table style="width:100%;margin-bottom:16px;">
+                  <thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Unit Cost ($)</th><th>Unit Price ($)</th><th>Lead Time</th></tr></thead>
+                  <tbody>${quoteLineInputs}</tbody>
+                </table>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div>
+                  <input type="text" name="payment_terms" value="Credit Card or Wire Transfer" style="width:100%;"/>
+                </div>
+                <div>
+                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div>
+                  <input type="number" name="valid_days" value="30" style="width:100%;"/>
+                </div>
+              </div>
+              <div style="margin-bottom:16px;">
+                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes / Terms</div>
+                <textarea name="notes" rows="3" style="width:100%;" placeholder="Quote terms, lead times, conditions..."></textarea>
+              </div>
+              <button type="submit" class="btn btn-gold">Preview Quote &rarr;</button>
+            </form>
           </div>
         </div>
 
