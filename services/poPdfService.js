@@ -2,7 +2,8 @@
 // Generates a Purchase Order PDF (matches invoice style: white bg, gold/navy accents)
 // Uses Puppeteer (same as invoice generator).
 
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 import { getPool, sql } from '../db/connect.js';
 
 function fmtMoney(n) {
@@ -181,16 +182,21 @@ ${po.notes ? '<div class="notes-box"><b style="color:#c8932a;">Notes:</b><br/>' 
 
 </body></html>`;
 
+  // @sparticuz/chromium ships a Chrome build with the right shared libs for
+  // Azure App Service Linux. executablePath() resolves it on first call.
+  const executablePath = await chromium.executablePath();
   const browser = await puppeteer.launch({
-    headless: 'new',
     args: [
+      ...chromium.args,
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--no-zygote',
       '--single-process'
-    ]
+    ],
+    defaultViewport: chromium.defaultViewport,
+    executablePath: executablePath,
+    headless: chromium.headless,
   });
   try {
     const pageP = await browser.newPage();

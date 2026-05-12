@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@azure/storage-blob": "^12.17.0",
+    "@sparticuz/chromium": "^148.0.0",
     "axios": "^1.6.8",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
@@ -28,7 +29,7 @@
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.13",
     "puppeteer": "^24.42.0",
-    "puppeteer-core": "^24.42.0",
+    "puppeteer-core": "^24.43.1",
     "tedious": "^19.2.1"
   }
 }
