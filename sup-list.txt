@@ -1,0 +1,36 @@
+=== FOUND in admin/index.js at line 1938 ===
+
+1938:   router.get('/suppliers', async (req, res) => {
+1939:     if (!requireAuth(req, res)) return;
+1940:     try {
+1941:       const pool = await getPool();
+1942:       const filterMode = (req.query.filter || 'all').toLowerCase();
+1943:       let whereClause = '';
+1944:       if (filterMode === 'active') whereClause = "WHERE status='Active'";
+1945:       else if (filterMode === 'preferred') whereClause = "WHERE status='Active' AND is_preferred=1";
+1946:       else if (filterMode === 'cert8130') whereClause = "WHERE status='Active' AND is_certified_8130=1";
+1947:       else if (filterMode === 'inactive') whereClause = "WHERE status<>'Active'";
+1948:       const result = await pool.request().query(`
+1949:         SELECT id, company_name AS name, contact_name, email, phone, country, status, is_preferred, is_certified_8130, created_at
+1950:         FROM suppliers ${whereClause} ORDER BY company_name ASC
+1951:       `);
+1952:       const rows = result.recordset.map(s => `<tr data-supplier-row data-href="/admin/suppliers/${s.id}" style="cursor:pointer;">
+1953:         <td style="font-weight:600;color:#c8932a;">${s.name}</td>
+1954:         <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
+1955:         <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
+1956:         <td style="color:#7a8a9a;">${s.phone||'—'}</td>
+1957:         <td style="color:#7a8a9a;">${s.country||'—'}</td>
+1958:         <td>${statusBadge(s.status)}</td>
+1959:       </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
+1960:       res.send(page('Suppliers','suppliers',`
+1961:         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div class="page-title">Suppliers</div><a href="/admin/suppliers/new" class="btn btn-gold">+ New Supplier</a></div>
+1962:         <div class="page-sub">Verified supplier network</div>
+1963:         <div id="supplierFilters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${['all','active','preferred','cert8130','inactive'].map(f=>{const labels={all:'All',active:'Active',preferred:'Preferred',cert8130:'8130 Certified',inactive:'Inactive'};return '<a href="/admin/suppliers'+(f==='all'?'':'?filter='+f)+'" class="btn btn-sm '+(filterMode===f?'btn-gold':'btn-outline')+'" style="font-size:.7rem;">'+labels[f]+'</a>'}).join('')}</div>
+1964:         <div class="card">
+1965:           <table id="suppliersTable"><thead><tr><th data-sort="0" style="cursor:pointer;user-select:none;">Company &#x25B2;&#x25BC;</th><th data-sort="1" style="cursor:pointer;user-select:none;">Contact &#x25B2;&#x25BC;</th><th>Email</th><th>Phone</th><th data-sort="4" style="cursor:pointer;user-select:none;">Country &#x25B2;&#x25BC;</th><th data-sort="5" style="cursor:pointer;user-select:none;">Status &#x25B2;&#x25BC;</th></tr></thead>
+1966:           <tbody>${rows}</tbody></table>
+1967:         </div>`));
+1968:     } catch(err) {
+1969:       res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
+1970:     }
+1971:   });
