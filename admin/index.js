@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { mountOrderRoutes } from './orderRoutes.js';
 import { mountSupplierRoutes } from './supplierRoutes.js';
 import { mountSupplierPoRoutes } from './supplierPoRoutes.js';
+import { mountAdminDocRoutes } from './adminDocRoutes.js';
 import { mountQuoteBuilder } from './quoteBuilder.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
@@ -2143,6 +2144,7 @@ export async function buildAdminRouter() {
   });
 
   mountSupplierPoRoutes(router, requireAuth, page);
+mountAdminDocRoutes(router, requireAuth);
   mountQuoteBuilder(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }

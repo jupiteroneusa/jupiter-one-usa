@@ -1,0 +1,73 @@
+========== admin/index.js login route ==========
+
+170:   router.post('/login', (req, res) => {
+171:     const { email, password } = req.body;
+172:     if (email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase() && password === process.env.ADMIN_PASSWORD) {
+173:       const token = jwt.sign({ email, type: 'admin' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
+174:       res.cookie('j1_admin_token', token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
+175:       res.redirect('/admin/dashboard');
+176:     } else {
+177:       res.redirect('/admin?error=1');
+178:     }
+179:   });
+
+========== admin/index.js requireAuth helper ==========
+
+function requireAuth(req, res) {
+  const token = req.cookies?.j1_admin_token;
+  if (!token) { res.redirect('/admin'); return false; }
+  try { jwt.verify(token, process.env.ADMIN_JWT_SECRET); return true; }
+  catch { res.redirect('/admin'); return false; }
+}
+
+// Sortable table script for dashboard
+const SORT_SCRIPT = `
+<script>
+function sortTable(th, col, dataAttr) {
+  const table = th.closest('table');
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const allTh = table.querySelectorAll('th.sortable');
+  const asc = !th.classList.contains('sort-asc');
+  allTh.forEach(t => t.classList.remove('sort-asc','sort-desc'));
+  th.classList.add(asc ? 'sort-asc' : 'sort-desc');
+  rows.sort((a, b) => {
+    const cell_a = a.cells[col];
+    const cell_b = b.cells[col];
+    // Use data attribute if specified (e.g. for RFQ # numeric sort)
+    if (dataAttr && cell_a && cell_b) {
+      const an = parseFloat(cell_a.getAttribute(dataAttr) || cell_a.innerText);
+      const bn = parseFloat(cell_b.getAttribute(dataAttr) || cell_b.innerText);
+      if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+    }
+    const av = cell_a?.innerText.trim() || '';
+    const bv = cell_b?.innerText.trim() || '';
+    const an = parseFloat(av.replace(/[^0-9.-]/g,''));
+    const bn = parseFloat(bv.replace(/[^0-9.-]/g,''));
+    if (!isNaN(an) && !isNaN(bn) && av !== '' && bv !== '') return asc ? an - bn : bn - an;
+    ret
+
+========== middleware/auth.js extractToken ==========
+
+extractToken(req);
+    if (!token) return res.status(401).json({ error: 'Login required.' });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== 'customer') return res.status(403).json({ error: 'Forbidden.' });
+
+    // Validate session still active in DB
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('token', sql.NVarChar, token)
+      .query(`
+        SELECT cs.*, c.status AS account_status
+        FROM customer_sessions cs
+        JOIN customers c ON c.id = cs.customer_id
+        WHERE cs.session_token = @token
+          AND cs.expires_at > GETDATE()
+          AND cs.invalidated_at IS NULL
+          AND c.status = 'Active'
+      `);
+
+    if (!result.recordset.length) {
+      return res.status(401).json({ error:

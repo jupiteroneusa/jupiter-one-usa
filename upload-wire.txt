@@ -1,0 +1,55 @@
+========== where is /api/documents mounted? ==========
+
+
+--- app.js (lines mentioning documents) ---
+
+--- server.js (lines mentioning documents) ---
+22: import documentRouter  from './routes/documents.js';
+45: app.use('/api/auth',      authRouter);
+46: app.use('/api/search',    searchRouter);
+47: app.use('/api/rfq',       rfqRouter);
+48: app.use('/api/quotes',    quoteRouter);
+49: app.use('/api/orders',    orderRouter);
+50: app.use('/api/suppliers', supplierRouter);
+51: app.use('/api/sourcing',  sourcingRouter);
+52: app.use('/api/invoices',  invoiceRouter);
+53: app.use('/api/shipments', shipmentRouter);
+54: app.use('/api/documents', documentRouter);
+55: app.use('/api/customers', customerRouter);
+56: app.use('/api/dibss',     dibssRouter);
+57: app.use('/api/settings',  settingsRouter);
+58: app.use('/api/communications', commsRouter);
+59: app.use('/api/contact',   contactRouter);
+61: app.get('/api/health', async (req, res) => {
+122:       console.log(`   API:    http://localhost:${PORT}/api`);
+
+========== requireAdmin middleware ==========
+
+requireAdmin(req, res, next) {
+  try {
+    const token = extractToken(req);
+    if (!token) return res.status(401).json({ error: 'Admin login required.' });
+
+    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+    if (decoded.type !== 'admin') return res.status(403).json({ error: 'Forbidden.' });
+
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('token', sql.NVarChar, token)
+      .query(`
+        SELECT as2.*, au.role, au.status AS admin_status
+        FROM admin_sessions as2
+        JOIN admin_users au ON au.id = as2.admin_id
+        WHERE as2.session_token = @token
+          AND as2.expires_at > GETDATE()
+          AND as2.invalidated_at IS NULL
+          AND au.status = 'Active'
+      `);
+
+    if (!result.recordset.length) {
+      
+
+========== check if /api/documents/upload returns anything ==========
+Try in browser DevTools console (F12 → Console) while on the PO docs tab:
+  fetch('/api/documents/upload', {method:'POST', credentials:'same-origin'}).then(r => r.text()).then(console.log)
+That should return an error message saying what auth is needed.

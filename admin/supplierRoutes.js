@@ -266,7 +266,7 @@ export function mountSupplierRoutes(router, requireAuth, page) {
         html += '<div id="uploadStatus" style="margin-top:10px;font-size:.85rem;"></div>';
         html += '</div>';
 
-        html += '<script>function uploadSupDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
+        html += '<script>function uploadSupDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/admin/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
 
         if (docs.recordset.length === 0) {
           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No documents uploaded yet.</div>';
@@ -278,7 +278,7 @@ export function mountSupplierRoutes(router, requireAuth, page) {
             html += '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">&#128206; ' + d.file_name + '</a></td>';
             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDateTime(d.uploaded_at) + '</td>';
             html += '<td style="color:#7a8a9a;font-size:.82rem;">' + (d.notes || '&mdash;') + '</td>';
-            html += '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/api/documents/' + d.id + '\',{method:\'DELETE\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>';
+            html += '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/admin/api/documents/' + d.id + '/delete\',{method:\'POST\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>';
             html += '</tr>';
           });
           html += '</tbody></table>';

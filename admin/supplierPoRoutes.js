@@ -489,7 +489,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         html += '<div id="uploadStatus" style="margin-top:10px;font-size:.85rem;"></div>';
         html += '</div>';
 
-        html += '<script>function uploadDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
+        html += '<script>function uploadDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/admin/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
 
         // Document list
         if (docsR.recordset.length === 0) {
@@ -502,7 +502,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
               '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">&#128206; ' + d.file_name + '</a></td>' +
               '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDateTime(d.uploaded_at) + '</td>' +
               '<td style="color:#7a8a9a;font-size:.82rem;">' + (d.notes || '&mdash;') + '</td>' +
-              '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/api/documents/' + d.id + '\',{method:\'DELETE\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>' +
+              '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/admin/api/documents/' + d.id + '/delete\',{method:\'POST\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>' +
             '</tr>';
           });
           html += '</tbody></table>';
@@ -643,10 +643,15 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       if (!r.recordset.length) return res.status(404).send('PO not found');
       const poNumber = r.recordset[0].po_number;
 
-      const pdfBuffer = await generatePoPdf(req.params.id);
+      // PDF_BUFFER_FIX_V1: ensure we have a real Buffer with Content-Length set,
+      // otherwise some browsers reject the stream and show "Failed to load PDF document"
+      const pdfRaw = await generatePoPdf(req.params.id);
+      const pdfBuffer = Buffer.isBuffer(pdfRaw) ? pdfRaw : Buffer.from(pdfRaw);
       res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
       res.setHeader('Content-Disposition', 'inline; filename="' + poNumber + '.pdf"');
-      res.send(pdfBuffer);
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(pdfBuffer);
     } catch(err) {
       console.error('PO PDF error:', err);
       res.status(500).send('PDF generation failed: ' + err.message);
@@ -725,7 +730,8 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         '(347) 821-7412 · DTorchia@JupiterOneUSA.com</p>' +
         '</div>';
 
-      await transporter.sendMail({
+      // SENDGRID_LOG_V1: capture response to log/verify delivery
+      const sendResult = await transporter.sendMail({
         from: '"Derek Torchia - Jupiter One USA" <' + fromAddr + '>',
         to: emailTo,
         cc: emailCc || undefined,
@@ -737,6 +743,13 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
           content: pdfBuffer,
           contentType: 'application/pdf'
         }]
+      });
+
+      console.log('[PO Send] SMTP response:', {
+        messageId: sendResult && sendResult.messageId,
+        accepted: sendResult && sendResult.accepted,
+        rejected: sendResult && sendResult.rejected,
+        response: sendResult && sendResult.response
       });
 
       // Update PO: status=Sent, sent_at, email_to, issued_at if null
