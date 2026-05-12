@@ -684,23 +684,18 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       // Generate PDF
       const pdfBuffer = await generatePoPdf(req.params.id);
 
-      // STEP9_3_MAILER_FIX: use env vars known to exist in production (SendGrid via .env)
-      const smtpHost = process.env.SMTP_HOST || 'smtp.sendgrid.net';
-      const smtpPort = parseInt(process.env.SMTP_PORT || '587');
-      const smtpUser = process.env.SMTP_USER || 'apikey';
-      const smtpPass = process.env.SMTP_PASS;
-      // SendGrid requires a verified sender. ADMIN_EMAIL is the verified one.
-      const fromAddr = process.env.ADMIN_EMAIL || process.env.RFQ_NOTIFY_EMAIL || 'DTorchia@jupiteroneusa.com';
-
-      if (!smtpPass) {
-        throw new Error('SMTP_PASS not configured in environment');
-      }
+      // Build mailer
+      const smtpUser = process.env.SMTP_USER || process.env.MAIL_USER;
+      const smtpPass = process.env.SMTP_PASS || process.env.MAIL_PASS;
+      const smtpHost = process.env.SMTP_HOST || process.env.MAIL_HOST || 'smtp.office365.com';
+      const smtpPort = parseInt(process.env.SMTP_PORT || process.env.MAIL_PORT || '587');
+      const fromAddr = process.env.SMTP_FROM || process.env.MAIL_FROM || smtpUser || 'DTorchia@JupiterOneUSA.com';
 
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
-        auth: { user: smtpUser, pass: smtpPass },
+        auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
       });
 
       const contactName = po.supplier_contact || 'Sir/Madam';
@@ -726,7 +721,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         '</div>';
 
       await transporter.sendMail({
-        from: '"Derek Torchia - Jupiter One USA" <' + fromAddr + '>',
+        from: fromAddr,
         to: emailTo,
         cc: emailCc || undefined,
         bcc: 'DTorchia@JupiterOneUSA.com',
