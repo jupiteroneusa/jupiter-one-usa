@@ -67,7 +67,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           html += '<button type="submit" class="btn btn-gold" onclick="return confirm(\'Create draft Supplier POs grouped by supplier? You can review/edit each before sending.\')">+ Create Supplier POs (' + _pending + ')</button>';
           html += '</form></div>';
         }
-        html += await renderLinesTab(o, oLines, suppliers);
+        html += renderLinesTab(o, oLines, suppliers);
       } else if (activeTab === 'shipping') {
         const missingCertsR = await pool.request().input('idMc', sql.BigInt, req.params.id).query("SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS part_number, nsn, cert_8130_required, cert_8130_received, coc_required, coc_received FROM order_lines WHERE order_id=@idMc AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))");
         html += renderShippingTab(o, ships, missingCertsR.recordset);
