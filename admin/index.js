@@ -1964,7 +1964,36 @@ export async function buildAdminRouter() {
         <div class="card">
           <table id="suppliersTable"><thead><tr><th data-sort="0" style="cursor:pointer;user-select:none;">Company &#x25B2;&#x25BC;</th><th data-sort="1" style="cursor:pointer;user-select:none;">Contact &#x25B2;&#x25BC;</th><th>Email</th><th>Phone</th><th data-sort="4" style="cursor:pointer;user-select:none;">Country &#x25B2;&#x25BC;</th><th data-sort="5" style="cursor:pointer;user-select:none;">Status &#x25B2;&#x25BC;</th></tr></thead>
           <tbody>${rows}</tbody></table>
-        </div>`));
+        </div>
+        <script>/* SUPPLIER_ROWCLICK_V1 */(function(){
+          document.querySelectorAll("tr[data-supplier-row]").forEach(function(tr){
+            tr.addEventListener("click", function(e){
+              if (e.target.tagName === "A" || e.target.closest("a")) return;
+              if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+              window.location = tr.getAttribute("data-href");
+            });
+            tr.addEventListener("mouseenter", function(){ tr.style.background="rgba(200,147,42,0.08)"; });
+            tr.addEventListener("mouseleave", function(){ tr.style.background=""; });
+          });
+          var t = document.getElementById("suppliersTable"); if (!t) return;
+          var dirs = {};
+          t.querySelectorAll("th[data-sort]").forEach(function(h){
+            h.addEventListener("click", function(){
+              var col = parseInt(h.getAttribute("data-sort"));
+              var dir = dirs[col] = (dirs[col] === "asc" ? "desc" : "asc");
+              var tbody = t.querySelector("tbody");
+              var rows = Array.from(tbody.querySelectorAll("tr[data-supplier-row]"));
+              rows.sort(function(a,b){
+                var av = (a.children[col].textContent || "").trim().toLowerCase();
+                var bv = (b.children[col].textContent || "").trim().toLowerCase();
+                if (av < bv) return dir==="asc"?-1:1;
+                if (av > bv) return dir==="asc"?1:-1;
+                return 0;
+              });
+              rows.forEach(function(r){ tbody.appendChild(r); });
+            });
+          });
+        })();</script>`));
     } catch(err) {
       res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
     }
