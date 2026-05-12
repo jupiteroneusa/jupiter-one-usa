@@ -1,0 +1,221 @@
+=== GET /suppliers/:id starting at line 84 ===
+84:   router.get('/suppliers/:id', async (req, res) => {
+85:     if (!requireAuth(req, res)) return;
+86:     try {
+87:       const pool = await getPool();
+88:       const sR = await pool.request().input('id', sql.BigInt, req.params.id)
+89:         .query('SELECT * FROM suppliers WHERE id=@id');
+90:       if (!sR.recordset.length) return res.send(page('Supplier', 'suppliers', '<div class="alert alert-error">Supplier not found.</div>'));
+91:       const s = sR.recordset[0];
+92: 
+93:       const contacts = await pool.request().input('id', sql.BigInt, req.params.id)
+94:         .query('SELECT * FROM supplier_contacts WHERE supplier_id=@id ORDER BY is_primary DESC, name ASC');
+95: 
+96:       const pos = await pool.request().input('id', sql.BigInt, req.params.id)
+97:         .query('SELECT id, po_number, status, total, issued_at, expected_delivery, received_at FROM supplier_pos WHERE supplier_id=@id ORDER BY created_at DESC');
+98: 
+99:       const docs = await pool.request().input('id', sql.BigInt, req.params.id)
+100:         .query("SELECT id, doc_type, file_name, file_url, uploaded_at, notes FROM documents WHERE related_to_type='supplier' AND related_to_id=@id ORDER BY uploaded_at DESC");
+101: 
+102:       // Performance metrics calculated on the fly
+103:       const perfR = await pool.request().input('id', sql.BigInt, req.params.id).query(`
+104:         SELECT
+105:           COUNT(*) AS total_pos,
+106:           SUM(CASE WHEN status IN ('Received','Closed') THEN 1 ELSE 0 END) AS completed_pos,
+107:           SUM(CASE WHEN received_at IS NOT NULL AND expected_delivery IS NOT NULL AND CAST(received_at AS DATE) <= expected_delivery THEN 1 ELSE 0 END) AS on_time_pos,
+108:           SUM(CASE WHEN received_at IS NOT NULL AND expected_delivery IS NOT NULL THEN 1 ELSE 0 END) AS rated_pos,
+109:           ISNULL(SUM(total),0) AS total_spent,
+110:           ISNULL(AVG(CASE WHEN received_at IS NOT NULL AND issued_at IS NOT NULL THEN DATEDIFF(day, issued_at, received_at) END),0) AS avg_lead_time
+111:         FROM supplier_pos WHERE supplier_id=@id
+112:       `);
+113:       const perf = perfR.recordset[0];
+114:       const onTimeRate = perf.rated_pos > 0 ? ((perf.on_time_pos / perf.rated_pos) * 100).toFixed(1) : null;
+115: 
+116:       const activeTab = req.query.tab || 'overview';
+117:       const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' :
+118:         req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">' + decodeURIComponent(req.query.error || '') + '</div>' : '';
+119: 
+120:       function tabLink(t, label) {
+121:         return '<a href="/admin/suppliers/' + s.id + '?tab=' + t + '" style="display:inline-block;padding:8px 18px;font-size:.82rem;font-weight:600;letter-spacing:.04em;border-bottom:2px solid ' + (activeTab === t ? '#c8932a' : 'transparent') + ';color:' + (activeTab === t ? '#c8932a' : '#7a8a9a') + ';text-decoration:none;white-space:nowrap;">' + label + '</a>';
+122:       }
+123: 
+124:       let html = successMsg;
+125:       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">';
+126:       html += '<div><div class="page-title">' + s.company_name + '</div>';
+127:       html += '<div class="page-sub" style="margin-bottom:0;">' + (s.dba_name ? 'DBA: ' + s.dba_name + ' &middot; ' : '') + (s.cage_code ? 'CAGE: ' + s.cage_code + ' &middot; ' : '') + statusBadge(s.status) + '</div></div>';
+128:       html += '<a href="/admin/suppliers" class="btn btn-outline btn-sm">&larr; Back</a></div>';
+129: 
+130:       html += '<div style="border-bottom:1px solid #1e2d42;margin-bottom:24px;overflow-x:auto;white-space:nowrap;">';
+131:       html += tabLink('overview', '&#127970; Overview');
+132:       html += tabLink('contacts', '&#128100; Contacts (' + contacts.recordset.length + ')');
+133:       html += tabLink('performance', '&#128202; Performance');
+134:       html += tabLink('pos', '&#128221; POs (' + pos.recordset.length + ')');
+135:       html += tabLink('documents', '&#128196; Documents (' + docs.recordset.length + ')');
+136:       html += '</div>';
+137: 
+138:       html += '<div class="card"><div class="card-body">';
+139: 
+140:       if (activeTab === 'overview') {
+141:         html += '<form method="POST" action="/admin/suppliers/' + s.id + '/update">';
+142:         html += '<div class="detail-grid">';
+143:         html += inputField('Company Name *', 'company_name', s.company_name, 'text', 'required');
+144:         html += inputField('DBA Name', 'dba_name', s.dba_name);
+145:         html += inputField('Contact Name', 'contact_name', s.contact_name);
+146:         html += inputField('Email', 'email', s.email, 'email');
+147:         html += inputField('Phone', 'phone', s.phone);
+148:         html += inputField('Website', 'website', s.website);
+149:         html += inputField('CAGE Code', 'cage_code', s.cage_code);
+150:         html += inputField('Tax ID / EIN', 'tax_id', s.tax_id);
+151:         html += inputField('Account # With Us', 'account_number_with_us', s.account_number_with_us);
+152:         html += inputField('Address Line 1', 'address1', s.address1 || s.billing_address1);
+153:         html += inputField('City', 'city', s.city);
+154:         html += inputField('State', 'state', s.state);
+155:         html += inputField('ZIP', 'zip', s.zip);
+156:         html += inputField('Country', 'country', s.country);
+157:         html += selectField('Currency', 'currency', s.currency || 'USD', ['USD','EUR','GBP','CAD','MXN','JPY','AUD']);
+158:         html += inputField('Payment Terms', 'payment_terms', s.payment_terms);
+159:         html += inputField('Min Order Value', 'min_order_value', s.min_order_value, 'number', 'step="0.01" min="0"');
+160:         html += inputField('Default Lead Time (days)', 'lead_time_default_days', s.lead_time_default_days, 'number', 'min="0"');
+161:         html += selectField('Status', 'status', s.status || 'Active', ['Active','Inactive','Suspended','Pending']);
+162:         html += '</div>';
+163:         html += '<div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">';
+164:         html += checkboxField('Preferred Supplier', 'is_preferred', s.is_preferred);
+165:         html += checkboxField('Certified 8130-3', 'is_certified_8130', s.is_certified_8130);
+166:         html += checkboxField('FAR Flow-Down Eligible', 'is_far_flow_eligible', s.is_far_flow_eligible);
+167:         html += '</div>';
+168:         html += '<div style="margin-top:12px;">' + textareaField('Internal Notes', 'internal_notes', s.internal_notes, 4) + '</div>';
+169:         html += '<button type="submit" class="btn btn-gold" style="margin-top:12px;">Save Supplier</button>';
+170:         html += '</form>';
+171:       }
+172: 
+173:       if (activeTab === 'contacts') {
+174:         // Add contact form
+175:         html += '<div style="margin-bottom:20px;padding:14px;background:#0a1628;border:1px solid #1e2d42;">';
+176:         html += '<div style="font-size:.72rem;color:#c8932a;letter-spacing:.15em;text-transform:uppercase;margin-bottom:10px;">Add Contact</div>';
+177:         html += '<form method="POST" action="/admin/suppliers/' + s.id + '/contacts/add" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:flex-end;">';
+178:         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Name *</div><input type="text" name="name" required style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+179:         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Role</div><input type="text" name="role" placeholder="Sales / AP / Shipping" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+180:         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Email</div><input type="email" name="email" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+181:         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Phone</div><input type="text" name="phone" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+182:         html += '<button type="submit" class="btn btn-gold btn-sm">Add</button>';
+183:         html += '</form></div>';
+184: 
+185:         // Contacts table
+186:         if (contacts.recordset.length === 0) {
+187:           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No contacts yet.</div>';
+188:         } else {
+189:           html += '<table><thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Primary</th><th></th></tr></thead><tbody>';
+190:           contacts.recordset.forEach(function(c) {
+191:             html += '<tr>';
+192:             html += '<td style="font-weight:600;">' + c.name + '</td>';
+193:             html += '<td style="color:#7a8a9a;">' + (c.role || '&mdash;') + '</td>';
+194:             html += '<td>' + (c.email ? '<a href="mailto:' + c.email + '" style="color:#c8932a;">' + c.email + '</a>' : '&mdash;') + '</td>';
+195:             html += '<td style="color:#7a8a9a;">' + (c.phone || '&mdash;') + '</td>';
+196:             html += '<td>' + (c.is_primary ? '<span style="color:#c8932a;font-weight:600;">&#10003; Primary</span>' : '<form method="POST" action="/admin/suppliers/' + s.id + '/contacts/' + c.id + '/set-primary" style="display:inline;"><button type="submit" class="btn btn-outline btn-sm" style="font-size:.7rem;">Set Primary</button></form>') + '</td>';
+197:             html += '<td><form method="POST" action="/admin/suppliers/' + s.id + '/contacts/' + c.id + '/delete" style="display:inline;" onsubmit="return confirm(\'Delete this contact?\')"><button type="submit" class="btn btn-outline btn-sm" style="color:#e05050;border-color:#e05050;font-size:.7rem;">&#10005;</button></form></td>';
+198:             html += '</tr>';
+199:           });
+200:           html += '</tbody></table>';
+201:         }
+202:       }
+203: 
+204:       if (activeTab === 'performance') {
+205:         html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">';
+206:         html += '<div class="stat"><div class="stat-num">' + perf.total_pos + '</div><div class="stat-label">Total POs</div></div>';
+207:         html += '<div class="stat"><div class="stat-num">' + perf.completed_pos + '</div><div class="stat-label">Completed</div></div>';
+208:         html += '<div class="stat"><div class="stat-num">' + (onTimeRate !== null ? onTimeRate + '%' : '&mdash;') + '</div><div class="stat-label">On-Time Rate</div></div>';
+209:         html += '<div class="stat"><div class="stat-num">' + currency(perf.total_spent) + '</div><div class="stat-label">Total Spent</div></div>';
+210:         html += '</div>';
+211:         html += '<div class="detail-grid">';
+212:         html += '<div class="detail-item"><div class="detail-label">Average Lead Time</div><div class="detail-value">' + (perf.avg_lead_time ? Math.round(perf.avg_lead_time) + ' days' : 'No data yet') + '</div></div>';
+213:         html += '<div class="detail-item"><div class="detail-label">Manual Quality Score</div><div class="detail-value">' + (s.avg_quality_score != null ? parseFloat(s.avg_quality_score).toFixed(1) + ' / 5.0' : 'Not rated') + '</div></div>';
+214:         html += '<div class="detail-item"><div class="detail-label">First PO</div><div class="detail-value">' + (perf.total_pos > 0 ? 'See PO list' : 'No POs yet') + '</div></div>';
+215:         html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + statusBadge(s.status) + '</div></div>';
+216:         html += '</div>';
+217:         html += '<div style="margin-top:16px;font-size:.78rem;color:#7a8a9a;">On-time rate calculated from POs with both expected_delivery and received_at populated. Avg lead time from issue to receipt.</div>';
+218:       }
+219: 
+220:       if (activeTab === 'pos') {
+221:         if (pos.recordset.length === 0) {
+222:           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No purchase orders yet.</div>';
+223:         } else {
+224:           html += '<table><thead><tr><th>PO #</th><th>Status</th><th>Total</th><th>Issued</th><th>Expected</th><th>Received</th></tr></thead><tbody>';
+225:           pos.recordset.forEach(function(p) {
+226:             html += '<tr>';
+227:             html += '<td class="mono"><a href="/admin/supplier-pos/' + p.id + '" style="color:#c8932a;">' + p.po_number + '</a></td>';
+228:             html += '<td>' + statusBadge(p.status) + '</td>';
+229:             html += '<td style="font-weight:600;">' + currency(p.total) + '</td>';
+230:             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.issued_at) + '</td>';
+231:             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.expected_delivery) + '</td>';
+232:             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.received_at) + '</td>';
+233:             html += '</tr>';
+234:           });
+235:           html += '</tbody></table>';
+236:         }
+237:       }
+238: 
+239:       if (activeTab === 'documents') {
+240:         if (docs.recordset.length === 0) {
+241:           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No documents uploaded yet.</div>';
+242:           html += '<div style="text-align:center;color:#7a8a9a;font-size:.78rem;">Upload UI coming in Step 9. For now, attach via your blob storage.</div>';
+243:         } else {
+244:           html += '<table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th><th>Notes</th></tr></thead><tbody>';
+245:           docs.recordset.forEach(function(d) {
+246:             html += '<tr>';
+247:             html += '<td>' + statusBadge(d.doc_type) + '</td>';
+248:             html += '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">' + d.file_name + '</a></td>';
+249:             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDateTime(d.uploaded_at) + '</td>';
+250:             html += '<td style="color:#7a8a9a;">' + (d.notes || '&mdash;') + '</td>';
+251:             html += '</tr>';
+252:           });
+253:           html += '</tbody></table>';
+254:         }
+255:       }
+256: 
+257:       html += '</div></div>';
+258:       res.send(page(s.company_name + ' \u2014 Supplier', 'suppliers', html));
+259:     } catch(err) {
+260:       console.error('Supplier detail error:', err);
+261:       res.send(page('Supplier', 'suppliers', '<div class="alert alert-error">' + err.message + '</div>'));
+262:     }
+263:   });
+=== END GET ===
+=== POST /suppliers/:id/update starting at line 268 ===
+268:   router.post('/suppliers/:id/update', async (req, res) => {
+269:     if (!requireAuth(req, res)) return;
+270:     try {
+271:       const pool = await getPool();
+272:       const b = req.body;
+273:       await pool.request()
+274:         .input('id', sql.BigInt, req.params.id)
+275:         .input('cn', sql.NVarChar(150), b.company_name || null)
+276:         .input('dba', sql.NVarChar(150), b.dba_name || null)
+277:         .input('cont', sql.NVarChar(100), b.contact_name || null)
+278:         .input('em', sql.NVarChar(150), b.email || null)
+279:         .input('ph', sql.NVarChar(30), b.phone || null)
+280:         .input('web', sql.NVarChar(150), b.website || null)
+281:         .input('cage', sql.NVarChar(10), b.cage_code || null)
+282:         .input('tax', sql.NVarChar(50), b.tax_id || null)
+283:         .input('acct', sql.NVarChar(50), b.account_number_with_us || null)
+284:         .input('addr', sql.NVarChar(150), b.address1 || null)
+285:         .input('city', sql.NVarChar(100), b.city || null)
+286:         .input('st', sql.NVarChar(50), b.state || null)
+287:         .input('zip', sql.NVarChar(20), b.zip || null)
+288:         .input('cty', sql.NVarChar(50), b.country || null)
+289:         .input('cur', sql.NVarChar(10), b.currency || 'USD')
+290:         .input('pt', sql.NVarChar(50), b.payment_terms || null)
+291:         .input('mov', sql.Decimal(12,2), b.min_order_value ? parseFloat(b.min_order_value) : null)
+292:         .input('lt', sql.Int, b.lead_time_default_days ? parseInt(b.lead_time_default_days) : null)
+293:         .input('stat', sql.NVarChar(20), b.status || 'Active')
+294:         .input('pref', sql.Bit, b.is_preferred === '1' ? 1 : 0)
+295:         .input('c8', sql.Bit, b.is_certified_8130 === '1' ? 1 : 0)
+296:         .input('cff', sql.Bit, b.is_far_flow_eligible === '1' ? 1 : 0)
+297:         .input('notes', sql.NVarChar(sql.MAX), b.internal_notes || null)
+298:         .query(`UPDATE suppliers SET company_name=@cn, dba_name=@dba, contact_name=@cont, email=@em, phone=@ph, website=@web, cage_code=@cage, tax_id=@tax, account_number_with_us=@acct, address1=@addr, city=@city, state=@st, zip=@zip, country=@cty, currency=@cur, payment_terms=@pt, min_order_value=@mov, lead_time_default_days=@lt, status=@stat, is_preferred=@pref, is_certified_8130=@c8, is_far_flow_eligible=@cff, internal_notes=@notes, updated_at=GETDATE() WHERE id=@id`);
+299:       res.redirect('/admin/suppliers/' + req.params.id + '?tab=overview&saved=1');
+300:     } catch(err) {
+301:       console.error('Update supplier error:', err);
+302:       res.redirect('/admin/suppliers/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+303:     }
+304:   });
+=== END UPDATE ===

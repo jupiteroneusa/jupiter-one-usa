@@ -94,7 +94,7 @@ export function mountSupplierRoutes(router, requireAuth, page) {
         .query('SELECT * FROM supplier_contacts WHERE supplier_id=@id ORDER BY is_primary DESC, name ASC');
 
       const pos = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query('SELECT id, po_number, status, total, issued_at, expected_delivery, received_at FROM supplier_pos WHERE supplier_id=@id ORDER BY created_at DESC');
+        .query('SELECT id, po_number, status, total, issued_at, sent_at, expected_delivery, received_at FROM supplier_pos WHERE supplier_id=@id ORDER BY created_at DESC');
 
       const docs = await pool.request().input('id', sql.BigInt, req.params.id)
         .query("SELECT id, doc_type, file_name, file_url, uploaded_at, notes FROM documents WHERE related_to_type='supplier' AND related_to_id=@id ORDER BY uploaded_at DESC");
@@ -221,13 +221,14 @@ export function mountSupplierRoutes(router, requireAuth, page) {
         if (pos.recordset.length === 0) {
           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No purchase orders yet.</div>';
         } else {
-          html += '<table><thead><tr><th>PO #</th><th>Status</th><th>Total</th><th>Issued</th><th>Expected</th><th>Received</th></tr></thead><tbody>';
+          html += '<table><thead><tr><th>PO #</th><th>Status</th><th>Total</th><th>Issued</th><th>Sent</th><th>Expected</th><th>Received</th></tr></thead><tbody>';
           pos.recordset.forEach(function(p) {
             html += '<tr>';
             html += '<td class="mono"><a href="/admin/supplier-pos/' + p.id + '" style="color:#c8932a;">' + p.po_number + '</a></td>';
             html += '<td>' + statusBadge(p.status) + '</td>';
             html += '<td style="font-weight:600;">' + currency(p.total) + '</td>';
             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.issued_at) + '</td>';
+            html += '<td style="color:' + (p.sent_at ? '#4caf50' : '#7a8a9a') + ';font-size:.78rem;">' + (p.sent_at ? shortDate(p.sent_at) : '&mdash;') + '</td>';
             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.expected_delivery) + '</td>';
             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.received_at) + '</td>';
             html += '</tr>';
@@ -237,17 +238,47 @@ export function mountSupplierRoutes(router, requireAuth, page) {
       }
 
       if (activeTab === 'documents') {
+        // STEP9_4_SUPPLIER_DOCS upload form
+        html += '<div style="background:rgba(200,147,42,0.06);border:1px solid rgba(200,147,42,0.3);padding:16px;border-radius:6px;margin-bottom:20px;">';
+        html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:12px;">&#128206; Upload Document</div>';
+        html += '<form id="docUploadForm" enctype="multipart/form-data" style="display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:10px;align-items:flex-end;">';
+        html += '<input type="hidden" name="related_to_type" value="supplier"/>';
+        html += '<input type="hidden" name="related_to_id" value="' + s.id + '"/>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Document Type</div>';
+        html += '<select name="doc_type" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;">' +
+          '<option value="">-- Select --</option>' +
+          '<option value="W9">W-9</option>' +
+          '<option value="NDA">NDA</option>' +
+          '<option value="Agreement">Supplier Agreement</option>' +
+          '<option value="Certification">Certification</option>' +
+          '<option value="Insurance">Certificate of Insurance</option>' +
+          '<option value="QualityCert">Quality Cert (ISO/AS9100)</option>' +
+          '<option value="Capability">Capability Statement</option>' +
+          '<option value="PriceList">Price List / Catalog</option>' +
+          '<option value="Other">Other</option>' +
+          '</select></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">File (max 25MB)</div>';
+        html += '<input type="file" name="file" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Notes (optional)</div>';
+        html += '<input type="text" name="notes" placeholder="Expiry date, version, etc..." style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;"/></div>';
+        html += '<button type="button" onclick="uploadSupDoc()" class="btn btn-gold">Upload</button>';
+        html += '</form>';
+        html += '<div id="uploadStatus" style="margin-top:10px;font-size:.85rem;"></div>';
+        html += '</div>';
+
+        html += '<script>function uploadSupDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
+
         if (docs.recordset.length === 0) {
           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No documents uploaded yet.</div>';
-          html += '<div style="text-align:center;color:#7a8a9a;font-size:.78rem;">Upload UI coming in Step 9. For now, attach via your blob storage.</div>';
         } else {
-          html += '<table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th><th>Notes</th></tr></thead><tbody>';
+          html += '<table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th><th>Notes</th><th></th></tr></thead><tbody>';
           docs.recordset.forEach(function(d) {
             html += '<tr>';
             html += '<td>' + statusBadge(d.doc_type) + '</td>';
-            html += '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">' + d.file_name + '</a></td>';
+            html += '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">&#128206; ' + d.file_name + '</a></td>';
             html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDateTime(d.uploaded_at) + '</td>';
-            html += '<td style="color:#7a8a9a;">' + (d.notes || '&mdash;') + '</td>';
+            html += '<td style="color:#7a8a9a;font-size:.82rem;">' + (d.notes || '&mdash;') + '</td>';
+            html += '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/api/documents/' + d.id + '\',{method:\'DELETE\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>';
             html += '</tr>';
           });
           html += '</tbody></table>';
