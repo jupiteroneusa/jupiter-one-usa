@@ -1,0 +1,11 @@
+========== node -c check ==========
+! SYNTAX ERROR:
+C:\Jupiter One USA\website\jupiter-one-backend-complete\jupiter-one-backend\routes\ccAuth.js:25
+    const pfR = await pool.request().input('tok', sql.NVarChar(64), tok).query(\`
+                                                                               ^
+
+SyntaxError: Invalid or unexpected token
+    at checkSyntax (node:internal/main/check_syntax:72:5)
+
+Node.js v24.15.0
+

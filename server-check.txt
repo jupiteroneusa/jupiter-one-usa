@@ -1,0 +1,113 @@
+========== TOP OF server.js (first 80 lines) ==========
+
+  1: // server.js
+  2: import 'dotenv/config';
+  3: import express from 'express';
+  4: import cors from 'cors';
+  5: import path from 'path';
+  6: import { fileURLToPath } from 'url';
+  7: import cookieParser from 'cookie-parser';
+  8: import { getPool } from './db/connect.js';
+  9: import { buildAdminRouter } from './admin/index.js';
+ 10: import { startDibbsCron } from './routes/dibss.js';
+ 11: 
+ 12: // Routes
+ 13: import authRouter      from './routes/auth.js';
+ 14: import searchRouter    from './routes/search.js';
+ 15: import rfqRouter       from './routes/rfq.js';
+ 16: import quoteRouter     from './routes/quotes.js';
+ 17: import orderRouter     from './routes/orders.js';
+ 18: import supplierRouter  from './routes/suppliers.js';
+ 19: import sourcingRouter  from './routes/sourcing.js';
+ 20: import invoiceRouter   from './routes/invoices.js';
+ 21: import shipmentRouter  from './routes/shipments.js';
+ 22: import documentRouter  from './routes/documents.js';
+ 23: import customerRouter  from './routes/customers.js';
+ 24: import dibssRouter     from './routes/dibss.js';
+ 25: import settingsRouter  from './routes/settings.js';
+ 26: import commsRouter     from './routes/communications.js';
+ 27: import contactRouter   from './routes/contact.js';
+ 28: import ccAuthRouter from './routes/ccAuth.js'; // CC_AUTH_MOUNT_V1
+ 29: 
+ 30: const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ 31: const app = express();
+ 32: const PORT = process.env.PORT || 3000;
+ 33: 
+ 34: app.use(cors({
+ 35:   origin: process.env.NODE_ENV === 'production'
+ 36:     ? ['https://jupiteroneusa.com', 'https://www.jupiteroneusa.com']
+ 37:     : '*',
+ 38:   credentials: true,
+ 39: }));
+ 40: app.use(express.json({ limit: '10mb' }));
+ 41: app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+ 42: app.use(cookieParser());
+ 43: app.use(express.static(path.join(__dirname, 'public')));
+ 44: 
+ 45: // API
+ 46: app.use('/', ccAuthRouter); // CC_AUTH_MOUNT_V1 - public e-sign
+ 47: app.use('/api/auth',      authRouter);
+ 48: app.use('/api/search',    searchRouter);
+ 49: app.use('/api/rfq',       rfqRouter);
+ 50: app.use('/api/quotes',    quoteRouter);
+ 51: app.use('/api/orders',    orderRouter);
+ 52: app.use('/api/suppliers', supplierRouter);
+ 53: app.use('/api/sourcing',  sourcingRouter);
+ 54: app.use('/api/invoices',  invoiceRouter);
+ 55: app.use('/api/shipments', shipmentRouter);
+ 56: app.use('/api/documents', documentRouter);
+ 57: app.use('/api/customers', customerRouter);
+ 58: app.use('/api/dibss',     dibssRouter);
+ 59: app.use('/api/settings',  settingsRouter);
+ 60: app.use('/api/communications', commsRouter);
+ 61: app.use('/api/contact',   contactRouter);
+ 62: 
+ 63: app.get('/api/health', async (req, res) => {
+ 64:   try {
+ 65:     await getPool();
+ 66:     res.json({ status: 'ok', db: 'connected', time: new Date().toISOString() });
+ 67:   } catch (err) {
+ 68:     res.status(500).json({ status: 'error', message: err.message });
+ 69:   }
+ 70: });
+ 71: 
+ 72: async function start() {
+ 73:   try {
+ 74:     await getPool();
+ 75:     console.log('✅ Database connected');
+ 76: 
+ 77:     // Admin panel — registered BEFORE catch-all
+ 78:     const { admin, adminRouter } = await buildAdminRouter();
+ 79:     app.use(admin.options.rootPath, adminRouter);
+ 80:     console.log('✅ Admin panel ready');
+
+
+========== AROUND CC_AUTH_MOUNT_V1 (10 lines context) ==========
+
+ 23: import customerRouter  from './routes/customers.js';
+ 24: import dibssRouter     from './routes/dibss.js';
+ 25: import settingsRouter  from './routes/settings.js';
+ 26: import commsRouter     from './routes/communications.js';
+ 27: import contactRouter   from './routes/contact.js';
+ 28: import ccAuthRouter from './routes/ccAuth.js'; // CC_AUTH_MOUNT_V1
+ 29: 
+ 30: const __dirname = path.dirname(fileURLToPath(import.meta.url));
+ 31: const app = express();
+ 32: const PORT = process.env.PORT || 3000;
+ 33: 
+---
+ 41: app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+ 42: app.use(cookieParser());
+ 43: app.use(express.static(path.join(__dirname, 'public')));
+ 44: 
+ 45: // API
+ 46: app.use('/', ccAuthRouter); // CC_AUTH_MOUNT_V1 - public e-sign
+ 47: app.use('/api/auth',      authRouter);
+ 48: app.use('/api/search',    searchRouter);
+ 49: app.use('/api/rfq',       rfqRouter);
+ 50: app.use('/api/quotes',    quoteRouter);
+ 51: app.use('/api/orders',    orderRouter);
+---
+
+========== Node syntax check ==========
++ Syntax OK locally (issue is runtime, not syntax)
