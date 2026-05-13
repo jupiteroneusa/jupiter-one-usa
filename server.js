@@ -25,6 +25,7 @@ import dibssRouter     from './routes/dibss.js';
 import settingsRouter  from './routes/settings.js';
 import commsRouter     from './routes/communications.js';
 import contactRouter   from './routes/contact.js';
+import ccAuthRouter from './routes/ccAuth.js'; // CC_AUTH_MOUNT_V1
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -42,6 +43,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // API
+app.use('/', ccAuthRouter); // CC_AUTH_MOUNT_V1 - public e-sign
 app.use('/api/auth',      authRouter);
 app.use('/api/search',    searchRouter);
 app.use('/api/rfq',       rfqRouter);
