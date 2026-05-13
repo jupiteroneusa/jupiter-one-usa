@@ -1,4 +1,22 @@
-// services/poPdfService.js
+// patch-po-jspdf.cjs
+// Full rewrite of services/poPdfService.js to use jsPDF directly,
+// matching the invoice generator approach which already works in production.
+// No Puppeteer, no Chromium, no fonts to load — jsPDF has Helvetica built in.
+
+const fs = require('fs');
+const { execSync } = require('child_process');
+
+const TARGET = 'services/poPdfService.js';
+const BACKUP = TARGET + '.jspdf.bak';
+
+const original = fs.readFileSync(TARGET, 'utf8');
+
+if (original.includes('JSPDF_PO_V1')) {
+  console.log('- already jsPDF');
+  process.exit(0);
+}
+
+const newCode = `// services/poPdfService.js
 // JSPDF_PO_V1 — Rewritten to use jsPDF (same as invoice generator).
 // No Puppeteer / no Chromium dependency. Runs instantly on any platform.
 
@@ -18,7 +36,7 @@ function fmtDate(d) {
 export async function generatePoPdf(poId) {
   const pool = await getPool();
 
-  const poR = await pool.request().input('id', sql.BigInt, poId).query(`
+  const poR = await pool.request().input('id', sql.BigInt, poId).query(\`
     SELECT p.*, s.company_name AS supplier_name, s.contact_name AS supplier_contact,
            s.email AS supplier_email, s.phone AS supplier_phone,
            s.address1 AS supplier_address1, s.address2 AS supplier_address2,
@@ -29,7 +47,7 @@ export async function generatePoPdf(poId) {
     LEFT JOIN suppliers s ON p.supplier_id = s.id
     LEFT JOIN orders o ON p.order_id = o.id
     WHERE p.id = @id
-  `);
+  \`);
   if (!poR.recordset.length) throw new Error('PO not found: ' + poId);
   const po = poR.recordset[0];
 
@@ -285,7 +303,7 @@ export async function generatePoPdf(poId) {
     '2. Payment terms: ' + (po.supplier_payment_terms || 'NET 30') + '. Invoice to be sent to DTorchia@JupiterOneUSA.com.',
     '3. Acknowledgment of this PO is requested within 48 hours. Acknowledgment constitutes acceptance of these terms.',
     '4. Reference PO number ' + po.po_number + ' on all packing slips, invoices, and correspondence.',
-    '5. Parts subject to inspection upon receipt; non-conforming product may be rejected at supplier\'s expense.'
+    '5. Parts subject to inspection upon receipt; non-conforming product may be rejected at supplier\\'s expense.'
   ];
 
   terms.forEach(function(t) {
@@ -311,4 +329,23 @@ export async function generatePoPdf(poId) {
   // Return as Buffer for the route to stream
   const arrayBuffer = doc.output('arraybuffer');
   return Buffer.from(arrayBuffer);
+}
+`;
+
+fs.writeFileSync(BACKUP, original);
+fs.writeFileSync(TARGET, newCode);
+
+try {
+  execSync('node -c "' + TARGET + '"', { stdio: 'pipe' });
+  const sizeKb = Math.round(fs.statSync(TARGET).size / 1024);
+  console.log('+ Full rewrite to jsPDF (matches invoice generator)');
+  console.log('+ No Puppeteer / Chromium / font loading');
+  console.log('+ Brand colors: gold #c8932a, navy #0a1628');
+  console.log('+ File size: ' + sizeKb + ' KB (was ~107 KB with embedded fonts)');
+  console.log('SUCCESS');
+} catch (err) {
+  fs.writeFileSync(TARGET, original);
+  console.error('! syntax error - REVERTED');
+  console.error(err.message);
+  process.exit(1);
 }
