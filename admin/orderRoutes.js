@@ -702,4 +702,97 @@ export function mountOrderRoutes(router, requireAuth, page) {
   });
 
 
+  // CC_CAPTURE_ROUTE_V1: Mark CC charged + record payment + cascade order to Paid
+  router.post('/orders/:oid/cc-auth/:aid/capture', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const orderId = parseInt(req.params.oid);
+      const authId  = parseInt(req.params.aid);
+      const b = req.body;
+      const amount = parseFloat(b.captured_amount);
+      const ref = (b.captured_reference || '').trim();
+      const notes = (b.notes || '').trim();
+
+      if (!amount || amount <= 0) return res.redirect('/admin/orders/' + orderId + '?tab=proforma&error=Invalid+amount');
+      if (!ref) return res.redirect('/admin/orders/' + orderId + '?tab=proforma&error=Reference+required');
+
+      // Load auth
+      const aR = await pool.request().input('aid', sql.BigInt, authId)
+        .query('SELECT * FROM cc_authorizations WHERE id=@aid');
+      if (!aR.recordset.length) return res.redirect('/admin/orders/' + orderId + '?tab=proforma&error=Auth+not+found');
+      const auth = aR.recordset[0];
+      if (auth.captured_at) return res.redirect('/admin/orders/' + orderId + '?tab=proforma&error=Already+captured');
+
+      const now = new Date();
+      const capturedBy = (req.user && req.user.email) || 'admin';
+
+      // 1) Mark auth captured
+      await pool.request()
+        .input('aid', sql.BigInt, authId)
+        .input('cat', sql.DateTime, now)
+        .input('camt', sql.Decimal(12,2), amount)
+        .input('cref', sql.NVarChar(100), ref)
+        .input('cby', sql.NVarChar(100), capturedBy)
+        .query('UPDATE cc_authorizations SET captured_at=@cat, captured_amount=@camt, captured_reference=@cref, captured_by=@cby, updated_at=GETDATE() WHERE id=@aid');
+
+      // 2) Lookup order + invoice + customer
+      const oR = await pool.request().input('id', sql.BigInt, orderId)
+        .query('SELECT customer_id, total_amount FROM orders WHERE id=@id');
+      if (!oR.recordset.length) return res.redirect('/admin/orders/' + orderId + '?error=Order+not+found');
+      const orderTotal = parseFloat(oR.recordset[0].total_amount || 0);
+      const cid = oR.recordset[0].customer_id;
+
+      const invR = await pool.request().input('idI', sql.BigInt, orderId)
+        .query('SELECT TOP 1 id FROM invoices WHERE order_id=@idI');
+      const iid = invR.recordset[0] ? invR.recordset[0].id : null;
+
+      // 3) Insert payment record
+      const fullNote = 'CC charge ref: ' + ref + (notes ? ' | ' + notes : '');
+      await pool.request()
+        .input('oid', sql.BigInt, orderId)
+        .input('iid', sql.BigInt, iid)
+        .input('cid', sql.BigInt, cid)
+        .input('amt', sql.Decimal(12,2), amount)
+        .input('pm',  sql.NVarChar(50), 'Credit Card')
+        .input('pref', sql.NVarChar(100), ref)
+        .input('rcv', sql.DateTime, now)
+        .input('notes', sql.NVarChar(500), fullNote.substring(0, 500))
+        .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
+
+      // 4) Recalculate order totals + cascade status
+      const sumR = await pool.request().input('idS', sql.BigInt, orderId)
+        .query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS');
+      const totalPaid = parseFloat(sumR.recordset[0].total_paid || 0);
+      const isPaid = totalPaid >= orderTotal - 0.01;
+      const newStatus = isPaid ? 'Paid' : 'Partially Paid';
+
+      await pool.request()
+        .input('id', sql.BigInt, orderId)
+        .input('paidAmt', sql.Decimal(12,2), totalPaid)
+        .input('newStatus', sql.NVarChar(50), newStatus)
+        .input('paidAt', sql.DateTime, isPaid ? now : null)
+        .input('payRef', sql.NVarChar(100), ref)
+        .query("UPDATE orders SET paid_amount=@paidAmt, status=@newStatus, paid_at=ISNULL(paid_at,@paidAt), payment_method='Credit Card', payment_reference=ISNULL(payment_reference,@payRef), updated_at=GETDATE() WHERE id=@id");
+
+      // 5) Cascade invoice to Paid if fully paid
+      if (isPaid && iid) {
+        await pool.request().input('id', sql.BigInt, orderId)
+          .query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
+      }
+
+      // 6) Status log
+      await pool.request().input('id', sql.BigInt, orderId)
+        .input('s', sql.NVarChar(50), newStatus)
+        .input('n', sql.NVarChar(500), 'CC charge captured: $' + amount.toFixed(2) + ' ref ' + ref.substring(0, 50))
+        .query('INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,@s,@n)');
+
+      res.redirect('/admin/orders/' + orderId + '?tab=proforma&saved=1');
+    } catch (err) {
+      console.error('CC capture error:', err);
+      res.redirect('/admin/orders/' + req.params.oid + '?tab=proforma&error=' + encodeURIComponent(err.message));
+    }
+  });
+
+
 }
