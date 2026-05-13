@@ -59,9 +59,14 @@ export async function generatePoPdf(poId) {
     po.supplier_country
   ].filter(Boolean).map(esc).join('<br/>');
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><style>
+  const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<!-- PDF_FONTS_FIX_V1: Load web font; @sparticuz Chrome has no system fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Helvetica, Arial, sans-serif; color: #1a1a1a; background: #fff; padding: 40px 50px; font-size: 11pt; line-height: 1.4; }
+body { font-family: "Inter", Helvetica, Arial, sans-serif; color: #1a1a1a; background: #fff; padding: 40px 50px; font-size: 11pt; line-height: 1.4; }
 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #c8932a; padding-bottom: 20px; margin-bottom: 30px; }
 .brand-block .logo { font-size: 22pt; font-weight: 700; color: #0a1628; letter-spacing: -0.5px; }
 .brand-block .tagline { font-size: 8pt; letter-spacing: 0.2em; color: #c8932a; text-transform: uppercase; margin-top: 2px; font-weight: 600; }
@@ -200,10 +205,16 @@ ${po.notes ? '<div class="notes-box"><b style="color:#c8932a;">Notes:</b><br/>' 
   });
   try {
     const pageP = await browser.newPage();
-    await pageP.setContent(html, { waitUntil: 'networkidle0' });
+    await pageP.setViewport({ width: 816, height: 1056, deviceScaleFactor: 2 });
+    await pageP.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+    // Wait for web fonts to actually load before rendering
+    await pageP.evaluate(() => document.fonts && document.fonts.ready);
+    // Extra paint cycle insurance
+    await new Promise(r => setTimeout(r, 500));
     const pdfBuffer = await pageP.pdf({
       format: 'Letter',
       printBackground: true,
+      preferCSSPageSize: false,
       margin: { top: '0', right: '0', bottom: '0', left: '0' }
     });
     return pdfBuffer;
