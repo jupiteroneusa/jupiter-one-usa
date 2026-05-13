@@ -20,9 +20,9 @@ export async function generateProformaPdf(proformaId) {
   const pfR = await pool.request().input('id', sql.BigInt, proformaId).query(`
     SELECT pf.*, o.order_number, o.quote_id,
            c.first_name, c.last_name, c.email, c.phone, c.company,
-           c.ship_to_address1 AS bill_address1, c.ship_to_city AS bill_city,
-           c.ship_to_state AS bill_state, c.ship_to_zip AS bill_zip,
-           c.ship_to_country AS bill_country,
+           o.ship_to_address1 AS bill_address1, o.ship_to_city AS bill_city,
+           o.ship_to_state AS bill_state, o.ship_to_zip AS bill_zip,
+           o.ship_to_country AS bill_country,
            q.quote_number
     FROM proformas pf
     INNER JOIN orders o ON o.id = pf.order_id

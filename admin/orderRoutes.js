@@ -597,12 +597,17 @@ export function mountOrderRoutes(router, requireAuth, page) {
                 VALUES (@oid, @pfn, 'Sent', @pm, @sub, @ship, @feeAmt, @feePct, @tot, @notes, @tok)`);
       const proformaId = insR.recordset[0].id;
 
-      // Also save shipping cost back to order
-      await pool.request()
-        .input('id', sql.BigInt, orderId)
-        .input('sc', sql.Decimal(12,2), shippingCost)
-        .input('tot', sql.Decimal(12,2), total)
-        .query('UPDATE orders SET shipping_cost=@sc, total_amount=@tot, updated_at=GETDATE() WHERE id=@id');
+      // Save shipping cost back to order ONLY if not already set or invoice not generated.
+      // Avoids clobbering paid/invoiced totals on a proforma resend.
+      const existingInv = await pool.request().input('idC', sql.BigInt, orderId)
+        .query('SELECT COUNT(*) AS cnt FROM invoices WHERE order_id=@idC');
+      if (!existingInv.recordset[0].cnt) {
+        await pool.request()
+          .input('id', sql.BigInt, orderId)
+          .input('sc', sql.Decimal(12,2), shippingCost)
+          .input('tot', sql.Decimal(12,2), total)
+          .query('UPDATE orders SET shipping_cost=@sc, total_amount=@tot, updated_at=GETDATE() WHERE id=@id');
+      }
 
       // Generate PDF
       let pdfBuffer = null;
