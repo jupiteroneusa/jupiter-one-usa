@@ -4,6 +4,10 @@ import { getPool, sql } from '../db/connect.js';
 import { generateNumber } from '../db/numbering.js';
 import { renderOverviewTab } from './orderOverviewBlock.js';
 import { renderShippingTab } from './orderShippingBlock.js';
+import { renderProformaTab } from './orderProformaBlock.js';
+import { generateProformaPdf } from '../services/proformaPdfService.js';
+import crypto from 'crypto';
+// PROFORMA_ROUTES_V1
 import { renderPaymentTab } from './orderPaymentBlock.js';
 import { renderLinesTab } from './orderLinesBlock.js';
 
@@ -51,7 +55,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       html += '<div><div class="page-title">'+o.order_number+'</div><div class="page-sub" style="margin-bottom:0;">'+o.customer_name+' &middot; '+(o.company||'')+'</div></div>';
       html += '<a href="/admin/orders" class="btn btn-outline btn-sm">&#8592; Back</a></div>';
       html += '<div style="border-bottom:1px solid #1e2d42;margin-bottom:24px;overflow-x:auto;white-space:nowrap;">';
-      html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping')+tabLink('payment','&#128179; Payment');
+      html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping') + tabLink('proforma','&#129534; Proforma')+tabLink('payment','&#128179; Payment');
       html += '</div><div class="card"><div class="card-body">';
       if (activeTab === 'overview') {
         html += renderOverviewTab(o, sLog);
@@ -71,6 +75,12 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } else if (activeTab === 'shipping') {
         const missingCertsR = await pool.request().input('idMc', sql.BigInt, req.params.id).query("SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS part_number, nsn, cert_8130_required, cert_8130_received, coc_required, coc_received FROM order_lines WHERE order_id=@idMc AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))");
         html += renderShippingTab(o, ships, missingCertsR.recordset);
+      } else if (activeTab === 'proforma') {
+        const pfR = await pool.request().input('oid', sql.BigInt, req.params.id)
+          .query('SELECT * FROM proformas WHERE order_id=@oid ORDER BY id DESC');
+        const authR = await pool.request().input('oid2', sql.BigInt, req.params.id)
+          .query('SELECT * FROM cc_authorizations WHERE order_id=@oid2 ORDER BY id DESC');
+        html += renderProformaTab(o, pfR.recordset, authR.recordset, '');
       } else if (activeTab === 'payment') {
         html += renderPaymentTab(o, invoices, payments);
       }
@@ -540,5 +550,151 @@ export function mountOrderRoutes(router, requireAuth, page) {
       res.redirect('/admin/orders/' + req.params.id + '?error=' + encodeURIComponent(err.message));
     }
   });
+
+  // PROFORMA_ROUTES_V1: Send proforma
+  router.post('/orders/:id/send-proforma', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const orderId = parseInt(req.params.id);
+
+      const oR = await pool.request().input('id', sql.BigInt, orderId).query(`
+        SELECT o.*, c.first_name, c.last_name, c.email, c.company
+        FROM orders o INNER JOIN customers c ON c.id = o.customer_id
+        WHERE o.id = @id
+      `);
+      if (!oR.recordset.length) return res.redirect('/admin/orders/' + orderId + '?error=Order+not+found');
+      const o = oR.recordset[0];
+
+      const paymentMethod = b.payment_method || 'Credit Card';
+      const shippingCost = parseFloat(b.shipping_cost) || 0;
+      const subtotal = parseFloat(o.subtotal || 0);
+      const preFeeTotal = subtotal + shippingCost;
+      const ccFeePercent = (paymentMethod === 'Credit Card') ? 3.5 : 0;
+      const ccFeeAmount = preFeeTotal * ccFeePercent / 100;
+      const total = preFeeTotal + ccFeeAmount;
+
+      // Bump proforma number
+      const numberingMod = await import('../db/numbering.js');
+      const proformaNumber = await numberingMod.generateNumber('PF');
+      const authToken = crypto.randomBytes(24).toString('hex');
+
+      const insR = await pool.request()
+        .input('oid', sql.BigInt, orderId)
+        .input('pfn', sql.NVarChar(30), proformaNumber)
+        .input('pm', sql.NVarChar(30), paymentMethod)
+        .input('sub', sql.Decimal(12,2), subtotal)
+        .input('ship', sql.Decimal(12,2), shippingCost)
+        .input('feeAmt', sql.Decimal(12,2), ccFeeAmount)
+        .input('feePct', sql.Decimal(5,3), ccFeePercent)
+        .input('tot', sql.Decimal(12,2), total)
+        .input('notes', sql.NVarChar(sql.MAX), b.notes || null)
+        .input('tok', sql.NVarChar(64), authToken)
+        .query(`INSERT INTO proformas (order_id, proforma_number, status, payment_method,
+                  subtotal, shipping_cost, cc_fee_amount, cc_fee_percent, total, notes, auth_token)
+                OUTPUT INSERTED.id
+                VALUES (@oid, @pfn, 'Sent', @pm, @sub, @ship, @feeAmt, @feePct, @tot, @notes, @tok)`);
+      const proformaId = insR.recordset[0].id;
+
+      // Also save shipping cost back to order
+      await pool.request()
+        .input('id', sql.BigInt, orderId)
+        .input('sc', sql.Decimal(12,2), shippingCost)
+        .input('tot', sql.Decimal(12,2), total)
+        .query('UPDATE orders SET shipping_cost=@sc, total_amount=@tot, updated_at=GETDATE() WHERE id=@id');
+
+      // Generate PDF
+      let pdfBuffer = null;
+      try {
+        pdfBuffer = await generateProformaPdf(proformaId);
+      } catch (pdfErr) {
+        console.error('Proforma PDF error:', pdfErr.message);
+      }
+
+      // Send email
+      try {
+        const nodemailer = await import('nodemailer');
+        const transporter = nodemailer.default.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT) || 587,
+          secure: false,
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        });
+
+        const baseUrl = process.env.PUBLIC_URL || 'https://jupiteroneusa.com';
+        const authUrl = baseUrl + '/cc-auth/' + authToken;
+
+        let authBlock = '';
+        if (paymentMethod === 'Credit Card') {
+          authBlock = '<div style="margin:24px 0;text-align:center;">' +
+            '<a href="' + authUrl + '" style="background:#c8932a;color:#0a1628;padding:14px 32px;text-decoration:none;font-weight:700;letter-spacing:0.05em;display:inline-block;">SIGN CREDIT CARD AUTHORIZATION</a>' +
+            '<p style="font-size:11px;color:#7a8a9a;margin-top:8px;">Click to securely sign the CC authorization form online</p>' +
+            '</div>';
+        }
+
+        const emailHtml = '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">' +
+          '<div style="background:#0a1628;padding:20px;border-bottom:3px solid #c8932a;">' +
+          '<h2 style="color:#c8932a;margin:0;">JUPITER ONE USA</h2>' +
+          '<p style="color:#aaa;margin:4px 0 0;font-size:12px;">Aerospace &amp; Defense Parts Supply</p>' +
+          '</div>' +
+          '<div style="background:#fff;padding:28px;">' +
+          '<p>Hi ' + o.first_name + ',</p>' +
+          '<p>Attached is your proforma invoice <strong>' + proformaNumber + '</strong> for order <strong>' + o.order_number + '</strong>.</p>' +
+          '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;">' +
+          '<tr><td style="color:#888;padding:4px 0;width:160px;">Proforma #</td><td><strong>' + proformaNumber + '</strong></td></tr>' +
+          '<tr><td style="color:#888;padding:4px 0;">Order #</td><td>' + o.order_number + '</td></tr>' +
+          '<tr><td style="color:#888;padding:4px 0;">Payment Method</td><td>' + paymentMethod + '</td></tr>' +
+          '<tr><td style="color:#888;padding:4px 0;">Total Due</td><td style="font-weight:bold;color:#c8932a;font-size:1.1rem;">$' + total.toFixed(2) + '</td></tr>' +
+          '</table>' +
+          authBlock +
+          '<p style="font-size:13px;color:#555;">If you have any questions, reply to this email or call (347) 821-7412.</p>' +
+          '</div>' +
+          '<div style="background:#0a1628;padding:14px 20px;">' +
+          '<p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 1101 Porter Ave NW, Palm Bay, FL 32907 | (347) 821-7412</p>' +
+          '</div></div>';
+
+        const mailOpts = {
+          from: '"Derek Torchia - Jupiter One USA" <' + (process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com') + '>',
+          to: o.email,
+          bcc: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
+          subject: 'Proforma ' + proformaNumber + ' - Jupiter One USA',
+          html: emailHtml
+        };
+        if (pdfBuffer) {
+          mailOpts.attachments = [{
+            filename: 'Proforma-' + proformaNumber + '.pdf',
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }];
+        }
+        await transporter.sendMail(mailOpts);
+        console.log('Proforma email sent:', proformaNumber);
+      } catch (emailErr) {
+        console.error('Proforma email error:', emailErr.message);
+      }
+
+      res.redirect('/admin/orders/' + orderId + '?tab=proforma&saved=1');
+    } catch (err) {
+      console.error('Send proforma error:', err);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=proforma&error=' + encodeURIComponent(err.message));
+    }
+  });
+
+  // PROFORMA_ROUTES_V1: View PDF
+  router.get('/proformas/:id/pdf', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pdfBuffer = await generateProformaPdf(parseInt(req.params.id));
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="proforma.pdf"');
+      res.end(pdfBuffer);
+    } catch (err) {
+      console.error('Proforma PDF error:', err);
+      res.status(500).send('Error: ' + err.message);
+    }
+  });
+
 
 }

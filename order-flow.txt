@@ -1,0 +1,40 @@
+========== ORDER STATUS VALUES IN USE ==========
+
+Status values referenced in code:
+  - Active
+  - Shipped
+  - Delivered
+  - Paid
+
+========== ORDER DETAIL TABS ==========
+
+Tabs on order detail page:
+  tabLink('overview','&#128203; Overview'
+  tabLink('lines','&#128230; Lines'
+  tabLink('shipping','&#128666; Shipping'
+  tabLink('payment','&#128179; Payment'
+
+========== SHIPPING TAB CONTENTS ==========
+
+renderShippingTab is called but not defined locally (probably in orderLinesBlock or similar)
+Found in admin/orderShippingBlock.js
+
+========== SHIPMENTS TABLE SCHEMA QUERY ==========
+
+-- Run in SSMS:
+SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'shipments' ORDER BY ORDINAL_POSITION;
+
+-- And:
+SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME = 'orders' AND
+      (COLUMN_NAME LIKE '%ship%' OR COLUMN_NAME LIKE '%track%'
+       OR COLUMN_NAME LIKE '%deliver%' OR COLUMN_NAME LIKE '%paid%'
+       OR COLUMN_NAME LIKE '%status%')
+ORDER BY ORDINAL_POSITION;
+
+-- Recent shipments:
+SELECT TOP 5 * FROM shipments ORDER BY id DESC;
+
