@@ -1,3 +1,4 @@
+// LEAD_TIME_COL_V1
 // services/poPdfService.js
 // JSPDF_PO_V1 — Rewritten to use jsPDF (same as invoice generator).
 // No Puppeteer / no Chromium dependency. Runs instantly on any platform.
@@ -202,6 +203,13 @@ export async function generatePoPdf(poId) {
     doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
     doc.text(String(l.item_name || '—').substring(0, 32), colX.desc, y);
+    if (l.lead_time_text) {
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 120);
+      doc.text('Lead: ' + String(l.lead_time_text).substring(0, 30), colX.desc, y + 3);
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 60);
+    }
 
     doc.text(String(l.condition_code || '—'), colX.cond, y, { align: 'center' });
     doc.text(String(l.quantity || 0), colX.qty, y, { align: 'center' });
@@ -213,7 +221,7 @@ export async function generatePoPdf(poId) {
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.1);
     doc.line(margin, y + 2, pageW - margin, y + 2);
-    y += 7;
+    y += 8;
   });
 
   y += 4;
