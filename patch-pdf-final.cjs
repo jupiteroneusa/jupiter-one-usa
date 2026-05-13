@@ -1,29 +1,40 @@
-// services/poPdfService.js
-// Generates a Purchase Order PDF (matches invoice style: white bg, gold/navy accents)
-// Uses Puppeteer (same as invoice generator).
+// patch-pdf-final.cjs — kill blank PDF for good
+// Three fixes in one:
+//   1. Use chromium.font('https://...') per @sparticuz docs — this is the
+//      official way to load fonts into the sandboxed Chromium build.
+//      Without this call, NO web fonts render regardless of HTML <link>.
+//   2. Remove --single-process (causes blank renders + ETXTBSY).
+//   3. Add ETXTBSY retry around launch.
+// Replaces the entire generatePoPdf function — clean swap, no fragile anchors.
 
-import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
-import { getPool, sql } from '../db/connect.js';
+const fs = require('fs');
+const { execSync } = require('child_process');
 
-function fmtMoney(n) {
-  const v = parseFloat(n || 0);
-  return '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function fmtDate(d) {
-  if (!d) return '';
-  const dt = new Date(d);
-  return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-}
-function esc(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
+const TARGET = 'services/poPdfService.js';
+const BACKUP = TARGET + '.pdf-final.bak';
 
-export async function generatePoPdf(poId) {
+const original = fs.readFileSync(TARGET, 'utf8');
+
+// Find the start and end of generatePoPdf
+const startMarker = 'export async function generatePoPdf(poId) {';
+const startIdx = original.indexOf(startMarker);
+if (startIdx < 0) { console.error('! generatePoPdf start not found'); process.exit(1); }
+
+// Walk braces to find the matching close
+let depth = 0;
+let endIdx = -1;
+let started = false;
+for (let i = startIdx; i < original.length; i++) {
+  const c = original[i];
+  if (c === '{') { depth++; started = true; }
+  else if (c === '}') { depth--; if (started && depth === 0) { endIdx = i + 1; break; } }
+}
+if (endIdx < 0) { console.error('! generatePoPdf end not found'); process.exit(1); }
+
+const newFn = `export async function generatePoPdf(poId) {
   const pool = await getPool();
 
-  const poR = await pool.request().input('id', sql.BigInt, poId).query(`
+  const poR = await pool.request().input('id', sql.BigInt, poId).query(\`
     SELECT p.*, s.company_name AS supplier_name, s.contact_name AS supplier_contact,
            s.email AS supplier_email, s.phone AS supplier_phone,
            s.address1 AS supplier_address1, s.address2 AS supplier_address2,
@@ -34,7 +45,7 @@ export async function generatePoPdf(poId) {
     LEFT JOIN suppliers s ON p.supplier_id = s.id
     LEFT JOIN orders o ON p.order_id = o.id
     WHERE p.id = @id
-  `);
+  \`);
   if (!poR.recordset.length) throw new Error('PO not found: ' + poId);
   const po = poR.recordset[0];
 
@@ -42,15 +53,15 @@ export async function generatePoPdf(poId) {
     .query('SELECT * FROM supplier_po_lines WHERE supplier_po_id=@id ORDER BY line_number');
   const lines = linesR.recordset;
 
-  const linesHtml = lines.map(l => `
+  const linesHtml = lines.map(l => \`
     <tr>
-      <td class="num">${l.line_number}</td>
-      <td><div class="pn">${esc(l.nsn || l.part_number || '—')}</div><div class="item">${esc(l.item_name || '')}</div></td>
-      <td class="ctr">${esc(l.condition_code || '—')}</td>
-      <td class="ctr">${l.quantity}</td>
-      <td class="right">${fmtMoney(l.unit_cost)}</td>
-      <td class="right strong">${fmtMoney(l.line_total)}</td>
-    </tr>`).join('');
+      <td class="num">\${l.line_number}</td>
+      <td><div class="pn">\${esc(l.nsn || l.part_number || '—')}</div><div class="item">\${esc(l.item_name || '')}</div></td>
+      <td class="ctr">\${esc(l.condition_code || '—')}</td>
+      <td class="ctr">\${l.quantity}</td>
+      <td class="right">\${fmtMoney(l.unit_cost)}</td>
+      <td class="right strong">\${fmtMoney(l.line_total)}</td>
+    </tr>\`).join('');
 
   const supplierAddr = [
     po.supplier_address1, po.supplier_address2,
@@ -61,7 +72,7 @@ export async function generatePoPdf(poId) {
   // PDF_FINAL_V1: simple inline-styled HTML with web-safe font stack only.
   // We load Roboto via chromium.font() below so it is actually available
   // inside Chromium's sandbox (the @sparticuz docs require this).
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><style>
+  const html = \`<!doctype html><html><head><meta charset="utf-8"/><style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif; color: #1a1a1a; background: #fff; padding: 40px 50px; font-size: 11pt; line-height: 1.4; -webkit-font-smoothing: antialiased; }
 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #c8932a; padding-bottom: 20px; margin-bottom: 30px; }
@@ -110,24 +121,24 @@ table.lines tbody .item { color: #555; font-size: 9pt; margin-top: 2px; }
   </div>
   <div class="po-box">
     <div class="label">Purchase Order</div>
-    <div class="number">${esc(po.po_number)}</div>
+    <div class="number">\${esc(po.po_number)}</div>
     <div class="meta">
-      <b>Date Issued:</b> ${fmtDate(po.issued_at || new Date())}<br/>
-      ${po.expected_delivery ? '<b>Expected:</b> ' + fmtDate(po.expected_delivery) + '<br/>' : ''}
-      ${po.order_number ? '<b>Customer Ref:</b> ' + esc(po.order_number) + '<br/>' : ''}
-      <b>Status:</b> ${esc(po.status)}
+      <b>Date Issued:</b> \${fmtDate(po.issued_at || new Date())}<br/>
+      \${po.expected_delivery ? '<b>Expected:</b> ' + fmtDate(po.expected_delivery) + '<br/>' : ''}
+      \${po.order_number ? '<b>Customer Ref:</b> ' + esc(po.order_number) + '<br/>' : ''}
+      <b>Status:</b> \${esc(po.status)}
     </div>
   </div>
 </div>
 <div class="section two-col">
   <div>
     <div class="section-title">Supplier</div>
-    <div class="supplier-name">${esc(po.supplier_name || '—')}</div>
+    <div class="supplier-name">\${esc(po.supplier_name || '—')}</div>
     <div class="supplier-detail">
-      ${po.supplier_contact ? esc(po.supplier_contact) + '<br/>' : ''}
-      ${supplierAddr || ''}
-      ${po.supplier_email ? '<br/>' + esc(po.supplier_email) : ''}
-      ${po.supplier_phone ? '<br/>' + esc(po.supplier_phone) : ''}
+      \${po.supplier_contact ? esc(po.supplier_contact) + '<br/>' : ''}
+      \${supplierAddr || ''}
+      \${po.supplier_email ? '<br/>' + esc(po.supplier_email) : ''}
+      \${po.supplier_phone ? '<br/>' + esc(po.supplier_phone) : ''}
     </div>
   </div>
   <div>
@@ -152,29 +163,29 @@ table.lines tbody .item { color: #555; font-size: 9pt; margin-top: 2px; }
       <th class="right" style="width:90px;">Unit Cost</th>
       <th class="right" style="width:100px;">Line Total</th>
     </tr></thead>
-    <tbody>${linesHtml || '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">No lines</td></tr>'}</tbody>
+    <tbody>\${linesHtml || '<tr><td colspan="6" style="text-align:center;color:#999;padding:20px;">No lines</td></tr>'}</tbody>
   </table>
   <div class="totals">
     <table>
-      <tr><td>Subtotal</td><td>${fmtMoney(po.subtotal)}</td></tr>
-      <tr><td>Shipping</td><td>${fmtMoney(po.shipping_cost)}</td></tr>
-      <tr class="grand"><td>TOTAL</td><td>${fmtMoney(po.total)}</td></tr>
+      <tr><td>Subtotal</td><td>\${fmtMoney(po.subtotal)}</td></tr>
+      <tr><td>Shipping</td><td>\${fmtMoney(po.shipping_cost)}</td></tr>
+      <tr class="grand"><td>TOTAL</td><td>\${fmtMoney(po.total)}</td></tr>
     </table>
   </div>
 </div>
-${po.notes ? '<div class="notes-box"><b style="color:#c8932a;">Notes:</b><br/>' + esc(po.notes).replace(/\n/g, '<br/>') + '</div>' : ''}
+\${po.notes ? '<div class="notes-box"><b style="color:#c8932a;">Notes:</b><br/>' + esc(po.notes).replace(/\\n/g, '<br/>') + '</div>' : ''}
 <div class="terms">
   <div class="section-title">Terms &amp; Conditions</div>
   <ol>
     <li>All parts must include applicable certifications: FAA 8130-3 (when required), Certificate of Conformance, and full traceability documentation.</li>
-    <li>Payment terms: ${esc(po.supplier_payment_terms || 'NET 30')}. Invoice to be sent to DTorchia@JupiterOneUSA.com.</li>
+    <li>Payment terms: \${esc(po.supplier_payment_terms || 'NET 30')}. Invoice to be sent to DTorchia@JupiterOneUSA.com.</li>
     <li>Acknowledgment of this PO is requested within 48 hours. Acknowledgment constitutes acceptance of these terms.</li>
-    <li>Reference PO number ${esc(po.po_number)} on all packing slips, invoices, and correspondence.</li>
+    <li>Reference PO number \${esc(po.po_number)} on all packing slips, invoices, and correspondence.</li>
     <li>Parts subject to inspection upon receipt; non-conforming product may be rejected at supplier's expense.</li>
   </ol>
 </div>
 <div class="footer">Jupiter One USA &middot; CAGE Code on request &middot; This PO is electronically issued and valid without signature</div>
-</body></html>`;
+</body></html>\`;
 
   // CRITICAL: Tell @sparticuz/chromium to load fonts into its sandbox.
   // This is the documented fix — Chromium runs in --no-sandbox and cannot
@@ -230,4 +241,28 @@ ${po.notes ? '<div class="notes-box"><b style="color:#c8932a;">Notes:</b><br/>' 
   } finally {
     await browser.close();
   }
+}`;
+
+const newSrc = original.slice(0, startIdx) + newFn + original.slice(endIdx);
+
+fs.writeFileSync(BACKUP, original);
+fs.writeFileSync(TARGET, newSrc);
+
+try {
+  execSync('node -c "' + TARGET + '"', { stdio: 'pipe' });
+  // Verify our marker is present
+  const v = fs.readFileSync(TARGET, 'utf8');
+  if (!v.includes('PDF_FINAL_V1') || !v.includes('chromium.font(')) {
+    throw new Error('marker missing after write');
+  }
+  console.log('+ generatePoPdf replaced cleanly (' + newFn.length + ' chars)');
+  console.log('+ chromium.font() called for Roboto Regular + Bold');
+  console.log('+ Removed --single-process (was causing blank renders)');
+  console.log('+ ETXTBSY retry up to 3x with 1.5s backoff');
+  console.log('+ Verified: PDF_FINAL_V1 marker present in file');
+  console.log('SUCCESS');
+} catch (err) {
+  fs.writeFileSync(TARGET, original);
+  console.error('! REVERTED:', err.message);
+  process.exit(1);
 }
