@@ -68,9 +68,10 @@ export async function generatePoPdf(poId) {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(80, 80, 80);
-  doc.text('400 N Tampa St, Suite 1550', margin, y);
+  // EDIT-ME: Company header address — appears top-left of every PO PDF
+  doc.text('1101 Porter Ave NW', margin, y);
   y += 4;
-  doc.text('Tampa, FL 33602', margin, y);
+  doc.text('Palm Bay, FL 32907', margin, y);
   y += 4;
   doc.text('(347) 821-7412 · DTorchia@JupiterOneUSA.com', margin, y);
 
@@ -128,9 +129,10 @@ export async function generatePoPdf(poId) {
   if (po.supplier_email) supLines.push(po.supplier_email);
   if (po.supplier_phone) supLines.push(po.supplier_phone);
 
+  // EDIT-ME: Ship-to address — where suppliers should ship parts
   const shipLines = [
-    '400 N Tampa St, Suite 1550',
-    'Tampa, FL 33602',
+    '1101 Porter Ave NW',
+    'Palm Bay, FL 32907',
     'USA',
     'Attn: Receiving / Derek Torchia'
   ];
