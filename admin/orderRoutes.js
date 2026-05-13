@@ -1,3 +1,4 @@
+// LEAD_TIME_CHAIN_V1
 // admin/orderRoutes.js
 // Order detail routes for admin panel
 import { getPool, sql } from '../db/connect.js';
@@ -531,7 +532,8 @@ export function mountOrderRoutes(router, requireAuth, page) {
             .input('cost', sql.Decimal(10,2), l.unit_cost)
             .input('total', sql.Decimal(12,2), lineTotal)
             .input('lead', sql.Int, l.supplier_lead_time_days || null)
-            .query('INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, line_total, expected_lead_time_days) OUTPUT INSERTED.id VALUES (@poid, @olid, @ln, @nsn, @pn2, @item, @cond, @qty, @cost, @total, @lead)');
+            .input('ltt', sql.NVarChar(sql.MAX), l.lead_time_text || null)
+            .query('INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, line_total, expected_lead_time_days, lead_time_text) OUTPUT INSERTED.id VALUES (@poid, @olid, @ln, @nsn, @pn2, @item, @cond, @qty, @cost, @total, @lead, @ltt)');
           
           // Link the order_line_source to the new supplier_po_line
           await pool.request()

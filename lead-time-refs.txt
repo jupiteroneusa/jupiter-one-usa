@@ -1,0 +1,128 @@
+========== Lead-time references ==========
+
+### adddraft.cjs
+  L20 [lead_time_days]: const draftRoute = `  router.post('/rfqs/:id/quote-draft', async (req, res) => {${nl}    if (!requireAuth(req, res)) return;${nl}    try {${
+
+### addpdfbuffer.cjs
+  L15 [lead_time_days]: "          const pdfLineRows = processedLines.map(l => `<tr><td style='padding:6px 8px;border:1px solid #ddd;font-family:monospace;font-size
+
+### addpdfgen.cjs
+  L29 [lead_time_days]: <td style="padding:8px;border:1px solid #ddd;">\${l.lead_time_text||l.lead_time_days||'—'}</td>
+  L129 [lead_time_days]: "          const lineRowsPdf = processedLines.map(l => `<tr><td style='padding:8px;border:1px solid #ddd;font-family:monospace;'>${l.nsn||l.
+
+### addresumeroute.cjs
+  L9 [lead_time_days]: const route = `  router.get('/rfqs/:id/quote-review-draft', async (req, res) => {${nl}    if (!requireAuth(req, res)) return;${nl}    try {$
+
+### admin\index.js
+  L871 [lead_time_days]: <td><input type="text" name="lines[${l.line_number-1}][lead_time_days]" placeholder="e.g. 7-10 days" style="width:110px;"/></td>
+  L995 [lead_time_days]: '<td><input type="text" name="lines['+n+'][lead_time_days]" value="'+(l.lead_time_text||l.lead_time_days||'')+'" style="width:100px;"/></td>
+  L999 [lead_time_days]: const addRowScript = 'let qc='+nextLine+';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\'tr\');r.id=\'qrow
+  L1115 [lead_time_days]: .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
+  L1116 [lead_time_days]: .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'')+'' || null)
+  L1117 [lead_time_days]: .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,lin
+  L1153 [lead_time_days]: .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
+  L1154 [lead_time_days]: .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'')+'' || null)
+  L1155 [lead_time_days]: .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,lin
+  L1189 [lead_time_days]: <td style="padding:8px;border:1px solid #ddd;">${l.lead_time_text||l.lead_time_days||'—'}</td>
+  L1707 [lead_time_days]: <td style="color:#7a8a9a;">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '—')}</td>
+
+### admin\orderLinesBlock.js
+  L104 [supplier_lead_time_days]: html += '<input type="number" min="0" name="supplier_lead_time_days" value="' + (l.supplier_lead_time_days || '') + '" style="width:100%;bac
+
+### admin\orderRoutes.js
+  L282 [supplier_lead_time_days]: .input('leadDays', sql.Int, b.supplier_lead_time_days ? parseInt(b.supplier_lead_time_days) : null)
+  L291 [supplier_lead_time_days]: .query('UPDATE order_lines SET supplier_id=@supId, supplier_cost=@supCost, supplier_lead_time_days=@leadDays, lot_number=@lotNum, country_of
+  L533 [supplier_lead_time_days]: .input('lead', sql.Int, l.supplier_lead_time_days || null)
+  L534 [expected_lead_time_days]: .query('INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, un
+
+### admin\quoteBuilder.js
+  L16 [lead_time_text]: //   lines[N][lead_time_text]                 <-- free-form ("5-7 days", "EST 2 weeks", ...)
+  L123 [lead_time_text]: const leadText = sLine.lead_time_text || '';
+  L155 [lead_time_text]: lineGroupsHtml += inputCell('Lead Time (customer)', 'lines[' + lineIdx + '][lead_time_text]', leadText, 'text', 'placeholder="e.g. 7-10 days
+  L487 [lead_time_text]: lead_time_text: line.lead_time_text || null,
+  L537 [lead_time_text]: .input('ltt', sql.NVarChar(100), pl.lead_time_text)
+  L538 [lead_time_text]: .query("INSERT INTO quote_lines (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, marku
+  L559 [supplier_lead_time_days]: .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130, has_coc, ha
+
+### admin\supplierPoRoutes.js
+  L280 [expected_lead_time_days]: .query('INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, un
+
+### admin\supplierRoutes.js
+  L36 [lead_time]: html += inputField('Default Lead Time (days)', 'lead_time_default_days', '', 'number', 'min="0"');
+  L67 [lead_time]: .input('lt', sql.Int, b.lead_time_default_days ? parseInt(b.lead_time_default_days) : null)
+  L71 [lead_time]: .query(`INSERT INTO suppliers (company_name, dba_name, contact_name, email, phone, website, cage_code, tax_id, country, currency, payment_te
+  L110 [lead_time]: ISNULL(AVG(CASE WHEN received_at IS NOT NULL AND issued_at IS NOT NULL THEN DATEDIFF(day, issued_at, received_at) END),0) AS avg_lead_time
+  L160 [lead_time]: html += inputField('Default Lead Time (days)', 'lead_time_default_days', s.lead_time_default_days, 'number', 'min="0"');
+  L212 [lead_time]: html += '<div class="detail-item"><div class="detail-label">Average Lead Time</div><div class="detail-value">' + (perf.avg_lead_time ? Math.
+  L323 [lead_time]: .input('lt', sql.Int, b.lead_time_default_days ? parseInt(b.lead_time_default_days) : null)
+  L329 [lead_time]: .query(`UPDATE suppliers SET company_name=@cn, dba_name=@dba, contact_name=@cont, email=@em, phone=@ph, website=@web, cage_code=@cage, tax_i
+
+### find-lead-time.cjs
+  L8 [supplier_lead_time_days]: 'supplier_lead_time_days',
+  L9 [expected_lead_time_days]: 'expected_lead_time_days',
+  L10 [lead_time_days]: 'lead_time_days',
+  L11 [lead_time_text]: 'lead_time_text',
+  L12 [leadTimeDays]: 'leadTimeDays',
+  L13 [lead_time]: 'lead_time'
+
+### fixleadtime.cjs
+  L4 [lead_time_days]: // 1. In draft save route - store lead_time_text alongside lead_time_days
+  L6 [lead_time_days]: const oldInsert = `INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,uni
+  L7 [lead_time_days]: const newInsert = `INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,uni
+  L18 [lead_time_days]: const newLeadTimeLine = leadTimeLine + '\n            .input(\'leadTimeText\', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||\'\')
+  L25 [lead_time_days]: // 2. In resume route - show lead_time_text instead of lead_time_days
+  L26 [lead_time_days]: const oldLeadVal = `value="'+(l.lead_time_days||'')+'"`;
+  L27 [lead_time_days]: const newLeadVal = `value="'+(l.lead_time_text||l.lead_time_days||'')+'"`;
+  L32 [lead_time_text]: // 3. Also fix the main quote POST route INSERT to store lead_time_text
+  L33 [lead_time_days]: const mainOldInsert = `INSERT INTO quote_lines\n              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_co
+  L34 [lead_time_days]: const mainNewInsert = `INSERT INTO quote_lines\n              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_co
+
+### fixmainquote.cjs
+  L13 [lead_time_days]: lines.splice(leadTimeLine + 1, 0, "          .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'').toString() |
+  L18 [lead_time_days]: const insertLine = lines.findIndex((l, i) => i >= 1278 && i <= 1290 && l.includes('quote_id, rfq_line_id') && l.includes('lead_time_days)'))
+  L20 [lead_time_days]: lines[insertLine] = lines[insertLine].replace('lead_time_days)', 'lead_time_days, lead_time_text)');
+  L31 [lead_time_text]: // Also fix line 1483 - display lead_time_text in quote detail
+  L32 [lead_time_days]: const displayLine = lines.findIndex((l, i) => i >= 1478 && i <= 1490 && l.includes("l.lead_time_days ? l.lead_time_days+' days'"));
+  L35 [lead_time_days]: "l.lead_time_days ? l.lead_time_days+' days' : '\u2014'",
+  L36 [lead_time_days]: "l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '\u2014')"
+
+### fixpdfmethod.cjs
+  L52 [lead_time_days]: doc.text(String(l.lead_time_text||l.lead_time_days||'—').substring(0,15), 170, y);
+
+### fixquoteemail.cjs
+  L69 [lead_time_days]: <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666;">\${l.lead_time_days ? l.lead_time_days + ' days' : (l.lead_time_text |
+
+### fixquoteemail2.cjs
+  L77 [lead_time_days]: '</td>\n      <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666;">${l.lead_time_days ? l.lead_time_days + " days" : (l.lea
+  L82 [lead_time_days]: lines.splice(rowEnd, 0, "      <td style=\"padding:8px 12px;border-bottom:1px solid #eee;color:#666;\">${l.lead_time_days ? l.lead_time_days
+
+### fixquotes2.cjs
+  L130 [lead_time_days]: <td style="color:#7a8a9a;">\${l.lead_time_days ? l.lead_time_days+' days' : '—'}</td>
+
+### fixquotes3.cjs
+  L79 [lead_time_days]: <td style="color:#7a8a9a;">\${l.lead_time_days ? l.lead_time_days+' days' : '\u2014'}</td>
+
+### fixquotetemplate3.cjs
+  L25 [lead_time_days]: <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666;">\${l.lead_time_text || (l.lead_time_days ? l.lead_time_days + ' days' 
+
+### routes\quotes.js
+  L101 [lead_time_days]: .input('leadTime',   sql.Int,           l.lead_time_days || null)
+  L107 [lead_time_days]: unit_price, line_total, line_cost, line_margin, margin_pct, lead_time_days, notes)
+  L266 [supplier_lead_time_days]: .input('ld', sql.Int, _s.supplier_lead_time_days)
+  L272 [supplier_lead_time_days]: .query('INSERT INTO order_line_sources (order_line_id, quote_line_source_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days,
+
+### routes\sourcing.js
+  L100 [lead_time_days]: lead_time_days, quote_expiry, source_platform,
+  L116 [lead_time_days]: .input('leadTime',     sql.Int,          lead_time_days || null)
+  L128 [lead_time_days]: condition_code, lead_time_days, quote_expiry, source_platform, source_ref,
+
+### services\mailer.js
+  L262 [lead_time_days]: <td style="padding:8px 12px;border-bottom:1px solid #eee;color:#666;">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days + ' days' :
+
+### step2_reviewroute.cjs
+  L37 [lead_time_days]: "        const lead = s.lead_time_days || '';" + nl +
+  L50 [lead_time_days]: "        lineHtml += '<td><input type=\"text\" name=\"lines[' + n + '][lead_time_days]\" value=\"' + lead + '\" placeholder=\"7-10 days\" st
+  L55 [lead_time_days]: "      const addRowScript = 'let qc=' + nextLine + ';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\\'tr\\'
+
+
+(Skipped 7 patcher/check scripts)

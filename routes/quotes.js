@@ -1,3 +1,4 @@
+// LEAD_TIME_CHAIN_V1
 // routes/quotes.js
 import { Router } from 'express';
 import { getPool, sql } from '../db/connect.js';
@@ -264,12 +265,13 @@ router.post('/:id/accept', requireCustomer, async (req, res) => {
                 .input('aq', sql.Int, _s.allocated_qty)
                 .input('uc', sql.Decimal(10,2), _s.unit_cost)
                 .input('ld', sql.Int, _s.supplier_lead_time_days)
+                .input('ltt', sql.NVarChar(sql.MAX), _s.lead_time_text || null)
                 .input('h81r', sql.Bit, _s.has_8130 ? 1 : 0)
                 .input('hcocr', sql.Bit, _s.has_coc ? 1 : 0)
                 .input('htracr', sql.Bit, _s.has_trace ? 1 : 0)
                 .input('nt', sql.NVarChar(500), _s.notes)
                 .input('so', sql.Int, _s.sort_order)
-                .query('INSERT INTO order_line_sources (order_line_id, quote_line_source_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130_required, has_coc_required, has_trace_required, notes, sort_order) VALUES (@oli, @qlsi, @sid, @aq, @uc, @ld, @h81r, @hcocr, @htracr, @nt, @so)');
+                .query('INSERT INTO order_line_sources (order_line_id, quote_line_source_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, lead_time_text, has_8130_required, has_coc_required, has_trace_required, notes, sort_order) VALUES (@oli, @qlsi, @sid, @aq, @uc, @ld, @ltt, @h81r, @hcocr, @htracr, @nt, @so)');
             }
           }
         } catch(srcErr) { console.error('Copy sources error:', srcErr.message); }

@@ -1,3 +1,4 @@
+// LEAD_TIME_CHAIN_V1
 // admin/quoteBuilder.js
 // Rewired quote builder with supplier sourcing per line + multi-source splits.
 // Replaces inline GET/POST quote-review + POST quote-save handlers in admin/index.js.
@@ -549,14 +550,15 @@ async function saveQuote(rfqId, body, adminId) {
         .input('sid', sql.BigInt, parseInt(s.supplier_id))
         .input('aq', sql.Int, parseInt(s.allocated_qty))
         .input('uc', sql.Decimal(10,2), parseFloat(s.unit_cost))
-        .input('ld', sql.Int, s.lead_days ? parseInt(s.lead_days) : null)
+        .input('ld', sql.Int, s.lead_days ? parseInt(s.lead_days)
+          .input('ltt', sql.NVarChar(sql.MAX), sLine.lead_time_text || pl.lead_time_text || null) : null)
         .input('h81', sql.Bit, s.has_8130 ? 1 : 0)
         .input('hcoc', sql.Bit, s.has_coc ? 1 : 0)
         .input('htr', sql.Bit, s.has_trace ? 1 : 0)
         .input('nt', sql.NVarChar(500), s.notes || null)
         .input('so', sql.Int, sortOrder++)
         .input('issel', sql.Bit, (s.is_selected === '1' || s.is_selected === 1 || s.is_selected === true) ? 1 : 0)
-        .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130, has_coc, has_trace, notes, sort_order, is_selected) VALUES (@qli, @sid, @aq, @uc, @ld, @h81, @hcoc, @htr, @nt, @so, @issel)");
+        .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, lead_time_text, has_8130, has_coc, has_trace, notes, sort_order, is_selected) VALUES (@qli, @sid, @aq, @uc, @ld, @ltt, @h81, @hcoc, @htr, @nt, @so, @issel)");
     }
   }
 
