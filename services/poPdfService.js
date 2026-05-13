@@ -61,9 +61,13 @@ export async function generatePoPdf(poId) {
   // PDF_FINAL_V1: simple inline-styled HTML with web-safe font stack only.
   // We load Roboto via chromium.font() below so it is actually available
   // inside Chromium's sandbox (the @sparticuz docs require this).
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><style>
+  const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif; color: #1a1a1a; background: #fff; padding: 40px 50px; font-size: 11pt; line-height: 1.4; -webkit-font-smoothing: antialiased; }
+body { font-family: 'Roboto', sans-serif; color: #1a1a1a; background: #fff; padding: 40px 50px; font-size: 11pt; line-height: 1.4; -webkit-font-smoothing: antialiased; }
 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #c8932a; padding-bottom: 20px; margin-bottom: 30px; }
 .brand-block .logo { font-size: 22pt; font-weight: 700; color: #0a1628; letter-spacing: -0.5px; }
 .brand-block .tagline { font-size: 8pt; letter-spacing: 0.2em; color: #c8932a; text-transform: uppercase; margin-top: 2px; font-weight: 600; }
@@ -176,13 +180,9 @@ ${po.notes ? '<div class="notes-box"><b style="color:#c8932a;">Notes:</b><br/>' 
 <div class="footer">Jupiter One USA &middot; CAGE Code on request &middot; This PO is electronically issued and valid without signature</div>
 </body></html>`;
 
-  // CRITICAL: Tell @sparticuz/chromium to load fonts into its sandbox.
-  // This is the documented fix — Chromium runs in --no-sandbox and cannot
-  // download fonts at runtime, so we hand it the font URLs at boot.
-  // chromium.font() must be called BEFORE chromium.executablePath().
-  await chromium.font('https://raw.githack.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf');
-  await chromium.font('https://raw.githack.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf');
-
+  // FONT_FINAL2_V1: chromium.font() is not in all versions of @sparticuz/chromium.
+  // Instead: use sans-serif fallback (Chromium has DejaVu Sans bundled) and load
+  // any web font via the HTML <link> with networkidle wait.
   const executablePath = await chromium.executablePath();
 
   // Retry launch on ETXTBSY (transient Linux file lock when Chrome spawns

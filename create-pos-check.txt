@@ -1,0 +1,628 @@
+========== POST /orders/:id/create-supplier-pos-from-order (full) ==========
+
+66:           html += '<form method="POST" action="/admin/orders/' + req.params.id + '/create-supplier-pos-from-order" style="margin:0;">';
+67:           html += '<button type="submit" class="btn btn-gold" onclick="return confirm(\'Create draft Supplier POs grouped by supplier? You can review/edit each before sending.\')">+ Create Supplier POs (' + _pending + ')</button>';
+68:           html += '</form></div>';
+69:         }
+70:         html += await renderLinesTab(o, oLines, suppliers);
+71:       } else if (activeTab === 'shipping') {
+72:         const missingCertsR = await pool.request().input('idMc', sql.BigInt, req.params.id).query("SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS part_number, nsn, cert_8130_required, cert_8130_received, coc_required, coc_received FROM order_lines WHERE order_id=@idMc AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))");
+73:         html += renderShippingTab(o, ships, missingCertsR.recordset);
+74:       } else if (activeTab === 'payment') {
+75:         html += renderPaymentTab(o, invoices, payments);
+76:       }
+77:       html += '</div></div>';
+78:       res.send(page('Order '+o.order_number, 'orders', html));
+79:     } catch(err) {
+80:       res.send(page('Order','orders','<div class="alert alert-error">'+err.message+'</div>'));
+81:     }
+82:   });
+83: 
+84:   router.post('/orders/:id/overview-update', async (req, res) => {
+85:     if (!requireAuth(req, res)) return;
+86:     try {
+87:       const pool = await getPool();
+88:       const b = req.body;
+89:       await pool.request()
+90:         .input('id', sql.BigInt, req.params.id)
+91:         .input('priority', sql.NVarChar(20), b.priority || 'Standard')
+92:         .input('assignedTo', sql.NVarChar(100), b.assigned_to || null)
+93:         .input('contractNumber', sql.NVarChar(100), b.contract_number || null)
+94:         .input('country', sql.NVarChar(50), b.country_of_destination || null)
+95:         .input('endUseCert', sql.Bit, b.end_use_cert_required === '1' ? 1 : 0)
+96:         .input('internalNotes', sql.NVarChar(sql.MAX), b.internal_notes || null)
+97:         .query('UPDATE orders SET priority=@priority, assigned_to=@assignedTo, contract_number=@contractNumber, country_of_destination=@country, end_use_cert_required=@endUseCert, internal_notes=@internalNotes, updated_at=GETDATE() WHERE id=@id');
+98:       res.redirect('/admin/orders/'+req.params.id+'?tab=overview&saved=1');
+99:     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+100:   });
+101: 
+102:   router.post('/orders/:id/status', async (req, res) => {
+103:     if (!requireAuth(req, res)) return;
+104:     const { status, note } = req.body;
+105:     try {
+106:       const pool = await getPool();
+107:       await pool.request().input('id', sql.BigInt, req.params.id).input('status', sql.NVarChar, status).query('UPDATE orders SET status=@status, updated_at=GETDATE() WHERE id=@id');
+108:       await pool.request().input('id', sql.BigInt, req.params.id).input('status', sql.NVarChar, status).input('note', sql.NVarChar(500), note||null).query('INSERT INTO order_status_log (order_id, new_status, note) VALUES (@id, @status, @note)');
+109:       res.redirect('/admin/orders/'+req.params.id+'?tab=overview&saved=1');
+110:     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+111:   });
+112: 
+113:   router.post('/orders/:id/shipping', async (req, res) => {
+114:     if (!requireAuth(req, res)) return;
+115:     try {
+116:       const pool = await getPool();
+117:       const b = req.body;
+118:       const shippingCost = parseFloat(b.shipping_cost)||0;
+119:       const or2 = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT subtotal FROM orders WHERE id=@id');
+120:       const subtotal = parseFloat(or2.recordset[0] && or2.recordset[0].subtotal || 0);
+121:       await pool.request()
+122:         .input('id', sql.BigInt, req.params.id)
+123:         .input('shipping', sql.Decimal(12,2), shippingCost)
+124:         .input('total', sql.Decimal(12,2), subtotal + shippingCost)
+125:         .input('addr1', sql.NVarChar(150), b.ship_to_address1||null)
+126:         .input('city', sql.NVarChar(100), b.ship_to_city||null)
+127:         .input('state', sql.NVarChar(50), b.ship_to_state||null)
+128:         .input('zip', sql.NVarChar(20), b.ship_to_zip||null)
+129:         .input('country', sql.NVarChar(50), b.ship_to_country||null)
+130:         .query('UPDATE orders SET shipping_cost=@shipping,total_amount=@total,ship_to_address1=@addr1,ship_to_city=@city,ship_to_state=@state,ship_to_zip=@zip,ship_to_country=@country,updated_at=GETDATE() WHERE id=@id');
+131:       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
+132:     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+133:   });
+134: 
+135:   router.post('/orders/:id/tracking', async (req, res) => {
+136:     if (!requireAuth(req, res)) return;
+137:     try {
+138:       const pool = await getPool();
+139: 
+140:       // Phase A2: Compliance gate - block ship if certs required but not received
+141:       const compR = await pool.request().input('oid', sql.BigInt, req.params.id).query(
+142:         "SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS pn, " +
+143:         "(cert_8130_required & ~cert_8130_received) AS m8130, " +
+144:         "(coc_required & ~coc_received) AS mcoc " +
+145:         "FROM order_lines WHERE order_id=@oid AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))"
+146:       );
+147:       if (compR.recordset.length && req.body.compliance_override === '1') {
+148:         // Log the override to status log
+149:         const reason = (req.body.override_reason || '').substring(0, 500);
+150:         await pool.request().input('id', sql.BigInt, req.params.id).input('n', sql.NVarChar(500), 'COMPLIANCE OVERRIDE: ' + reason)
+151:           .query("INSERT INTO order_status_log (order_id, new_status, note) VALUES (@id, 'Compliance Override', @n)");
+152:       }
+153:       if (compR.recordset.length && req.body.compliance_override !== '1') {
+154:         const blocking = compR.recordset.map(function(l){
+155:           var miss = []; if (l.m8130) miss.push('8130-3'); if (l.mcoc) miss.push('CoC');
+156:           return 'Line ' + l.line_number + ' (' + l.pn + ') missing: ' + miss.join(', ');
+157:         }).join('; ');
+158:         return res.redirect('/admin/orders/' + req.params.id + '?tab=shipping&error=' + encodeURIComponent('Compliance blocked: ' + blocking + '. Mark certs received first or use override.'));
+159:       }
+160:       // (compliance_blocked check end)
+161:       const b = req.body;
+162:       const shipNum = await generateNumber('SHP');
+163:       await pool.request()
+164:         .input('orderId', sql.BigInt, req.params.id)
+165:         .input('shipNum', sql.NVarChar(20), shipNum)
+166:         .input('carrier', sql.NVarChar(100), b.carrier||null)
+167:         .input('tracking', sql.NVarChar(100), b.tracking_number||null)
+168:         .input('trackingUrl', sql.NVarChar(500), b.tracking_url||null)
+169:         .input('shipDate', sql.Date, b.ship_date||null)
+170:         .input('estDelivery', sql.Date, b.estimated_delivery||null)
+171:         .input('weight', sql.Decimal(8,2), parseFloat(b.weight_lbs)||null)
+172:         .input('dims', sql.NVarChar(50), b.dimensions||null)
+173:         .input('pkgs', sql.Int, parseInt(b.package_count)||1)
+174:         .input('sigReq', sql.Bit, b.signature_required==='1'?1:0)
+175:         .input('ins', sql.Decimal(12,2), parseFloat(b.insurance_value)||null)
+176:         .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,weight_lbs,dimensions,package_count,signature_required,insurance_value,status) VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,@weight,@dims,@pkgs,@sigReq,@ins,'Shipped')");
+177:       await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped',shipped_at=ISNULL(shipped_at,GETDATE()),updated_at=GETDATE() WHERE id=@id");
+178:       await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','Shipment added')");
+179:       // Send shipment notification to customer
+180:       try {
+181:         const custR = await pool.request().input('id', sql.BigInt, req.params.id)
+182:           .query('SELECT o.order_number, c.first_name, c.last_name, c.email FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=@id');
+183:         if (custR.recordset.length) {
+184:           const { sendShipmentNotification } = await import('../services/mailer.js');
+185:           const cr = custR.recordset[0];
+186:           sendShipmentNotification({ customer: cr, order: { order_number: cr.order_number }, shipment: { carrier: b.carrier||'', tracking_number: b.tracking_number||'', tracking_url: b.tracking_url||null, estimated_delivery: b.estimated_delivery||null } }).catch(console.error);
+187:         }
+188:       } catch(shipEmailErr) { console.error('Shipment email error:', shipEmailErr.message); }
+189:       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
+190:     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+191:   });
+192: 
+193:   router.post('/orders/:id/shipments/:sid/deliver', async (req, res) => {
+194:     if (!requireAuth(req, res)) return;
+195:     try {
+196:       const pool = await getPool();
+197:       const b = req.body;
+198:       const delAt = b.actual_delivery_at ? new Date(b.actual_delivery_at) : new Date();
+199:       await pool.request()
+200:         .input('sid', sql.BigInt, req.params.sid)
+201:         .input('delAt', sql.DateTime, delAt)
+202:         .input('rcvBy', sql.NVarChar(100), b.received_by_name||null)
+203:         .input('proof', sql.NVarChar(500), b.delivery_proof_url||null)
+204:         .query("UPDATE shipments SET actual_delivery_at=@delAt, received_by_name=@rcvBy, delivery_proof_url=@proof, status='Delivered' WHERE id=@sid");
+205:       await pool.request()
+206:         .input('id', sql.BigInt, req.params.id)
+207:         .input('delAt2', sql.DateTime, delAt)
+208:         .query("UPDATE orders SET status='Delivered', delivered_at=ISNULL(delivered_at,@delAt2), updated_at=GETDATE() WHERE id=@id");
+209:       await pool.request().input('id', sql.BigInt, req.params.id)
+210:         .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Delivered','Delivery confirmed')");
+211:       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
+212:     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&error='+encodeURIComponent(err.message)); }
+213:   });
+214: 
+215:   router.post('/orders/:id/record-payment', async (req, res) => {
+216:     if (!requireAuth(req, res)) return;
+217:     try {
+218:       const pool = await getPool();
+219:       const b = req.body;
+220:       const amount = parseFloat(b.amount);
+221:       if (!amount || amount <= 0) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=Invalid+amount');
+222:       const receivedAt = b.received_at ? new Date(b.received_at) : new Date();
+223:       const ord = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT customer_id, total_amount FROM orders WHERE id=@id');
+224:       if (!ord.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?error=Order+not+found');
+225:       const cid = ord.recordset[0].customer_id;
+226:       const orderTotal = parseFloat(ord.recordset[0].total_amount || 0);
+227:       const invR = await pool.request().input('idI', sql.BigInt, req.params.id).query('SELECT TOP 1 id FROM invoices WHERE order_id=@idI');
+228:       const iid = invR.recordset[0] ? invR.recordset[0].id : null;
+229:       // Insert payment record
+230:       await pool.request()
+231:         .input('oid', sql.BigInt, req.params.id)
+232:         .input('iid', sql.BigInt, iid)
+233:         .input('cid', sql.BigInt, cid)
+234:         .input('amt', sql.Decimal(12,2), amount)
+235:         .input('pm', sql.NVarChar(50), b.payment_method || 'Other')
+236:         .input('pref', sql.NVarChar(100), b.payment_reference || null)
+237:         .input('rcv', sql.DateTime, receivedAt)
+238:         .input('notes', sql.NVarChar(500), b.notes || null)
+239:         .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
+240:       // Recalculate paid total
+241:       const sumR = await pool.request().input('idS', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS');
+242:       const totalPaid = parseFloat(sumR.recordset[0].total_paid || 0);
+243:       const isPaid = totalPaid >= orderTotal - 0.01;
+244:       const newStatus = isPaid ? 'Paid' : 'Partially Paid';
+245:       await pool.request()
+246:         .input('id', sql.BigInt, req.params.id)
+247:         .input('paidAmt', sql.Decimal(12,2), totalPaid)
+248:         .input('newStatus', sql.NVarChar(50), newStatus)
+249:         .input('paidAt', sql.DateTime, isPaid ? receivedAt : null)
+250:         .input('payMethod', sql.NVarChar(50), b.payment_method || null)
+251:         .input('payRef', sql.NVarChar(100), b.payment_reference || null)
+252:         .query("UPDATE orders SET paid_amount=@paidAmt, status=@newStatus, paid_at=ISNULL(paid_at,@paidAt), payment_method=ISNULL(payment_method,@payMethod), payment_reference=ISNULL(payment_reference,@payRef), updated_at=GETDATE() WHERE id=@id");
+253:       await pool.request().input('id', sql.BigInt, req.params.id).input('s', sql.NVarChar(50), newStatus).input('n', sql.NVarChar(500), 'Payment of $'+amount.toFixed(2)+' recorded ('+(b.payment_method||'')+')').query('INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,@s,@n)');
+254:       // If fully paid, mark invoices paid too
+255:       if (isPaid) {
+256:         await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
+257:       }
+258:       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
+259:     } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
+260:   });
+261: 
+262:   router.post('/orders/:id/lines/:lineId/update', async (req, res) => {
+263:     if (!requireAuth(req, res)) return;
+264:     try {
+265:       const pool = await getPool();
+266:       const b = req.body;
+267:       await pool.request()
+268:         .input('id', sql.BigInt, req.params.lineId)
+269:         .input('oid', sql.BigInt, req.params.id)
+270:         .input('supId', sql.BigInt, b.supplier_id ? parseInt(b.supplier_id) : null)
+271:         .input('supCost', sql.Decimal(10,2), b.supplier_cost ? parseFloat(b.supplier_cost) : null)
+272:         .input('leadDays', sql.Int, b.supplier_lead_time_days ? parseInt(b.supplier_lead_time_days) : null)
+273:         .input('lotNum', sql.NVarChar(100), b.lot_number || null)
+274:         .input('coo', sql.NVarChar(50), b.country_of_origin || null)
+275:         .input('rcvAt', sql.DateTime, b.received_at ? new Date(b.received_at) : null)
+276:         .input('serials', sql.NVarChar(sql.MAX), b.serial_numbers || null)
+277:         .input('cert8R', sql.Bit, b.cert_8130_required === '1' ? 1 : 0)
+278:         .input('cert8G', sql.Bit, b.cert_8130_received === '1' ? 1 : 0)
+279:         .input('cocR', sql.Bit, b.coc_required === '1' ? 1 : 0)
+280:         .input('cocG', sql.Bit, b.coc_received === '1' ? 1 : 0)
+281:         .query('UPDATE order_lines SET supplier_id=@supId, supplier_cost=@supCost, supplier_lead_time_days=@leadDays, lot_number=@lotNum, country_of_origin=@coo, received_at=@rcvAt, serial_numbers=@serials, cert_8130_required=@cert8R, cert_8130_received=@cert8G, coc_required=@cocR, coc_received=@cocG WHERE id=@id AND order_id=@oid');
+282:       res.redirect('/admin/orders/'+req.params.id+'?tab=lines&saved=1');
+283:     } catch(err) { console.error('Line update error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=lines&error='+encodeURIComponent(err.message)); }
+284:   });
+285: 
+286:   router.post('/orders/:id/mark-paid', async (req, res) => {
+287:     if (!requireAuth(req, res)) return;
+288:     try {
+289:       const pool = await getPool();
+290:       const b = req.body;
+291:       const note = 'Paid via '+(b.payment_method||'')+(b.payment_notes ? ' - '+b.payment_notes : '');
+292:       const paidAt = b.payment_date ? new Date(b.payment_date) : new Date();
+293:       const orderTotal = await pool.request().input('idT', sql.BigInt, req.params.id).query('SELECT total_amount FROM orders WHERE id=@idT');
+294:       const totalAmount = parseFloat(orderTotal.recordset[0] && orderTotal.recordset[0].total_amount || 0);
+295:       await pool.request()
+296:         .input('id', sql.BigInt, req.params.id)
+297:         .input('paidAt', sql.DateTime, paidAt)
+298:         .input('paidAmount', sql.Decimal(12,2), totalAmount)
+299:         .input('payMethod', sql.NVarChar(50), b.payment_method||null)
+300:         .input('payRef', sql.NVarChar(100), b.payment_notes||null)
+301:         .query("UPDATE orders SET status='Paid', paid_at=@paidAt, paid_amount=@paidAmount, payment_method=@payMethod, payment_reference=@payRef, updated_at=GETDATE() WHERE id=@id");
+302:       // Also insert into payments table
+303:       try {
+304:         const custR = await pool.request().input('idC', sql.BigInt, req.params.id).query('SELECT customer_id FROM orders WHERE id=@idC');
+305:         const cid = custR.recordset[0] && custR.recordset[0].customer_id;
+306:         const invR = await pool.request().input('idI', sql.BigInt, req.params.id).query('SELECT TOP 1 id FROM invoices WHERE order_id=@idI');
+307:         const iid = invR.recordset[0] && invR.recordset[0].id;
+308:         if (cid) {
+309:           await pool.request()
+310:             .input('oid', sql.BigInt, req.params.id)
+311:             .input('iidP', sql.BigInt, iid || null)
+312:             .input('cid', sql.BigInt, cid)
+313:             .input('amt', sql.Decimal(12,2), totalAmount)
+314:             .input('pm', sql.NVarChar(50), b.payment_method||'Other')
+315:             .input('pref', sql.NVarChar(100), b.payment_notes||null)
+316:             .input('pAt', sql.DateTime, paidAt)
+317:             .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at) VALUES (@oid,@iidP,@cid,@amt,@pm,@pref,@pAt)');
+318:         }
+319:       } catch(payErr) { console.error('Payment insert error:', payErr.message); }
+320:       await pool.request().input('id', sql.BigInt, req.params.id).input('note', sql.NVarChar(500), note).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Paid',@note)");
+321:       // Mark invoice as Paid too
+322:       await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
+323:       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
+324:     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+325:   });
+326: 
+327:   router.post('/orders/:id/generate-invoice', async (req, res) => {
+328:     if (!requireAuth(req, res)) return;
+329:     try {
+330:       const pool = await getPool();
+331:       const or = await pool.request().input('id', sql.BigInt, req.params.id)
+332:         .query('SELECT o.*, c.first_name, c.last_name, c.email, c.company FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=@id');
+333:       if (!or.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?error=Order+not+found');
+334:       const o = or.recordset[0];
+335:       const existing = await pool.request().input('oid', sql.BigInt, req.params.id).query('SELECT id FROM invoices WHERE order_id=@oid');
+336:       if (existing.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=Invoice+already+exists');
+337:       // EMPTY_GUARD - refuse to make invoice from order with no lines
+338:       const orderLineCount = await pool.request().input('oidCheck', sql.BigInt, req.params.id).query('SELECT COUNT(*) AS cnt FROM order_lines WHERE order_id=@oidCheck');
+339:       if (!orderLineCount.recordset[0].cnt) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=' + encodeURIComponent('Cannot generate invoice: this order has no line items. Add lines from the source quote first.'));
+340:       const invoiceNumber = await generateNumber('INV');
+341:       const dueDays = parseInt(req.body.due_days)||0;
+342:       const issueDate = new Date();
+343:       const dueDate = new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000);
+344:       const invResult = await pool.request()
+345:         .input('orderId', sql.BigInt, req.params.id)
+346:         .input('customerId', sql.BigInt, o.customer_id)
+347:         .input('invNumber', sql.NVarChar(20), invoiceNumber)
+348:         .input('subtotal', sql.Decimal(12,2), o.subtotal||0)
+349:         .input('shipAmt', sql.Decimal(12,2), o.shipping_cost||0)
+350:         .input('total', sql.Decimal(12,2), o.total_amount||0)
+351:         .input('balance', sql.Decimal(12,2), o.total_amount||0)
+352:         .input('issueDate', sql.Date, issueDate)
+353:         .input('dueDate', sql.Date, dueDate)
+354:         .input('notes', sql.NVarChar(sql.MAX), req.body.notes||null)
+355:         .query('INSERT INTO invoices (order_id,customer_id,invoice_number,subtotal,shipping_amount,total_amount,balance_due,issue_date,due_date,notes) OUTPUT INSERTED.id VALUES (@orderId,@customerId,@invNumber,@subtotal,@shipAmt,@total,@balance,@issueDate,@dueDate,@notes)');
+356:       const invoiceId = invResult.recordset[0].id;
+357:       const oLines = await pool.request().input('oid', sql.BigInt, req.params.id).query('SELECT * FROM order_lines WHERE order_id=@oid ORDER BY line_number');
+358:       for (const l of oLines.recordset) {
+359:         await pool.request()
+360:           .input('invId', sql.BigInt, invoiceId)
+361:           .input('olId', sql.BigInt, l.id)
+362:           .input('lineNum', sql.Int, l.line_number)
+363:           .input('desc', sql.NVarChar(255), l.item_name||l.nsn||l.part_number||'')
+364:           .input('nsn', sql.NVarChar(20), l.nsn||null)
+365:           .input('pn', sql.NVarChar(100), l.part_number||null)
+366:           .input('cond', sql.NVarChar(5), l.condition_code||null)
+367:           .input('qty', sql.Int, l.quantity_ordered)
+368:           .input('price', sql.Decimal(10,2), l.unit_price)
+369:           .input('total', sql.Decimal(12,2), l.line_total)
+370:           .query('INSERT INTO invoice_lines (invoice_id,order_line_id,line_number,description,nsn,part_number,condition_code,quantity,unit_price,line_total) VALUES (@invId,@olId,@lineNum,@desc,@nsn,@pn,@cond,@qty,@price,@total)');
+371:       }
+372:       let pdfBuffer = null;
+373:       try {
+374:         const { jsPDF } = await import('jspdf');
+375:         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+376:         const gold = [200,147,42]; const navy = [10,22,40]; const pageW = 210; const margin = 14; const contentW = pageW - margin*2;
+377:         doc.setFillColor(...navy); doc.rect(0,0,pageW,28,'F');
+378:         doc.setFillColor(...gold); doc.rect(0,28,pageW,1.5,'F');
+379:         doc.setTextColor(...gold); doc.setFontSize(15); doc.setFont('helvetica','bold');
+380:         doc.text('JUPITER ONE USA LLC', margin, 12);
+381:         doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+382:         doc.text('Aerospace & Defense Component Supplier', margin, 20);
+383:         doc.setTextColor(255,255,255); doc.setFontSize(9); doc.text('INVOICE', pageW-margin, 12, {align:'right'});
+384:         doc.setFontSize(8); doc.setTextColor(180,180,180); doc.text(invoiceNumber, pageW-margin, 20, {align:'right'});
+385:         let y = 38;
+386:         doc.setFontSize(7); doc.setTextColor(120,120,120); doc.setFont('helvetica','bold');
+387:         doc.text('BILL TO', margin, y); doc.text('INVOICE DETAILS', margin+98, y); y+=5;
+388:         doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30); doc.setFontSize(9);
+389:         doc.text(o.first_name+' '+o.last_name, margin, y);
+390:         if (o.company) { doc.setFontSize(8); doc.setTextColor(80,80,80); doc.text(o.company, margin, y+5); }
+391:         const dets = [['Invoice #:',invoiceNumber],['Order #:',o.order_number],['Issue Date:',issueDate.toLocaleDateString()],['Due Date:',dueDate.toLocaleDateString()],['Payment:','Credit Card or Wire Transfer']];
+392:         let ry = y;
+393:         dets.forEach(function(d) { doc.setFontSize(8); doc.setTextColor(120,120,120); doc.text(d[0], margin+98, ry); doc.setTextColor(30,30,30); doc.text(d[1], margin+126, ry); ry+=5; });
+394:         y = Math.max(ry, y+22)+4;
+395:         doc.setDrawColor(...gold); doc.setLineWidth(0.5); doc.line(margin, y, pageW-margin, y); y+=6;
+396:         const cols = [{x:margin},{x:margin+35},{x:margin+85},{x:margin+99},{x:margin+117},{x:margin+141}];
+397:         const hdrs = ['NSN/Part#','Description','Qty','Condition','Unit Price','Total'];
+398:         doc.setFillColor(...navy); doc.rect(margin,y-4,contentW,7,'F');
+399:         doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont('helvetica','bold');
+400:         hdrs.forEach(function(h,i) { doc.text(h, cols[i].x+1, y); }); y+=5;
+401:         doc.setFont('helvetica','normal'); let alt = false;
+402:         oLines.recordset.forEach(function(l) {
+403:           if (y>255) { doc.addPage(); y=20; }
+404:           if (alt) { doc.setFillColor(248,248,248); doc.rect(margin,y-3.5,contentW,6.5,'F'); }
+405:           alt = !alt; doc.setTextColor(30,30,30); doc.setFontSize(7.5);
+406:           doc.text(String(l.nsn||l.part_number||'-').substring(0,16), cols[0].x+1, y);
+407:           doc.text(String(l.item_name||'-').substring(0,28), cols[1].x+1, y);
+408:           doc.text(String(l.quantity_ordered), cols[2].x+1, y);
+409:           doc.text(String(l.condition_code||'NE'), cols[3].x+1, y);
+410:           doc.text('$'+parseFloat(l.unit_price||0).toFixed(2), cols[4].x+1, y);
+411:           doc.text('$'+parseFloat(l.line_total||0).toFixed(2), cols[5].x+1, y);
+412:           doc.setDrawColor(220,220,220); doc.setLineWidth(0.2); doc.line(margin,y+2.5,pageW-margin,y+2.5); y+=7;
+413:         });
+414:         y+=2;
+415:         if (o.shipping_cost) {
+416:           doc.setFillColor(240,240,240); doc.rect(margin,y-4,contentW,7,'F');
+417:           doc.setTextColor(80,80,80); doc.setFontSize(8);
+418:           doc.text('Shipping:', cols[4].x+1, y); doc.text('$'+parseFloat(o.shipping_cost).toFixed(2), cols[5].x+1, y); y+=8;
+419:         }
+420:         doc.setFillColor(...gold); doc.rect(margin,y-4,contentW,7,'F');
+421:         doc.setTextColor(...navy); doc.setFontSize(9); doc.setFont('helvetica','bold');
+422:         doc.text('TOTAL DUE', cols[4].x+1, y); doc.text('$'+parseFloat(o.total_amount||0).toFixed(2), cols[5].x+1, y); y+=12;
+423:         if (req.body.notes) { doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100); doc.text('Notes: '+req.body.notes.substring(0,120), margin, y); y+=8; }
+424:         doc.setFillColor(...navy); doc.rect(0,282,pageW,15,'F');
+425:         doc.setFontSize(7); doc.setTextColor(170,170,170);
+426:         doc.text('Jupiter One USA LLC  |  400 N Tampa St, Suite 1550, Tampa FL  |  +1 (347) 821-7412  |  DTorchia@jupiteroneusa.com', pageW/2, 288, {align:'center'});
+427:         doc.setTextColor(130,130,130);
+428:         doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All sales non-cancellable. Thank you for your business.', pageW/2, 293, {align:'center'});
+429:         pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+430:       } catch(pdfErr) { console.error('Invoice PDF error:', pdfErr.message); }
+431:       try {
+432:         const nodemailer = await import('nodemailer');
+433:         const transporter = nodemailer.default.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT)||587, secure: false, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+434:         const emailHtml = '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;"><div style="background:#0a1628;padding:20px;border-bottom:3px solid #c8932a;"><h2 style="color:#c8932a;margin:0;">JUPITER ONE USA LLC</h2><p style="color:#aaa;margin:4px 0 0;font-size:12px;">Aerospace &amp; Defense Component Supplier</p></div><div style="background:#fff;padding:28px;"><p>Hi '+o.first_name+',</p><p>Please find your invoice <strong>'+invoiceNumber+'</strong> for order <strong>'+o.order_number+'</strong> attached.</p><table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;"><tr><td style="color:#888;padding:4px 0;width:120px;">Invoice #</td><td><strong>'+invoiceNumber+'</strong></td></tr><tr><td style="color:#888;padding:4px 0;">Order #</td><td>'+o.order_number+'</td></tr><tr><td style="color:#888;padding:4px 0;">Total Due</td><td style="font-weight:bold;color:#c8932a;font-size:1.1rem;">$'+parseFloat(o.total_amount||0).toFixed(2)+'</td></tr><tr><td style="color:#888;padding:4px 0;">Due Date</td><td>'+dueDate.toLocaleDateString()+'</td></tr></table><p style="font-size:13px;color:#555;">Payment accepted via Credit Card or Wire Transfer (3.5% CC fee). Please contact us at DTorchia@jupiteroneusa.com to arrange payment.</p></div><div style="background:#0a1628;padding:14px 20px;"><p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412</p></div></div>';
+435:         const mailOpts = { from: '"Jupiter One USA" <DTorchia@jupiteroneusa.com>', to: o.email, bcc: 'DTorchia@jupiteroneusa.com', subject: 'Invoice '+invoiceNumber+' — Jupiter One USA', html: emailHtml };
+436:         if (pdfBuffer) mailOpts.attachments = [{ filename: 'Invoice-'+invoiceNumber+'.pdf', content: pdfBuffer, contentType: 'application/pdf' }];
+437:         await transporter.sendMail(mailOpts);
+438:         console.log('Invoice email sent:', invoiceNumber);
+439:       } catch(emailErr) { console.error('Invoice email error:', emailErr.message); }
+440:       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
+441:     } catch(err) {
+442:       console.error('Invoice generate error:', err);
+443:       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message));
+444:     }
+445:   });
+446: 
+447:   // [Rewire 4] POST /orders/:id/create-supplier-pos-from-order
+448:   // Groups order_line_sources by supplier_id, creates one Draft PO per supplier.
+449:   router.post('/orders/:id/create-supplier-pos-from-order', async (req, res) => {
+450:     if (!requireAuth(req, res)) return;
+451:     try {
+452:       const pool = await getPool();
+453:       
+454:       // Load order info
+455:       const oR = await pool.request().input('id', sql.BigInt, req.params.id)
+456:         .query('SELECT * FROM orders WHERE id=@id');
+457:       if (!oR.recordset.length) return res.redirect('/admin/orders/' + req.params.id + '?error=Order+not+found');
+458:       const order = oR.recordset[0];
+459:       
+460:       // Load all order_line_sources for this order's lines
+461:       const sourcesR = await pool.request().input('oid', sql.BigInt, req.params.id).query(`
+462:         SELECT ols.*, ol.line_number AS oline_num, ol.nsn, ol.part_number, ol.item_name, ol.condition_code,
+463:                s.company_name AS supplier_name
+464:         FROM order_line_sources ols
+465:         INNER JOIN order_lines ol ON ol.id = ols.order_line_id
+466:         INNER JOIN suppliers s ON s.id = ols.supplier_id
+467:         WHERE ol.order_id = @oid
+468:           AND ols.supplier_po_line_id IS NULL
+469:         ORDER BY ols.supplier_id, ol.line_number, ols.sort_order
+470:       `);
+471:       
+472:       if (!sourcesR.recordset.length) {
+473:         return res.redirect('/admin/orders/' + req.params.id + '?error=No+pending+sources+to+PO+(maybe+all+already+PO%27d)');
+474:       }
+475:       
+476:       // Group by supplier_id
+477:       const bySupplier = {};
+478:       sourcesR.recordset.forEach(function(s) {
+479:         if (!bySupplier[s.supplier_id]) bySupplier[s.supplier_id] = [];
+480:         bySupplier[s.supplier_id].push(s);
+481:       });
+482:       
+483:       const supplierIds = Object.keys(bySupplier);
+484:       const created = [];
+485:       
+486:       // Need numbering helper
+487:       const numberingMod = await import('../db/numbering.js');
+488:       const generateNumber = numberingMod.generateNumber;
+489:       
+490:       // Create one PO per supplier
+491:       for (const sid of supplierIds) {
+492:         const lines = bySupplier[sid];
+493:         const supplierName = lines[0].supplier_name;
+494:         
+495:         let subtotal = 0;
+496:         lines.forEach(function(l) { subtotal += parseFloat(l.unit_cost || 0) * (l.allocated_qty || 0); });
+497:         
+498:         const poNumber = await generateNumber('PO');
+499:         const phR = await pool.request()
+500:           .input('oid', sql.BigInt, req.params.id)
+501:           .input('sid', sql.BigInt, sid)
+502:           .input('pn', sql.NVarChar(30), poNumber)
+503:           .input('sub', sql.Decimal(12,2), subtotal)
+504:           .input('tot', sql.Decimal(12,2), subtotal)
+505:           .input('notes', sql.NVarChar(sql.MAX), 'Auto-generated from order ' + order.order_number)
+506:           .query("INSERT INTO supplier_pos (order_id, supplier_id, po_number, status, subtotal, shipping_cost, total, notes) OUTPUT INSERTED.id VALUES (@oid, @sid, @pn, 'Draft', @sub, 0, @tot, @notes)");
+507:         const poId = phR.recordset[0].id;
+508:         
+509:         let lineNum = 1;
+510:         for (const l of lines) {
+511:           const lineTotal = parseFloat(l.unit_cost || 0) * (l.allocated_qty || 0);
+512:           const polR = await pool.request()
+513:             .input('poid', sql.BigInt, poId)
+514:             .input('olid', sql.BigInt, l.order_line_id)
+515:             .input('ln', sql.Int, lineNum++)
+516:             .input('nsn', sql.NVarChar(20), l.nsn)
+517:             .input('pn2', sql.NVarChar(100), l.part_number)
+518:             .input('item', sql.NVarChar(255), l.item_name)
+519:             .input('cond', sql.NVarChar(5), l.condition_code)
+520:             .input('qty', sql.Int, l.allocated_qty)
+521:             .input('cost', sql.Decimal(10,2), l.unit_cost)
+522:             .input('total', sql.Decimal(12,2), lineTotal)
+523:             .input('lead', sql.Int, l.supplier_lead_time_days || null)
+524:             .query('INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, line_total, expected_lead_time_days) OUTPUT INSERTED.id VALUES (@poid, @olid, @ln, @nsn, @pn2, @item, @cond, @qty, @cost, @total, @lead)');
+525:           
+526:           // Link the order_line_source to the new supplier_po_line
+527:           await pool.request()
+528:             .input('olsId', sql.BigInt, l.id)
+529:             .input('polId', sql.BigInt, polR.recordset[0].id)
+530:             .query('UPDATE order_line_sources SET supplier_po_line_id=@polId, updated_at=GETDATE() WHERE id=@olsId');
+531:         }
+532:         
+533:         created.push({ id: poId, number: poNumber, supplier: supplierName, line_count: lines.length });
+534:       }
+535:       
+536:       const summary = created.map(function(c) { return c.number + ' (' + c.supplier + ', ' + c.line_count + ' lines)'; }).join(', ');
+537:       res.redirect('/admin/orders/' + req.params.id + '?saved=1&pos_created=' + encodeURIComponent(summary));
+538:     } catch(err) {
+539:       console.error('Create supplier POs error:', err);
+540:       res.redirect('/admin/orders/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+541:     }
+542:   });
+543: 
+544: }
+545: 
+
+
+========== quote ACCEPT handler (routes/quotes.js) ==========
+
+(this is where quote_line_sources -> order_line_sources happens)
+
+191: router.post('/:id/accept', requireCustomer, async (req, res) => {
+192:   try {
+193:     const pool = await getPool();
+194: 
+195:     const result = await pool.request()
+196:       .input('id',         sql.BigInt, req.params.id)
+197:       .input('customerId', sql.BigInt, req.customerId)
+198:       .query(`SELECT * FROM quotes WHERE id = @id AND customer_id = @customerId AND status = 'Sent'`);
+199: 
+200:     if (!result.recordset.length)
+201:       return res.status(404).json({ error: 'Quote not found or no longer available.' });
+202: 
+203:     // Phase A1: Block accept if expired or already finalized
+204:       const _qCheck = await pool.request().input('id', sql.BigInt, req.params.id)
+205:         .query("SELECT valid_until, status FROM quotes WHERE id=@id");
+206:       if (!_qCheck.recordset.length) return res.status(404).json({ error: 'Quote not found' });
+207:       const _qq = _qCheck.recordset[0];
+208:       if (_qq.status === 'Accepted') return res.status(400).json({ error: 'Quote has already been accepted' });
+209:       if (_qq.status === 'Rejected') return res.status(400).json({ error: 'Quote has been rejected and cannot be accepted' });
+210:       if (_qq.status === 'Expired') return res.status(410).json({ error: 'Quote has expired - please contact us for a new quote' });
+211:       if (_qq.valid_until && new Date(_qq.valid_until) < new Date()) {
+212:         await pool.request().input('id', sql.BigInt, req.params.id)
+213:           .query("UPDATE quotes SET status='Expired', expired_at=GETDATE(), updated_at=GETDATE() WHERE id=@id");
+214:         return res.status(410).json({ error: 'Quote has expired - please contact us for a new quote' });
+215:       }
+216:       await pool.request()
+217:       .input('id', sql.BigInt, req.params.id)
+218:       .query(`UPDATE quotes SET status = 'Accepted', accepted_at = GETDATE(), updated_at = GETDATE() WHERE id = @id`);
+219: 
+220:     // Auto-create order from accepted quote
+221:     try {
+222:       const q = result.recordset[0];
+223:       const orderNumber = await generateNumber('ORD');
+224:       const orderResult = await pool.request()
+225:         .input('quoteId',      sql.BigInt,        req.params.id)
+226:         .input('rfqId',        sql.BigInt,        q.rfq_id)
+227:         .input('customerId',   sql.BigInt,        req.customerId)
+228:         .input('orderNumber',  sql.NVarChar(20),  orderNumber)
+229:         .input('subtotal',     sql.Decimal(12,2), q.subtotal || q.total_amount)
+230:         .input('totalAmount',  sql.Decimal(12,2), q.total_amount)
+231:         .input('paymentTerms', sql.NVarChar(100), q.payment_terms || 'Credit Card or Wire Transfer')
+232:         .query(`INSERT INTO orders (quote_id,rfq_id,customer_id,order_number,subtotal,total_amount)
+233:           OUTPUT INSERTED.id, INSERTED.order_number
+234:           VALUES (@quoteId,@rfqId,@customerId,@orderNumber,@subtotal,@totalAmount)`);
+235:       const order = orderResult.recordset[0];
+236:       const qLines = await pool.request().input('qid', sql.BigInt, req.params.id)
+237:         .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+238:       for (const l of qLines.recordset) {
+239:         const olR = await pool.request()
+240:           .input('orderId', sql.BigInt,        order.id)
+241:           .input('qlId',    sql.BigInt,        l.id)
+242:           .input('lineNum', sql.Int,           l.line_number)
+243:           .input('nsn',     sql.NVarChar(20),  l.nsn || null)
+244:           .input('pn',      sql.NVarChar(100), l.part_number || null)
+245:           .input('name',    sql.NVarChar(255), l.item_name || null)
+246:           .input('cond',    sql.NVarChar(5),   l.condition_code || null)
+247:           .input('qty',     sql.Int,           l.quantity)
+248:           .input('price',   sql.Decimal(10,2), l.unit_price)
+249:           .input('total',   sql.Decimal(12,2), l.line_total)
+250:           .query(`INSERT INTO order_lines (order_id,quote_line_id,line_number,nsn,part_number,item_name,condition_code,quantity_ordered,unit_price,line_total)
+251:             OUTPUT INSERTED.id
+252:             VALUES (@orderId,@qlId,@lineNum,@nsn,@pn,@name,@cond,@qty,@price,@total)`);
+253:         // [Rewire 2] Copy quote_line_sources -> order_line_sources for this order line
+254:         try {
+255:           const newOrderLineId = olR && olR.recordset && olR.recordset[0] && olR.recordset[0].id;
+256:           if (newOrderLineId && l.id) {
+257:             const srcR = await pool.request().input('qli', sql.BigInt, l.id)
+258:               .query('SELECT * FROM quote_line_sources WHERE quote_line_id=@qli ORDER BY sort_order');
+259:             for (const _s of srcR.recordset) {
+260:               await pool.request()
+261:                 .input('oli', sql.BigInt, newOrderLineId)
+262:                 .input('qlsi', sql.BigInt, _s.id)
+263:                 .input('sid', sql.BigInt, _s.supplier_id)
+264:                 .input('aq', sql.Int, _s.allocated_qty)
+265:                 .input('uc', sql.Decimal(10,2), _s.unit_cost)
+266:                 .input('ld', sql.Int, _s.supplier_lead_time_days)
+267:                 .input('h81r', sql.Bit, _s.has_8130 ? 1 : 0)
+268:                 .input('hcocr', sql.Bit, _s.has_coc ? 1 : 0)
+269:                 .input('htracr', sql.Bit, _s.has_trace ? 1 : 0)
+270:                 .input('nt', sql.NVarChar(500), _s.notes)
+271:                 .input('so', sql.Int, _s.sort_order)
+272:                 .query('INSERT INTO order_line_sources (order_line_id, quote_line_source_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, has_8130_required, has_coc_required, has_trace_required, notes, sort_order) VALUES (@oli, @qlsi, @sid, @aq, @uc, @ld, @h81r, @hcocr, @htracr, @nt, @so)');
+273:             }
+274:           }
+275:         } catch(srcErr) { console.error('Copy sources error:', srcErr.message); }
+276:       }
+277:       await pool.request().input('oid', sql.BigInt, order.id)
+278:         .query(`INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Confirmed','Auto-created from accepted quote')`);
+279:       const custR = await pool.request().input('cid', sql.BigInt, req.customerId)
+280:         .query('SELECT first_name, last_name, email FROM customers WHERE id=@cid');
+281:       if (custR.recordset.length) {
+282:         const { sendOrderConfirmation } = await import('../services/mailer.js');
+283:         sendOrderConfirmation({ customer: custR.recordset[0], order: { ...order, total_amount: q.total_amount, payment_terms: q.payment_terms } }).catch(console.error);
+284:       }
+285:       console.log('Order auto-created:', orderNumber);
+286:     } catch(orderErr) { console.error('Auto-order error:', orderErr.message); }
+287: 
+288:     await logAudit({
+289:       userType: 'customer', userId: req.customerId,
+290:       action: 'accepted', entityType: 'quote', entityId: req.params.id,
+291:       summary: `Customer accepted quote ${result.recordset[0].quote_number}`,
+292:       ipAddress: getIp(req),
+293:     });
+294: 
+295:     res.json({ success: true, message: 'Quote accepted. We will confirm your order shortly.' });
+296:   } catch (err) {
+297:     res.status(500).json({ error: 'Failed to accept quote.' });
+298:   }
+299: });
+
+========== SQL: latest order + its lines + sources ==========
+
+-- Run these in SSMS to see what's actually in the latest order:
+
+-- Q1: latest 3 orders
+SELECT TOP 3 id, order_number, status, total, created_at
+FROM orders ORDER BY id DESC;
+
+-- Q2: order lines + source data for newest order
+DECLARE @oid BIGINT = (SELECT TOP 1 id FROM orders ORDER BY id DESC);
+SELECT 'Order Lines' AS section, id, line_number, nsn, part_number, quantity_ordered,
+       customer_unit_price, supplier_cost, supplier_id, lead_time_text
+FROM order_lines WHERE order_id = @oid;
+
+SELECT 'Order Line Sources' AS section, ols.order_line_id, ols.supplier_id,
+       ols.allocated_qty, ols.unit_cost, ols.supplier_lead_time_days,
+       ols.supplier_po_line_id, ols.is_selected,
+       s.company_name AS supplier_name
+FROM order_line_sources ols
+LEFT JOIN suppliers s ON s.id = ols.supplier_id
+INNER JOIN order_lines ol ON ol.id = ols.order_line_id
+WHERE ol.order_id = @oid;
+
+-- Q3: most recent PO + its lines
+SELECT TOP 1 * FROM supplier_pos ORDER BY id DESC;
+DECLARE @pid BIGINT = (SELECT TOP 1 id FROM supplier_pos ORDER BY id DESC);
+SELECT id, line_number, order_line_id, nsn, part_number, quantity, unit_cost,
+       expected_lead_time_days, line_total
+FROM supplier_po_lines WHERE supplier_po_id = @pid;
+
