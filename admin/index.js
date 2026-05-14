@@ -1688,6 +1688,40 @@ export async function buildAdminRouter() {
       const q = qr.recordset[0];
       const lines = await pool.request().input('id', sql.BigInt, req.params.id)
         .query('SELECT * FROM quote_lines WHERE quote_id=@id ORDER BY line_number');
+      // QUOTE_SOURCES_SUBROW_V1
+      const _qSources = await pool.request().input('id2', sql.BigInt, req.params.id).query('SELECT qls.quote_line_id, qls.supplier_id, qls.allocated_qty, qls.unit_cost, qls.supplier_lead_time_days, qls.lead_time_text, qls.has_8130, qls.has_coc, qls.has_trace, s.company_name AS supplier_name FROM quote_line_sources qls INNER JOIN quote_lines ql ON ql.id = qls.quote_line_id LEFT JOIN suppliers s ON s.id = qls.supplier_id WHERE ql.quote_id = @id2 ORDER BY qls.quote_line_id, qls.sort_order');
+      const _sourcesByLine = {};
+      _qSources.recordset.forEach(function(src) { if (!_sourcesByLine[src.quote_line_id]) _sourcesByLine[src.quote_line_id] = []; _sourcesByLine[src.quote_line_id].push(src); });
+      const _renderSourceSubRow = function(srcs) {
+        if (!srcs || !srcs.length) { return '<tr><td colspan="10" style="padding:6px 12px;background:rgba(200,147,42,0.04);font-size:.72rem;color:#7a8a9a;border-top:none;border-bottom:1px solid #1e2d42;font-style:italic;">No supplier sourcing on this line</td></tr>'; }
+        var html = '';
+        html += '<tr><td colspan="10" style="padding:0;background:rgba(200,147,42,0.04);border-top:none;border-bottom:1px solid #1e2d42;">';
+        html += '<div style="padding:6px 14px;font-size:.65rem;letter-spacing:.12em;color:#c8932a;text-transform:uppercase;">Sourcing (Internal)</div>';
+        html += '<table style="width:100%;margin:0;"><thead><tr style="background:transparent;">';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Supplier</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Qty</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Unit Cost</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Lead Time</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Certs</th>';
+        html += '</tr></thead><tbody>';
+        srcs.forEach(function(src) {
+          var leadText = src.lead_time_text || (src.supplier_lead_time_days ? src.supplier_lead_time_days + ' days' : '\u2014');
+          var certs = '';
+          if (src.has_8130) certs += '<span style="display:inline-block;padding:2px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;font-size:.65rem;margin-right:3px;">8130</span>';
+          if (src.has_coc) certs += '<span style="display:inline-block;padding:2px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;font-size:.65rem;margin-right:3px;">CoC</span>';
+          if (src.has_trace) certs += '<span style="display:inline-block;padding:2px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;font-size:.65rem;">Trace</span>';
+          if (!certs) certs = '<span style="color:#7a8a9a;">\u2014</span>';
+          html += '<tr style="background:transparent;">';
+          html += '<td style="padding:4px 12px;font-size:.78rem;color:#eef1f5;">' + (src.supplier_name || '\u2014') + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;">' + (src.allocated_qty || 0) + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;color:#c8932a;font-weight:600;">$' + parseFloat(src.unit_cost || 0).toFixed(2) + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;color:#7a8a9a;">' + leadText + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;">' + certs + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></td></tr>';
+        return html;
+      };
       const rfqLog = await pool.request().input('rfqIdLog', sql.BigInt, q.rfq_id)
         .query('SELECT * FROM rfq_status_log WHERE rfq_id=@rfqIdLog ORDER BY created_at ASC');
       const logRows = rfqLog.recordset.map(l => `<tr>
@@ -1706,7 +1740,7 @@ export async function buildAdminRouter() {
         <td style="font-weight:600;">${parseFloat(l.line_total||0).toFixed(2)}</td>
         <td style="color:#7a8a9a;">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '—')}</td>
         <td style="color:${parseFloat(l.margin_pct||0)>=20?'#4caf50':'#e05050'};">${parseFloat(l.margin_pct||0).toFixed(1)}%</td>
-      </tr>`).join('');
+      </tr>${_renderSourceSubRow(_sourcesByLine[l.id])}`).join('');
       res.send(page(`Quote ${q.quote_number}`,'quotes',`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">Quote ${q.quote_number}</div>
