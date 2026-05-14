@@ -1,3 +1,4 @@
+// SUPPLIER_DROPDOWN_V1
 // SUPERSEDED_EDIT_V1
 // EDIT_RESEND_V1
 // admin/index.js
@@ -2127,6 +2128,9 @@ export async function buildAdminRouter() {
       const srcsR = await pool.request().input('qid2', sql.BigInt, req.params.id).query('SELECT qls.*, s.company_name AS supplier_name FROM quote_line_sources qls LEFT JOIN suppliers s ON s.id=qls.supplier_id INNER JOIN quote_lines ql ON ql.id=qls.quote_line_id WHERE ql.quote_id=@qid2 ORDER BY qls.quote_line_id, qls.sort_order');
       const srcsByLine = {};
       srcsR.recordset.forEach(function(src) { if (!srcsByLine[src.quote_line_id]) srcsByLine[src.quote_line_id] = []; srcsByLine[src.quote_line_id].push(src); });
+      // SUPPLIER_DROPDOWN_V1: load suppliers for dropdown
+      const _suppliersR = await pool.request().query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
+      const _supplierOptions = _suppliersR.recordset.map(function(s2) { return '<option value="' + s2.id + '">' + (s2.company_name || ('Supplier ' + s2.id)).replace(/</g,'&lt;') + '</option>'; }).join('');
       var html = '';
       html += '<div class="page-title">Edit Quote ' + q.quote_number + ' &mdash; v' + (q.version || 1) + ' \u2192 v' + ((q.version || 1) + 1) + '</div>';
       html += '<div class="page-sub">Editing creates a new version. Customer will receive an email with the revised PDF.</div>';
@@ -2160,7 +2164,7 @@ export async function buildAdminRouter() {
           var rk = l.id + '_' + sIdx;
           html += '<div data-srcrow="' + rk + '" style="display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;">';
           html += '<input type="hidden" name="line_' + l.id + '_src_' + sIdx + '[id]" value="' + src.id + '"/>';
-          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier ID</div><input type="number" name="line_' + l.id + '_src_' + sIdx + '[supplier_id]" value="' + src.supplier_id + '" required title="' + (src.supplier_name || '') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/><div style="font-size:.65rem;color:#7a8a9a;margin-top:2px;">' + (src.supplier_name || 'unknown') + '</div></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><select name="line_' + l.id + '_src_' + sIdx + '[supplier_id]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;">' + _supplierOptions.replace("value=\"" + src.supplier_id + "\"", "value=\"" + src.supplier_id + "\" selected") + '</select></div>';
           html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="line_' + l.id + '_src_' + sIdx + '[allocated_qty]" value="' + (src.allocated_qty || 1) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
           html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="line_' + l.id + '_src_' + sIdx + '[unit_cost]" value="' + parseFloat(src.unit_cost || 0).toFixed(2) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
           html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="line_' + l.id + '_src_' + sIdx + '[lead_time_text]" value="' + ((src.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
@@ -2188,6 +2192,8 @@ export async function buildAdminRouter() {
       html += '<button type="submit" class="btn btn-gold">Save & Resend</button>';
       // SOURCES_FULL_EDIT_V1 - JS for adding new source rows
       html += '<script>';
+      html += 'window.__SUPPLIERS = ' + JSON.stringify(_suppliersR.recordset) + ';';
+      html += 'window.__supplierOptionsHTML = function(sel) { return window.__SUPPLIERS.map(function(s) { var name = (s.company_name||"").replace(/</g,"&lt;"); return "<option value=\\"" + s.id + "\\"" + (sel == s.id ? " selected" : "") + ">" + name + "</option>"; }).join(""); };';
       html += 'window.addSrcRow = function(lineId) {';
       html += '  var container = document.getElementById("srcs-line-" + lineId);';
       html += '  if (!container) return;';
@@ -2200,7 +2206,7 @@ export async function buildAdminRouter() {
       html += '  div.style.cssText = "display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;";';
       html += '  div.innerHTML =';
       html += '    \'<input type="hidden" name="\' + prefix + \'[id]" value=""/>\' +';
-      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier ID</div><input type="number" name="\' + prefix + \'[supplier_id]" required placeholder="id" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><select name="\' + prefix + \'[supplier_id]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;">\' + window.__supplierOptionsHTML() + \'</select></div>\' +';
       html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="\' + prefix + \'[allocated_qty]" value="1" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
       html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="\' + prefix + \'[unit_cost]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
       html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="\' + prefix + \'[lead_time_text]" placeholder="5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
