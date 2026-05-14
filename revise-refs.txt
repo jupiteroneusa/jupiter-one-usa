@@ -1,0 +1,46 @@
+========== Existing revise/reissue routes ==========
+
+--- admin/index.js ---
+  L1339: .query("SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at, q.rejected_at, q.rejection_reason, q.expired_at, q.parent_quote_id, q.reissued_count, h.
+  L1748: ${q.status==='Expired' || q.status==='Rejected' ? `<button onclick="reissueQuoteDialog(${q.id})" class="btn btn-sm" style="background:#4caf50;color:#000;font-weight:600;">&#x21BB; 
+  L1749: ${q.status!=='Accepted' ? `<button onclick="reviseQuoteDialog(${q.id})" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">&#x270F; Revise &amp; Resend</butt
+  L1759: <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}${(() => { if (q.status==='Sent' && q.valid_until) {  const days = 
+  L1787: function reissueQuoteDialog(id) {
+  L1788: const days = prompt('Reissue this quote: how many days valid from today?', '30');
+  L1790: const f = document.createElement('form'); f.method='POST'; f.action='/admin/quotes/'+id+'/reissue';
+  L1794: function reviseQuoteDialog(id) {
+  L1795: if (!confirm('This will mark the current quote as Superseded and open the requote builder for the original RFQ. Continue?')) return;
+  L1796: const f = document.createElement('form'); f.method='POST'; f.action='/admin/quotes/'+id+'/revise';
+  L2118: // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
+  L2119: router.post('/quotes/:id/reissue', async (req, res) => {
+  L2128: .query("UPDATE quotes SET status='Sent', valid_until=@vu, expired_at=NULL, rejected_at=NULL, rejection_reason=NULL, reissued_count=ISNULL(reissued_count,0)+1, updated_at=GETDATE() 
+  L2129: res.redirect('/admin/quotes/'+req.params.id+'?reissued=1');
+  L2133: // Phase B3: Revise quote - mark old quote Superseded, redirect admin to new quote builder
+  L2134: router.post('/quotes/:id/revise', async (req, res) => {
+  L2141: // Mark current quote as Superseded (keep history)
+  L2143: .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
+  L2149: // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
+  L2150: router.post('/quotes/:id/reissue', async (req, res) => {
+  L2159: .query("UPDATE quotes SET status='Sent', valid_until=@vu, expired_at=NULL, rejected_at=NULL, rejection_reason=NULL, reissued_count=ISNULL(reissued_count,0)+1, updated_at=GETDATE() 
+  L2160: res.redirect('/admin/quotes/'+req.params.id+'?reissued=1');
+  L2164: // Phase B3: Revise quote - mark old quote Superseded, redirect admin to new quote builder
+  L2165: router.post('/quotes/:id/revise', async (req, res) => {
+  L2172: // Mark current quote as Superseded (keep history)
+  L2174: .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
+
+--- admin/quoteBuilder.js ---
+
+
+========== SQL: check quote-related columns ==========
+
+-- Run in SSMS to check what version/revision columns already exist:
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME IN ('quotes', 'quote_versions', 'quote_history')
+  AND (COLUMN_NAME LIKE '%version%'
+       OR COLUMN_NAME LIKE '%revis%'
+       OR COLUMN_NAME LIKE '%supersed%'
+       OR COLUMN_NAME LIKE '%reissu%'
+       OR COLUMN_NAME LIKE '%previous%'
+       OR COLUMN_NAME LIKE '%parent%')
+ORDER BY TABLE_NAME, COLUMN_NAME;

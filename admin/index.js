@@ -1,3 +1,4 @@
+// EDIT_RESEND_V1
 // admin/index.js
 import { Router } from 'express';
 import { mountOrderRoutes } from './orderRoutes.js';
@@ -1724,6 +1725,9 @@ export async function buildAdminRouter() {
       };
       const rfqLog = await pool.request().input('rfqIdLog', sql.BigInt, q.rfq_id)
         .query('SELECT * FROM rfq_status_log WHERE rfq_id=@rfqIdLog ORDER BY created_at ASC');
+      // EDIT_RESEND_V1 load versions
+      const versionsR = await pool.request().input('idv', sql.BigInt, req.params.id).query('SELECT id, version, revised_at, revised_by, revision_note, email_sent, subtotal, total FROM quote_versions WHERE quote_id=@idv ORDER BY version DESC');
+      const versionRows = versionsR.recordset.map(function(v) { return '<tr><td style="color:#c8932a;font-weight:600;">v' + v.version + '</td><td>' + new Date(v.revised_at).toLocaleString() + '</td><td>' + (v.revised_by || 'admin') + '</td><td style="font-weight:600;">$' + parseFloat(v.total || 0).toLocaleString('en-US', {minimumFractionDigits: 2}) + '</td><td style="color:#7a8a9a;">' + (v.revision_note || '\u2014') + '</td><td>' + (v.email_sent ? '<span style="color:#4caf50;">Sent</span>' : '<span style="color:#7a8a9a;">No</span>') + '</td></tr>'; }).join('');
       const logRows = rfqLog.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
         <td>${statusBadge(l.new_status)}</td>
@@ -1745,8 +1749,8 @@ export async function buildAdminRouter() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">Quote ${q.quote_number}</div>
           <div style="display:flex;gap:8px;">
-          ${q.status==='Expired' || q.status==='Rejected' ? `<button onclick="reissueQuoteDialog(${q.id})" class="btn btn-sm" style="background:#4caf50;color:#000;font-weight:600;">&#x21BB; Reissue Quote</button>` : ''}
-          ${q.status!=='Accepted' ? `<button onclick="reviseQuoteDialog(${q.id})" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">&#x270F; Revise &amp; Resend</button>` : ''}
+          
+          ${q.status!=='Accepted' ? `<a href="/admin/quotes/${q.id}/edit" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;text-decoration:none;">&#x270F; Edit &amp; Resend</a>` : ''}
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
         </div>
@@ -1779,23 +1783,14 @@ export async function buildAdminRouter() {
         ${q.notes?`<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">${q.notes}</div></div>`:''}
         ${q.personal_message?`<div class="card"><div class="card-header">Personal Message</div><div class="card-body" style="color:#7a8a9a;font-style:italic;">&ldquo;${q.personal_message}&rdquo;</div></div>`:''}
         <div class="card">
+          <div class="card"><div class="card-header">Revision History (Current: v${q.version || 1})</div><table><thead><tr><th>Version</th><th>Date</th><th>By</th><th>Total</th><th>Note</th><th>Emailed</th></tr></thead><tbody>${versionRows || '<tr><td colspan="6" style="color:#7a8a9a;text-align:center;padding:16px;">Original version only \u2014 no revisions yet</td></tr>'}</tbody></table></div>
+        <div class="card">
           <div class="card-header">RFQ Status History</div>
           <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
           <tbody>${logRows||'<tr><td colspan="3" style="color:#7a8a9a;text-align:center;padding:16px;">No history yet</td></tr>'}</tbody></table>
         </div>
         <script>
-          function reissueQuoteDialog(id) {
-            const days = prompt('Reissue this quote: how many days valid from today?', '30');
-            if (!days) return;
-            const f = document.createElement('form'); f.method='POST'; f.action='/admin/quotes/'+id+'/reissue';
-            const i = document.createElement('input'); i.type='hidden'; i.name='valid_days'; i.value=days; f.appendChild(i);
-            document.body.appendChild(f); f.submit();
-          }
-          function reviseQuoteDialog(id) {
-            if (!confirm('This will mark the current quote as Superseded and open the requote builder for the original RFQ. Continue?')) return;
-            const f = document.createElement('form'); f.method='POST'; f.action='/admin/quotes/'+id+'/revise';
-            document.body.appendChild(f); f.submit();
-          }
+          
         </script>
       `));
     } catch(err) {
@@ -2115,6 +2110,166 @@ export async function buildAdminRouter() {
 
   mountOrderRoutes(router, requireAuth, page);
   mountSupplierRoutes(router, requireAuth, page);
+  // EDIT_RESEND_V1 ============================================================
+  // GET /admin/quotes/:id/edit  — show pre-filled edit form for an existing quote
+  router.get('/quotes/:id/edit', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qr = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT q.*, c.first_name+\' \'+c.last_name AS customer_name, c.email, c.company FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=@id');
+      if (!qr.recordset.length) return res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">Quote not found.</div>'));
+      const q = qr.recordset[0];
+      if (q.status === 'Accepted') {
+        return res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">Cannot edit an accepted quote. To fix typos on accepted quotes, use the order page Lines tab.</div><div style="margin-top:12px;"><a href="/admin/quotes/' + q.id + '" class="btn btn-outline">&larr; Back to Quote</a></div>'));
+      }
+      const linesR = await pool.request().input('qid', sql.BigInt, req.params.id).query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      const srcsR = await pool.request().input('qid2', sql.BigInt, req.params.id).query('SELECT qls.*, s.company_name AS supplier_name FROM quote_line_sources qls LEFT JOIN suppliers s ON s.id=qls.supplier_id INNER JOIN quote_lines ql ON ql.id=qls.quote_line_id WHERE ql.quote_id=@qid2 ORDER BY qls.quote_line_id, qls.sort_order');
+      const srcsByLine = {};
+      srcsR.recordset.forEach(function(src) { if (!srcsByLine[src.quote_line_id]) srcsByLine[src.quote_line_id] = []; srcsByLine[src.quote_line_id].push(src); });
+      var html = '';
+      html += '<div class="page-title">Edit Quote ' + q.quote_number + ' &mdash; v' + (q.version || 1) + ' \u2192 v' + ((q.version || 1) + 1) + '</div>';
+      html += '<div class="page-sub">Editing creates a new version. Customer will receive an email with the revised PDF.</div>';
+      html += '<form method="POST" action="/admin/quotes/' + q.id + '/edit-save">';
+      html += '<div class="card"><div class="card-body">';
+      html += '<div class="detail-grid">';
+      html += '<div><div class="detail-label">Valid Until</div><input type="date" name="valid_until" value="' + (q.valid_until ? new Date(q.valid_until).toISOString().substring(0,10) : '') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+      html += '<div><div class="detail-label">Payment Terms</div><input type="text" name="payment_terms" value="' + (q.payment_terms || '').replace(/"/g, '&quot;') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+      html += '</div>';
+      html += '</div></div>';
+      html += '<div class="card" style="margin-top:14px;"><div class="card-header">Line Items</div><div class="card-body">';
+      linesR.recordset.forEach(function(l, idx) {
+        html += '<div style="margin-bottom:14px;padding:12px;background:#0a1628;border:1px solid #1e2d42;border-radius:4px;">';
+        html += '<input type="hidden" name="lines[' + idx + '][id]" value="' + l.id + '"/>';
+        html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">';
+        html += '<div><div class="detail-label">NSN</div><input type="text" name="lines[' + idx + '][nsn]" value="' + ((l.nsn || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Part Number</div><input type="text" name="lines[' + idx + '][part_number]" value="' + ((l.part_number || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div style="grid-column:span 2;"><div class="detail-label">Item Name</div><input type="text" name="lines[' + idx + '][item_name]" value="' + ((l.item_name || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Condition</div><input type="text" name="lines[' + idx + '][condition_code]" value="' + (l.condition_code || '') + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Qty</div><input type="number" min="1" name="lines[' + idx + '][quantity]" value="' + (l.quantity || 1) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Unit Cost</div><input type="number" step="0.01" name="lines[' + idx + '][unit_cost]" value="' + parseFloat(l.unit_cost || 0).toFixed(2) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Unit Price</div><input type="number" step="0.01" name="lines[' + idx + '][unit_price]" value="' + parseFloat(l.unit_price || 0).toFixed(2) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Lead Time</div><input type="text" name="lines[' + idx + '][lead_time_text]" value="' + ((l.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 7-10 days" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '</div>';
+        var srcs = srcsByLine[l.id] || [];
+        if (srcs.length) {
+          html += '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #1e2d42;"><div style="font-size:.65rem;color:#c8932a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">Sources (read-only here \u2014 use New RFQ to re-source)</div>';
+          srcs.forEach(function(src) {
+            html += '<div style="font-size:.78rem;color:#7a8a9a;">' + (src.supplier_name || '?') + ' &mdash; qty ' + src.allocated_qty + ' @ $' + parseFloat(src.unit_cost || 0).toFixed(2) + ' &mdash; ' + (src.lead_time_text || src.supplier_lead_time_days + ' days') + '</div>';
+          });
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div></div>';
+      html += '<div class="card" style="margin-top:14px;"><div class="card-body">';
+      html += '<div class="detail-label">Revision Note (visible to admin only, optional)</div>';
+      html += '<input type="text" name="revision_note" placeholder="e.g. Updated price per Mike at Acme" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;margin-bottom:10px;"/>';
+      html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" name="email_customer" value="1" checked/> Email customer the revised quote PDF</label>';
+      html += '</div></div>';
+      html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">';
+      html += '<a href="/admin/quotes/' + q.id + '" class="btn btn-outline">Cancel</a>';
+      html += '<button type="submit" class="btn btn-gold">Save & Resend</button>';
+      html += '</div></form>';
+      res.send(page('Edit Quote', 'quotes', html));
+    } catch (err) { console.error('Quote edit form error:', err); res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">' + err.message + '</div>')); }
+  });
+
+  // POST /admin/quotes/:id/edit-save — snapshot old version, update current, optionally email
+  router.post('/quotes/:id/edit-save', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const qid = parseInt(req.params.id);
+      const qCur = await pool.request().input('id', sql.BigInt, qid).query('SELECT q.*, c.email, c.first_name+\' \'+c.last_name AS customer_name FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=@id');
+      if (!qCur.recordset.length) return res.redirect('/admin/quotes/' + qid + '?error=Quote+not+found');
+      const q = qCur.recordset[0];
+      if (q.status === 'Accepted') return res.redirect('/admin/quotes/' + qid + '?error=Cannot+edit+accepted+quote');
+
+      // Snapshot current state before changes
+      const linesBefore = await pool.request().input('qid', sql.BigInt, qid).query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      const srcsBefore = await pool.request().input('qid', sql.BigInt, qid).query('SELECT qls.* FROM quote_line_sources qls INNER JOIN quote_lines ql ON ql.id=qls.quote_line_id WHERE ql.quote_id=@qid');
+      const snapshot = JSON.stringify({ quote: q, lines: linesBefore.recordset, sources: srcsBefore.recordset });
+
+      const curVer = q.version || 1;
+      await pool.request()
+        .input('qid', sql.BigInt, qid)
+        .input('ver', sql.Int, curVer)
+        .input('snap', sql.NVarChar(sql.MAX), snapshot)
+        .input('sub', sql.Decimal(12,2), q.subtotal || 0)
+        .input('tot', sql.Decimal(12,2), q.total_amount || 0)
+        .input('vu', sql.Date, q.valid_until)
+        .input('by', sql.NVarChar(255), 'admin')
+        .input('note', sql.NVarChar(sql.MAX), b.revision_note || null)
+        .input('sent', sql.Bit, q.status === 'Sent' ? 1 : 0)
+        .query('INSERT INTO quote_versions (quote_id, version, snapshot_json, subtotal, total, valid_until, revised_by, revision_note, email_sent) VALUES (@qid, @ver, @snap, @sub, @tot, @vu, @by, @note, @sent)');
+
+      // Apply edits to quote header
+      const newVer = curVer + 1;
+      await pool.request()
+        .input('id', sql.BigInt, qid)
+        .input('ver', sql.Int, newVer)
+        .input('vu', sql.Date, b.valid_until || q.valid_until)
+        .input('pt', sql.NVarChar(100), b.payment_terms || q.payment_terms)
+        .query("UPDATE quotes SET version=@ver, valid_until=@vu, payment_terms=@pt, status='Sent', updated_at=GETDATE() WHERE id=@id");
+
+      // Apply line edits + recompute totals
+      let newSubtotal = 0, newTotalCost = 0, newTotalMargin = 0;
+      const editLines = b.lines || [];
+      for (const ln of editLines) {
+        const lid = parseInt(ln.id);
+        const qty = parseInt(ln.quantity) || 0;
+        const uc = parseFloat(ln.unit_cost) || 0;
+        const up = parseFloat(ln.unit_price) || 0;
+        const lineTotal = qty * up;
+        const lineCost = qty * uc;
+        const lineMargin = lineTotal - lineCost;
+        const marginPct = up > 0 ? Math.min(999.99, Math.max(-999.99, (lineMargin / lineTotal) * 100)) : 0;
+        const markupPct = uc > 0 ? Math.min(999.99, Math.max(-999.99, ((up - uc) / uc) * 100)) : 0;
+        newSubtotal += lineTotal;
+        newTotalCost += lineCost;
+        newTotalMargin += lineMargin;
+        await pool.request()
+          .input('id', sql.BigInt, lid)
+          .input('nsn', sql.NVarChar(20), ln.nsn || null)
+          .input('pn', sql.NVarChar(100), ln.part_number || null)
+          .input('iname', sql.NVarChar(255), ln.item_name || null)
+          .input('cond', sql.NVarChar(5), ln.condition_code || null)
+          .input('qty', sql.Int, qty)
+          .input('uc', sql.Decimal(10,2), uc)
+          .input('up', sql.Decimal(10,2), up)
+          .input('lt', sql.Decimal(12,2), lineTotal)
+          .input('lc', sql.Decimal(12,2), lineCost)
+          .input('lm', sql.Decimal(12,2), lineMargin)
+          .input('mpct', sql.Decimal(5,2), marginPct)
+          .input('mkp', sql.Decimal(5,2), markupPct)
+          .input('ltt', sql.NVarChar(100), ln.lead_time_text || null)
+          .query('UPDATE quote_lines SET nsn=@nsn, part_number=@pn, item_name=@iname, condition_code=@cond, quantity=@qty, unit_cost=@uc, unit_price=@up, line_total=@lt, line_cost=@lc, line_margin=@lm, margin_pct=@mpct, markup_pct=@mkp, lead_time_text=@ltt WHERE id=@id');
+      }
+      await pool.request()
+        .input('id', sql.BigInt, qid)
+        .input('sub', sql.Decimal(12,2), newSubtotal)
+        .input('tot', sql.Decimal(12,2), newSubtotal)
+        .input('tc', sql.Decimal(12,2), newTotalCost)
+        .input('tm', sql.Decimal(12,2), newTotalMargin)
+        .query('UPDATE quotes SET subtotal=@sub, total_amount=@tot, total_cost=@tc, total_margin=@tm WHERE id=@id');
+
+      // Send email if requested
+      if (b.email_customer === '1') {
+        try {
+          const nodemailerMod = await import('nodemailer');
+          const nodemailer = nodemailerMod.default;
+          if (process.env.SMTP_HOST) {
+            const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT || '587'), auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+            const body = '<p>Hello ' + q.customer_name + ',</p><p>Your quote ' + q.quote_number + ' has been revised (version ' + newVer + '). Please review and let us know if you have any questions.</p><p>View: <a href="https://jupiteroneusa.com/quote/' + q.accept_token + '">https://jupiteroneusa.com/quote/' + q.accept_token + '</a></p><p>Thank you,<br/>Jupiter One USA</p>';
+            await transport.sendMail({ from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com', to: q.email, subject: 'Revised Quote ' + q.quote_number + ' (v' + newVer + ')', html: body });
+          }
+        } catch (mailErr) { console.error('Quote revise email error:', mailErr.message); }
+      }
+      res.redirect('/admin/quotes/' + qid + '?saved=1&new_version=' + newVer);
+    } catch (err) { console.error('Quote edit-save error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
+  });
+
   // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
   router.post('/quotes/:id/reissue', async (req, res) => {
     if (!requireAuth(req, res)) return;
@@ -2146,21 +2301,7 @@ export async function buildAdminRouter() {
     } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
   });
 
-  // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
-  router.post('/quotes/:id/reissue', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const days = parseInt(req.body.valid_days || 30);
-      const newValid = new Date(Date.now() + days*24*60*60*1000);
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('vu', sql.Date, newValid)
-        .query("UPDATE quotes SET status='Sent', valid_until=@vu, expired_at=NULL, rejected_at=NULL, rejection_reason=NULL, reissued_count=ISNULL(reissued_count,0)+1, updated_at=GETDATE() WHERE id=@id");
-      res.redirect('/admin/quotes/'+req.params.id+'?reissued=1');
-    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
-  });
-
+  
   // Phase B3: Revise quote - mark old quote Superseded, redirect admin to new quote builder
   router.post('/quotes/:id/revise', async (req, res) => {
     if (!requireAuth(req, res)) return;
