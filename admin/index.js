@@ -2152,13 +2152,29 @@ export async function buildAdminRouter() {
         html += '<div><div class="detail-label">Lead Time</div><input type="text" name="lines[' + idx + '][lead_time_text]" value="' + ((l.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 7-10 days" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
         html += '</div>';
         var srcs = srcsByLine[l.id] || [];
-        if (srcs.length) {
-          html += '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #1e2d42;"><div style="font-size:.65rem;color:#c8932a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">Sources (read-only here \u2014 use New RFQ to re-source)</div>';
-          srcs.forEach(function(src) {
-            html += '<div style="font-size:.78rem;color:#7a8a9a;">' + (src.supplier_name || '?') + ' &mdash; qty ' + src.allocated_qty + ' @ $' + parseFloat(src.unit_cost || 0).toFixed(2) + ' &mdash; ' + (src.lead_time_text || src.supplier_lead_time_days + ' days') + '</div>';
-          });
+        // SOURCES_FULL_EDIT_V1
+        html += '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #1e2d42;"><div style="font-size:.65rem;color:#c8932a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">Sources (editable)</div>';
+        html += '<div id="srcs-line-' + l.id + '">';
+        var srcs = srcsByLine[l.id] || [];
+        srcs.forEach(function(src, sIdx) {
+          var rk = l.id + '_' + sIdx;
+          html += '<div data-srcrow="' + rk + '" style="display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;">';
+          html += '<input type="hidden" name="line_' + l.id + '_src_' + sIdx + '[id]" value="' + src.id + '"/>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier ID</div><input type="number" name="line_' + l.id + '_src_' + sIdx + '[supplier_id]" value="' + src.supplier_id + '" required title="' + (src.supplier_name || '') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/><div style="font-size:.65rem;color:#7a8a9a;margin-top:2px;">' + (src.supplier_name || 'unknown') + '</div></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="line_' + l.id + '_src_' + sIdx + '[allocated_qty]" value="' + (src.allocated_qty || 1) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="line_' + l.id + '_src_' + sIdx + '[unit_cost]" value="' + parseFloat(src.unit_cost || 0).toFixed(2) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="line_' + l.id + '_src_' + sIdx + '[lead_time_text]" value="' + ((src.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">8130</div><input type="checkbox" name="line_' + l.id + '_src_' + sIdx + '[has_8130]" value="1"' + (src.has_8130 ? ' checked' : '') + '/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">CoC</div><input type="checkbox" name="line_' + l.id + '_src_' + sIdx + '[has_coc]" value="1"' + (src.has_coc ? ' checked' : '') + '/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Trace</div><input type="checkbox" name="line_' + l.id + '_src_' + sIdx + '[has_trace]" value="1"' + (src.has_trace ? ' checked' : '') + '/></div>';
+          html += '<div><button type="button" onclick="this.closest(&quot;[data-srcrow]&quot;).remove();" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:5px 8px;cursor:pointer;border-radius:3px;">&#x2716;</button></div>';
           html += '</div>';
-        }
+        });
+        html += '</div>';
+        html += '<button type="button" onclick="addSrcRow(' + l.id + ')" style="background:rgba(200,147,42,0.1);border:1px solid #c8932a;color:#c8932a;padding:5px 12px;cursor:pointer;border-radius:3px;font-size:.78rem;">+ Add Source</button>';
+        html += '</div>';
+        var srcCount = srcs.length;
+        html += '<input type="hidden" name="line_' + l.id + '_src_count_initial" value="' + srcCount + '"/>';
         html += '</div>';
       });
       html += '</div></div>';
@@ -2170,6 +2186,31 @@ export async function buildAdminRouter() {
       html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">';
       html += '<a href="/admin/quotes/' + q.id + '" class="btn btn-outline">Cancel</a>';
       html += '<button type="submit" class="btn btn-gold">Save & Resend</button>';
+      // SOURCES_FULL_EDIT_V1 - JS for adding new source rows
+      html += '<script>';
+      html += 'window.addSrcRow = function(lineId) {';
+      html += '  var container = document.getElementById("srcs-line-" + lineId);';
+      html += '  if (!container) return;';
+      html += '  var existing = container.querySelectorAll("[data-srcrow]");';
+      html += '  var nextIdx = existing.length;';
+      html += '  while (document.querySelector("[data-srcrow=\\\"" + lineId + "_" + nextIdx + "\\\"]")) nextIdx++;';
+      html += '  var prefix = "line_" + lineId + "_src_" + nextIdx;';
+      html += '  var div = document.createElement("div");';
+      html += '  div.setAttribute("data-srcrow", lineId + "_" + nextIdx);';
+      html += '  div.style.cssText = "display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;";';
+      html += '  div.innerHTML =';
+      html += '    \'<input type="hidden" name="\' + prefix + \'[id]" value=""/>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier ID</div><input type="number" name="\' + prefix + \'[supplier_id]" required placeholder="id" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="\' + prefix + \'[allocated_qty]" value="1" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="\' + prefix + \'[unit_cost]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="\' + prefix + \'[lead_time_text]" placeholder="5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">8130</div><input type="checkbox" name="\' + prefix + \'[has_8130]" value="1"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">CoC</div><input type="checkbox" name="\' + prefix + \'[has_coc]" value="1"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Trace</div><input type="checkbox" name="\' + prefix + \'[has_trace]" value="1"/></div>\' +';
+      html += '    \'<div><button type="button" onclick="this.closest(\\\'[data-srcrow]\\\').remove();" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:5px 8px;cursor:pointer;border-radius:3px;">\\u2716</button></div>\';';
+      html += '  container.appendChild(div);';
+      html += '};';
+      html += '<\\/script>';
       html += '</div></form>';
       res.send(page('Edit Quote', 'quotes', html));
     } catch (err) { console.error('Quote edit form error:', err); res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">' + err.message + '</div>')); }
@@ -2217,10 +2258,37 @@ export async function buildAdminRouter() {
       // Apply line edits + recompute totals
       let newSubtotal = 0, newTotalCost = 0, newTotalMargin = 0;
       const editLines = b.lines || [];
+      // SOURCES_FULL_EDIT_V1: collect submitted sources keyed by line id
+      const _srcsByLine = {};
+      Object.keys(b).forEach(function(k) {
+        var m = k.match(/^line_(\d+)_src_(\d+)$/);
+        if (!m) return;
+        var lid = parseInt(m[1]);
+        if (!_srcsByLine[lid]) _srcsByLine[lid] = [];
+        var data = b[k];
+        if (!data || typeof data !== 'object') return;
+        _srcsByLine[lid].push({
+          id: data.id ? parseInt(data.id) : null,
+          supplier_id: data.supplier_id ? parseInt(data.supplier_id) : null,
+          allocated_qty: data.allocated_qty ? parseInt(data.allocated_qty) : 0,
+          unit_cost: data.unit_cost ? parseFloat(data.unit_cost) : 0,
+          lead_time_text: data.lead_time_text || null,
+          has_8130: data.has_8130 === '1' ? 1 : 0,
+          has_coc: data.has_coc === '1' ? 1 : 0,
+          has_trace: data.has_trace === '1' ? 1 : 0
+        });
+      });
       for (const ln of editLines) {
         const lid = parseInt(ln.id);
         const qty = parseInt(ln.quantity) || 0;
-        const uc = parseFloat(ln.unit_cost) || 0;
+        var uc = parseFloat(ln.unit_cost) || 0;
+        // SOURCES_FULL_EDIT_V1: recompute uc from sources if any submitted
+        var _srcs = _srcsByLine[parseInt(ln.id)] || [];
+        if (_srcs.length) {
+          var totalQty = 0, totalCost = 0;
+          _srcs.forEach(function(s2) { totalQty += s2.allocated_qty; totalCost += s2.allocated_qty * s2.unit_cost; });
+          if (totalQty > 0) uc = totalCost / totalQty;
+        }
         const up = parseFloat(ln.unit_price) || 0;
         const lineTotal = qty * up;
         const lineCost = qty * uc;
@@ -2246,6 +2314,24 @@ export async function buildAdminRouter() {
           .input('mkp', sql.Decimal(5,2), markupPct)
           .input('ltt', sql.NVarChar(100), ln.lead_time_text || null)
           .query('UPDATE quote_lines SET nsn=@nsn, part_number=@pn, item_name=@iname, condition_code=@cond, quantity=@qty, unit_cost=@uc, unit_price=@up, line_total=@lt, line_cost=@lc, line_margin=@lm, margin_pct=@mpct, markup_pct=@mkp, lead_time_text=@ltt WHERE id=@id');
+        // SOURCES_FULL_EDIT_V1: rebuild quote_line_sources for this line
+        await pool.request().input('qlid', sql.BigInt, parseInt(ln.id))
+          .query('DELETE FROM quote_line_sources WHERE quote_line_id=@qlid');
+        var _sortOrder = 1;
+        for (const src of _srcs) {
+          if (!src.supplier_id) continue;
+          await pool.request()
+            .input('qlid2', sql.BigInt, parseInt(ln.id))
+            .input('sid', sql.BigInt, src.supplier_id)
+            .input('aq', sql.Int, src.allocated_qty)
+            .input('uc2', sql.Decimal(10,2), src.unit_cost)
+            .input('ltt2', sql.NVarChar(sql.MAX), src.lead_time_text)
+            .input('h81', sql.Bit, src.has_8130)
+            .input('hcoc', sql.Bit, src.has_coc)
+            .input('htr', sql.Bit, src.has_trace)
+            .input('so', sql.Int, _sortOrder++)
+            .query('INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, lead_time_text, has_8130, has_coc, has_trace, sort_order, is_selected) VALUES (@qlid2, @sid, @aq, @uc2, @ltt2, @h81, @hcoc, @htr, @so, 1)');
+        }
       }
       await pool.request()
         .input('id', sql.BigInt, qid)
