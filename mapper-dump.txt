@@ -1,0 +1,27 @@
+lineRows mapper region (line 847 onward):
+
+L847: [      const lineRows = lines.recordset.map(l => `<tr>]
+L848: [        <td style="color:#7a8a9a;">${l.line_number}</td>]
+L849: [        <td class="mono text-gold"><a href="/pages/nsn-detail.html?nsn=${l.nsn||l.part_number}" target="_blank" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</a></td>]
+L850: [        <td>${l.item_name||'—'}</td>]
+L851: [        <td>${l.quantity}</td>]
+L852: [        <td>${statusBadge(l.condition_code||'—')}</td>]
+L853: [        <td>${l.target_price ? '$'+parseFloat(l.target_price).toFixed(2) : '—'}</td>]
+L854: [        <td style="color:#7a8a9a;font-size:.8rem;">${l.notes||'—'}</td>]
+L855: [      </tr>`).join('');]
+L856: []
+L857: [      const quoteLineInputs = lines.recordset.map(l => `<tr>]
+L858: [        <td style="color:#7a8a9a;">${l.line_number}</td>]
+L859: [        <td>]
+L860: [          <div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Requested: ${l.nsn||l.part_number||'—'}</div>]
+L861: [          <input type="text" name="lines[${l.line_number-1}][fulfillment_part]" value="${l.nsn||l.part_number||''}" placeholder="NSN or Part #" style="width:150px;font-family:monospace;color:#c8932a;" title="Edit to substitute a different part number"/>]
+L862: [          <input type="hidden" name="lines[${l.line_number-1}][rfq_line_id]" value="${l.id}"/>]
+L863: [          <input type="hidden" name="lines[${l.line_number-1}][original_nsn]" value="${l.nsn||''}"/>]
+L864: [          <input type="hidden" name="lines[${l.line_number-1}][original_part]" value="${l.part_number||''}"/>]
+L865: [          <input type="hidden" name="lines[${l.line_number-1}][condition_code]" value="${l.condition_code||'NE'}"/>]
+L866: [        </td>]
+L867: [        <td><input type="text" name="lines[${l.line_number-1}][item_name]" value="${l.item_name||''}" placeholder="Description" style="width:160px;"/></td>]
+L868: [        <td><input type="number" min="1" name="lines[${l.line_number-1}][quantity]" value="${l.quantity||1}" style="width:65px;" required/></td>]
+L869: [        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_cost]" placeholder="0.00" style="width:90px;" required/></td>]
+L870: [        <td><input type="number" step="0.01" min="0" name="lines[${l.line_number-1}][unit_price]" placeholder="0.00" style="width:90px;" required/></td>]
+L871: [        <td><input type="text" name="lines[${l.line_number-1}][lead_time_days]" placeholder="e.g. 7-10 days" style="width:110px;"/></td>]
