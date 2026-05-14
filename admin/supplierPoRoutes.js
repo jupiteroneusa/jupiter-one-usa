@@ -352,7 +352,15 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         html += '<div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">' + currency(po.total) + '</div></div>';
         html += '<div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">' + (po.supplier_payment_terms || '&mdash;') + '</div></div>';
         html += '<div class="detail-item"><div class="detail-label">Issued</div><div class="detail-value">' + shortDateTime(po.issued_at) + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Expected Delivery</div><div class="detail-value">' + shortDate(po.expected_delivery) + '</div></div>';
+        // PO_DETAIL_EDIT_V1: editable expected delivery + shipping terms
+        const expDate = po.expected_delivery ? new Date(po.expected_delivery).toISOString().substring(0,10) : '';
+        html += '<div class="detail-item" style="grid-column:1/-1;">';
+        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/po-details" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;">';
+        html += '<div><div class="detail-label">Expected Delivery</div><input type="date" name="expected_delivery" value="' + expDate + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+        html += '<div><div class="detail-label">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="' + parseFloat(po.shipping_cost || 0).toFixed(2) + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+        html += '<div><div class="detail-label">Shipping Terms</div><input type="text" name="shipping_terms" placeholder="e.g. Pre-Pay and Add Ground" value="' + ((po.shipping_terms || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+        html += '<button type="submit" class="btn btn-gold btn-sm">Save</button>';
+        html += '</form></div>';
         html += '<div class="detail-item"><div class="detail-label">Received</div><div class="detail-value">' + shortDateTime(po.received_at) + '</div></div>';
         html += '<div class="detail-item"><div class="detail-label">Paid</div><div class="detail-value">' + (po.paid_at ? '<span style="color:#4caf50;">' + shortDateTime(po.paid_at) + '</span>' : '<span style="color:#e05050;">Unpaid</span>') + '</div></div>';
         html += '</div>';
@@ -790,4 +798,29 @@ async function maybeMarkOrderReadyToShip(pool, supplierPoId) {
   } catch(err) {
     console.error('maybeMarkOrderReadyToShip error:', err);
   }
+  // PO_DETAIL_EDIT_V1: POST /supplier-pos/:id/po-details — update expected delivery + shipping
+  router.post('/supplier-pos/:id/po-details', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const shipCost = parseFloat(b.shipping_cost) || 0;
+      // Recompute total if subtotal known
+      const cur = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT subtotal FROM supplier_pos WHERE id=@id');
+      const sub = parseFloat((cur.recordset[0] && cur.recordset[0].subtotal) || 0);
+      const total = sub + shipCost;
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('exp', sql.Date, b.expected_delivery || null)
+        .input('ship', sql.Decimal(12,2), shipCost)
+        .input('shipT', sql.NVarChar(255), b.shipping_terms || null)
+        .input('tot', sql.Decimal(12,2), total)
+        .query('UPDATE supplier_pos SET expected_delivery=@exp, shipping_cost=@ship, shipping_terms=@shipT, total=@tot, updated_at=GETDATE() WHERE id=@id');
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?saved=1');
+    } catch(err) {
+      console.error('PO details update error:', err);
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
+
 }

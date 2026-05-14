@@ -1,0 +1,33 @@
+========== Searches for "supplier-pos/new" form fields ==========
+
+--- admin/supplierPoRoutes.js ---
+  L27: p.id, p.po_number, p.status, p.total, p.issued_at, p.expected_delivery, p.received_at,
+  L52: '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.expected_delivery) + '</td>' +
+  L163: html += inputField('Expected Delivery', 'expected_delivery', '', 'date');
+  L255: .input('exp', sql.Date, b.expected_delivery || null)
+  L257: .query("INSERT INTO supplier_pos (order_id, supplier_id, po_number, status, subtotal, shipping_cost, total, expected_delivery, notes) OUTPUT INSERTED.id VALUES 
+  L355: html += '<div class="detail-item"><div class="detail-label">Expected Delivery</div><div class="detail-value">' + shortDate(po.expected_delivery) + '</div></div>
+  L678: SELECT p.po_number, p.total, p.expected_delivery, p.notes,
+  L713: const expectedLine = po.expected_delivery
+  L714: ? '<p>Expected delivery: <b>' + new Date(po.expected_delivery).toLocaleDateString('en-US') + '</b>.</p>'
+
+--- admin/orderRoutes.js ---
+  L608: html += '<input type="date" name="expected_delivery_' + sid + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;"/
+  L691: const expectedDelivery = b['expected_delivery_' + sid] || null;
+  L706: .query("INSERT INTO supplier_pos (order_id, supplier_id, po_number, status, subtotal, shipping_cost, shipping_terms, total, expected_delivery, notes) OUTPUT INS
+
+--- admin/index.js ---
+
+
+========== inputField helper definition ==========
+
+L101: export function inputField(label, name, value, type = 'text', extra = '') {
+L102:   return '<div style="margin-bottom:12px;">' +
+L103:     '<div style="font-size:.68rem;color:#7a8a9a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">' + label + '</div>' +
+L104:     '<input type="' + type + '" name="' + name + '" value="' + (value == null ? '' : String(value).replace(/"/g, '&quot;')) + '" ' + extra + ' style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;font-size:.85rem;"/>' +
+L105:     '</div>';
+L106: }
+
+========== Live test (run separately) ==========
+# Hit the page and grep for type="date":
+curl -s -b cookies.txt https://jupiteroneusa.com/admin/supplier-pos/new?from_order=12 | findstr /C:"expected_delivery"
