@@ -1,3 +1,4 @@
+// SHIPPING_TERMS_V1
 // admin/orderShippingBlock.js
 // Renders the Shipping tab content for /admin/orders/:id
 
@@ -49,7 +50,8 @@ export function renderShippingTab(o, ships, missingCerts) {
   // Shipping address form
   html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Shipping Info</div><div class="card-body">';
   html += '<form method="POST" action="/admin/orders/' + o.id + '/shipping" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
-  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="' + (o.shipping_cost || '') + '" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="' + (o.shipping_cost || '') + '" style="width:100%;"/></div>' +
+        '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Shipping Terms (free text)</div><input type="text" name="shipping_terms" placeholder="e.g. Pre-Pay and Add Ground" value="' + ((o.shipping_terms || '').replace(/"/g, '&quot;')) + '" style="width:100%;"/></div>';
   html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Address</div><input type="text" name="ship_to_address1" value="' + (o.ship_to_address1 || '') + '" style="width:100%;"/></div>';
   html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">City</div><input type="text" name="ship_to_city" value="' + (o.ship_to_city || '') + '" style="width:100%;"/></div>';
   html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">State</div><input type="text" name="ship_to_state" value="' + (o.ship_to_state || '') + '" style="width:100%;"/></div>';

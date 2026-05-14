@@ -241,7 +241,14 @@ export async function generatePoPdf(poId) {
   doc.setTextColor(60, 60, 60);
   doc.text('Shipping:', totalsX, y);
   doc.setTextColor(40, 40, 40);
-  doc.text(fmtMoney(po.shipping_cost), pageW - margin, y, { align: 'right' });
+  if (po.shipping_terms && String(po.shipping_terms).trim().length) {
+    // SHIP_TERMS_PDF_V1: prefer text when set
+    doc.setFontSize(8);
+    doc.text(String(po.shipping_terms).substring(0, 35), pageW - margin, y, { align: 'right' });
+    doc.setFontSize(9);
+  } else {
+    doc.text(fmtMoney(po.shipping_cost), pageW - margin, y, { align: 'right' });
+  }
   y += 6;
 
   // Gold total bar

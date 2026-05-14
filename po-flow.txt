@@ -1,0 +1,322 @@
+========== admin/orderRoutes.js : create-supplier-pos-from-order (full) ==========
+
+460:   router.post('/orders/:id/create-supplier-pos-from-order', async (req, res) => {
+461:     if (!requireAuth(req, res)) return;
+462:     try {
+463:       const pool = await getPool();
+464:       
+465:       // Load order info
+466:       const oR = await pool.request().input('id', sql.BigInt, req.params.id)
+467:         .query('SELECT * FROM orders WHERE id=@id');
+468:       if (!oR.recordset.length) return res.redirect('/admin/orders/' + req.params.id + '?error=Order+not+found');
+469:       const order = oR.recordset[0];
+470:       
+471:       // Load all order_line_sources for this order's lines
+472:       const sourcesR = await pool.request().input('oid', sql.BigInt, req.params.id).query(`
+473:         SELECT ols.*, ol.line_number AS oline_num, ol.nsn, ol.part_number, ol.item_name, ol.condition_code,
+474:                s.company_name AS supplier_name
+475:         FROM order_line_sources ols
+476:         INNER JOIN order_lines ol ON ol.id = ols.order_line_id
+477:         INNER JOIN suppliers s ON s.id = ols.supplier_id
+478:         WHERE ol.order_id = @oid
+479:           AND ols.supplier_po_line_id IS NULL
+480:         ORDER BY ols.supplier_id, ol.line_number, ols.sort_order
+481:       `);
+482:       
+483:       if (!sourcesR.recordset.length) {
+484:         return res.redirect('/admin/orders/' + req.params.id + '?error=No+pending+sources+to+PO+(maybe+all+already+PO%27d)');
+485:       }
+486:       
+487:       // Group by supplier_id
+488:       const bySupplier = {};
+489:       sourcesR.recordset.forEach(function(s) {
+490:         if (!bySupplier[s.supplier_id]) bySupplier[s.supplier_id] = [];
+491:         bySupplier[s.supplier_id].push(s);
+492:       });
+493:       
+494:       const supplierIds = Object.keys(bySupplier);
+495:       const created = [];
+496:       
+497:       // Need numbering helper
+498:       const numberingMod = await import('../db/numbering.js');
+499:       const generateNumber = numberingMod.generateNumber;
+500:       
+501:       // Create one PO per supplier
+502:       for (const sid of supplierIds) {
+503:         const lines = bySupplier[sid];
+504:         const supplierName = lines[0].supplier_name;
+505:         
+506:         let subtotal = 0;
+507:         lines.forEach(function(l) { subtotal += parseFloat(l.unit_cost || 0) * (l.allocated_qty || 0); });
+508:         
+509:         const poNumber = await generateNumber('PO');
+510:         const phR = await pool.request()
+511:           .input('oid', sql.BigInt, req.params.id)
+512:           .input('sid', sql.BigInt, sid)
+513:           .input('pn', sql.NVarChar(30), poNumber)
+514:           .input('sub', sql.Decimal(12,2), subtotal)
+515:           .input('tot', sql.Decimal(12,2), subtotal)
+516:           .input('notes', sql.NVarChar(sql.MAX), 'Auto-generated from order ' + order.order_number)
+517:           .query("INSERT INTO supplier_pos (order_id, supplier_id, po_number, status, subtotal, shipping_cost, total, notes) OUTPUT INSERTED.id VALUES (@oid, @sid, @pn, 'Draft', @sub, 0, @tot, @notes)");
+518:         const poId = phR.recordset[0].id;
+519:         
+520:         let lineNum = 1;
+521:         for (const l of lines) {
+522:           const lineTotal = parseFloat(l.unit_cost || 0) * (l.allocated_qty || 0);
+523:           const polR = await pool.request()
+524:             .input('poid', sql.BigInt, poId)
+525:             .input('olid', sql.BigInt, l.order_line_id)
+526:             .input('ln', sql.Int, lineNum++)
+527:             .input('nsn', sql.NVarChar(20), l.nsn)
+528:             .input('pn2', sql.NVarChar(100), l.part_number)
+529:             .input('item', sql.NVarChar(255), l.item_name)
+530:             .input('cond', sql.NVarChar(5), l.condition_code)
+531:             .input('qty', sql.Int, l.allocated_qty)
+532:             .input('cost', sql.Decimal(10,2), l.unit_cost)
+533:             .input('total', sql.Decimal(12,2), lineTotal)
+534:             .input('lead', sql.Int, l.supplier_lead_time_days || null)
+535:             .input('ltt', sql.NVarChar(sql.MAX), l.lead_time_text || null)
+536:             .query('INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, line_total, expected_lead_time_days, lead_time_text) OUTPUT INSERTED.id VALUES (@poid, @olid, @ln, @nsn, @pn2, @item, @cond, @qty, @cost, @total, @lead, @ltt)');
+537:           
+538:           // Link the order_line_source to the new supplier_po_line
+539:           await pool.request()
+540:             .input('olsId', sql.BigInt, l.id)
+541:             .input('polId', sql.BigInt, polR.recordset[0].id)
+542:             .query('UPDATE order_line_sources SET supplier_po_line_id=@polId, updated_at=GETDATE() WHERE id=@olsId');
+543:         }
+544:         
+545:         created.push({ id: poId, number: poNumber, supplier: supplierName, line_count: lines.length });
+546:       }
+547:       
+548:       const summary = created.map(function(c) { return c.number + ' (' + c.supplier + ', ' + c.line_count + ' lines)'; }).join(', ');
+549:       res.redirect('/admin/orders/' + req.params.id + '?saved=1&pos_created=' + encodeURIComponent(summary));
+550:     } catch(err) {
+551:       console.error('Create supplier POs error:', err);
+552:       res.redirect('/admin/orders/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+553:     }
+554:   });
+
+
+========== admin/supplierPoRoutes.js (full first 200 lines) ==========
+
+1: // admin/supplierPoRoutes.js
+2: // Step 8: Supplier Purchase Order Management
+3: // Routes: list, detail (4 tabs), create from order line(s), receive flow,
+4: // payment flow, status updates, line received quantity tracking.
+5: //
+6: // Mounted by admin/index.js via mountSupplierPoRoutes(router, requireAuth, page)
+7: 
+8: import { getPool, sql } from '../db/connect.js';
+9: import { generateNumber } from '../db/numbering.js';
+10: import { currency, shortDate, shortDateTime, statusBadge, inputField, selectField, textareaField } from './uiHelpers.js';
+11: import { generatePoPdf } from '../services/poPdfService.js';
+12: import nodemailer from 'nodemailer';
+13: 
+14: export function mountSupplierPoRoutes(router, requireAuth, page) {
+15: 
+16:   // ==========================================================================
+17:   // GET /supplier-pos - LIST
+18:   // ==========================================================================
+19:   router.get('/supplier-pos', async (req, res) => {
+20:     if (!requireAuth(req, res)) return;
+21:     try {
+22:       const pool = await getPool();
+23:       const status = req.query.status || '';
+24:       const where = status ? "WHERE p.status = '" + status.replace(/'/g,"''") + "'" : '';
+25:       const result = await pool.request().query(`
+26:         SELECT
+27:           p.id, p.po_number, p.status, p.total, p.issued_at, p.expected_delivery, p.received_at,
+28:           p.order_id, o.order_number,
+29:           p.supplier_id, s.company_name AS supplier_name
+30:         FROM supplier_pos p
+31:         LEFT JOIN orders o ON p.order_id = o.id
+32:         LEFT JOIN suppliers s ON p.supplier_id = s.id
+33:         ${where}
+34:         ORDER BY p.created_at DESC
+35:       `);
+36: 
+37:       const statuses = ['', 'Draft', 'Sent', 'Confirmed', 'Received', 'Closed', 'Cancelled'];
+38:       const filters = statuses.map(function(st) {
+39:         const active = st === status;
+40:         const label = st || 'All';
+41:         return '<a href="/admin/supplier-pos' + (st ? '?status=' + st : '') + '" class="btn btn-sm ' + (active ? 'btn-gold' : 'btn-outline') + '">' + label + '</a>';
+42:       }).join(' ');
+43: 
+44:       const rows = result.recordset.map(function(p) {
+45:         return '<tr data-po-row data-href="/admin/supplier-pos/' + p.id + '" style="cursor:pointer;">' +
+46:           '<td class="mono" style="font-weight:600;color:#c8932a;">' + p.po_number + '</td>' +
+47:           '<td>' + (p.supplier_name ? '<a href="/admin/suppliers/' + p.supplier_id + '" style="color:#c8932a;" onclick="event.stopPropagation();">' + p.supplier_name + '</a>' : '&mdash;') + '</td>' +
+48:           '<td>' + (p.order_number ? '<a href="/admin/orders/' + p.order_id + '" style="color:#c8932a;font-family:monospace;font-size:.78rem;" onclick="event.stopPropagation();">' + p.order_number + '</a>' : '&mdash;') + '</td>' +
+49:           '<td>' + statusBadge(p.status) + '</td>' +
+50:           '<td style="font-weight:600;">' + currency(p.total) + '</td>' +
+51:           '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.issued_at) + '</td>' +
+52:           '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.expected_delivery) + '</td>' +
+53:           '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.received_at) + '</td>' +
+54:         '</tr>';
+55:       }).join('') || '<tr><td colspan="8" style="text-align:center;color:#7a8a9a;padding:24px;">No supplier POs yet</td></tr>';
+56: 
+57:       const html =
+58:         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+59:           '<div class="page-title">Supplier POs</div>' +
+60:         '</div>' +
+61:         '<div class="page-sub">Purchase orders issued to suppliers for order fulfillment</div>' +
+62:         '<div style="margin-bottom:14px;">' + filters + '</div>' +
+63:         '<div class="card">' +
+64:           '<table id="poTable">' +
+65:             '<thead><tr>' +
+66:               '<th data-sort="0" style="cursor:pointer;user-select:none;">PO # &#x25B2;&#x25BC;</th>' +
+67:               '<th data-sort="1" style="cursor:pointer;user-select:none;">Supplier &#x25B2;&#x25BC;</th>' +
+68:               '<th data-sort="2" style="cursor:pointer;user-select:none;">Order &#x25B2;&#x25BC;</th>' +
+69:               '<th data-sort="3" style="cursor:pointer;user-select:none;">Status &#x25B2;&#x25BC;</th>' +
+70:               '<th data-sort="4" style="cursor:pointer;user-select:none;">Total &#x25B2;&#x25BC;</th>' +
+71:               '<th data-sort="5" style="cursor:pointer;user-select:none;">Issued &#x25B2;&#x25BC;</th>' +
+72:               '<th data-sort="6" style="cursor:pointer;user-select:none;">Expected &#x25B2;&#x25BC;</th>' +
+73:               '<th data-sort="7" style="cursor:pointer;user-select:none;">Received &#x25B2;&#x25BC;</th>' +
+74:             '</tr></thead>' +
+75:             '<tbody>' + rows + '</tbody>' +
+76:           '</table>' +
+77:         '</div>' +
+78:         '<script>(function(){' +
+79:           'document.querySelectorAll("tr[data-po-row]").forEach(function(tr){' +
+80:             'tr.addEventListener("click", function(e){' +
+81:               'if (e.target.tagName === "A" || e.target.closest("a")) return;' +
+82:               'window.location = tr.getAttribute("data-href");' +
+83:             '});' +
+84:             'tr.addEventListener("mouseenter", function(){ tr.style.background="rgba(200,147,42,0.08)"; });' +
+85:             'tr.addEventListener("mouseleave", function(){ tr.style.background=""; });' +
+86:           '});' +
+87:           'var t = document.getElementById("poTable"); if (!t) return;' +
+88:           'var dirs = {};' +
+89:           't.querySelectorAll("th[data-sort]").forEach(function(h){' +
+90:             'h.addEventListener("click", function(){' +
+91:               'var col = parseInt(h.getAttribute("data-sort"));' +
+92:               'var dir = dirs[col] = (dirs[col] === "asc" ? "desc" : "asc");' +
+93:               'var tbody = t.querySelector("tbody");' +
+94:               'var rows = Array.from(tbody.querySelectorAll("tr[data-po-row]"));' +
+95:               'rows.sort(function(a,b){' +
+96:                 'var av = (a.children[col].textContent || "").trim().toLowerCase();' +
+97:                 'var bv = (b.children[col].textContent || "").trim().toLowerCase();' +
+98:                 'if (av < bv) return dir==="asc"?-1:1;' +
+99:                 'if (av > bv) return dir==="asc"?1:-1;' +
+100:                 'return 0;' +
+101:               '});' +
+102:               'rows.forEach(function(r){ tbody.appendChild(r); });' +
+103:             '});' +
+104:           '});' +
+105:         '})();</script>';
+106: 
+107:       res.send(page('Supplier POs', 'supplier-pos', html));
+108:     } catch(err) {
+109:       res.send(page('Supplier POs', 'supplier-pos', '<div class="alert alert-error">' + err.message + '</div>'));
+110:     }
+111:   });
+112: 
+113:   // ==========================================================================
+114:   // GET /supplier-pos/new?from_order=X&line_ids=1,2,3 - CREATE FORM
+115:   // Shows form pre-filled from order line(s)
+116:   // ==========================================================================
+117:   router.get('/supplier-pos/new', async (req, res) => {
+118:     if (!requireAuth(req, res)) return;
+119:     try {
+120:       const pool = await getPool();
+121:       const fromOrder = req.query.from_order;
+122:       const lineIds = req.query.line_ids ? req.query.line_ids.split(',').map(function(x){return parseInt(x);}).filter(Boolean) : [];
+123: 
+124:       // Load suppliers
+125:       const sup = await pool.request().query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
+126: 
+127:       // Pre-fill from order if given
+128:       let order = null, orderLines = [];
+129:       if (fromOrder) {
+130:         const oR = await pool.request().input('id', sql.BigInt, fromOrder).query('SELECT id, order_number FROM orders WHERE id=@id');
+131:         order = oR.recordset[0];
+132:         if (order && lineIds.length) {
+133:           const idsCsv = lineIds.join(',');
+134:           const lR = await pool.request().input('oid', sql.BigInt, fromOrder)
+135:             .query('SELECT id, line_number, nsn, part_number, item_name, condition_code, quantity_ordered, supplier_cost, supplier_id FROM order_lines WHERE order_id=@oid AND id IN (' + idsCsv + ') ORDER BY line_number');
+136:           orderLines = lR.recordset;
+137:         }
+138:       }
+139: 
+140:       const errorMsg = req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">' + decodeURIComponent(req.query.error) + '</div>' : '';
+141: 
+142:       let html = errorMsg;
+143:       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+144:         '<div class="page-title">New Supplier PO</div>' +
+145:         '<a href="/admin/supplier-pos" class="btn btn-outline btn-sm">&larr; Back</a></div>';
+146:       html += '<div class="page-sub">' + (order ? 'Creating PO for ' + order.order_number : 'Standalone supplier PO') + '</div>';
+147: 
+148:       html += '<form method="POST" action="/admin/supplier-pos/create"><div class="card"><div class="card-body">';
+149:       if (order) html += '<input type="hidden" name="order_id" value="' + order.id + '"/>';
+150: 
+151:       // Header fields
+152:       html += '<div class="detail-grid">';
+153: 
+154:       // Supplier dropdown
+155:       let supOpts = '<option value="">-- Select supplier --</option>';
+156:       const preselectSup = orderLines[0] && orderLines[0].supplier_id;
+157:       sup.recordset.forEach(function(s) {
+158:         supOpts += '<option value="' + s.id + '"' + (preselectSup == s.id ? ' selected' : '') + '>' + s.company_name + '</option>';
+159:       });
+160:       html += '<div><div style="font-size:.65rem;color:#7a8a9a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:4px;">Supplier *</div>' +
+161:         '<select name="supplier_id" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;font-size:.85rem;">' + supOpts + '</select></div>';
+162: 
+163:       html += inputField('Expected Delivery', 'expected_delivery', '', 'date');
+164:       html += inputField('Shipping Cost ($)', 'shipping_cost', '0.00', 'number', 'step="0.01" min="0"');
+165:       html += '</div>';
+166: 
+167:       // Lines section
+168:       if (orderLines.length) {
+169:         html += '<div style="margin-top:16px;border-top:1px solid #1e2d42;padding-top:14px;">';
+170:         html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">PO Lines (from order)</div>';
+171:         html += '<table><thead><tr>' +
+172:           '<th>#</th><th>NSN/Part</th><th>Item</th><th>Cond</th><th>Qty</th><th>Unit Cost ($)</th><th>Lead (days)</th><th>Total</th>' +
+173:           '</tr></thead><tbody>';
+174:         orderLines.forEach(function(l, idx) {
+175:           const cost = parseFloat(l.supplier_cost || 0).toFixed(2);
+176:           html += '<tr>' +
+177:             '<td>' + (idx + 1) + '</td>' +
+178:             '<td class="mono">' + (l.nsn || l.part_number || '&mdash;') + '<input type="hidden" name="lines[' + idx + '][order_line_id]" value="' + l.id + '"/><input type="hidden" name="lines[' + idx + '][nsn]" value="' + (l.nsn || '') + '"/><input type="hidden" name="lines[' + idx + '][part_number]" value="' + (l.part_number || '') + '"/><input type="hidden" name="lines[' + idx + '][item_name]" value="' + (l.item_name || '').replace(/"/g, '&quot;') + '"/><input type="hidden" name="lines[' + idx + '][condition_code]" value="' + (l.condition_code || '') + '"/></td>' +
+179:             '<td style="font-size:.8rem;">' + (l.item_name || '&mdash;') + '</td>' +
+180:             '<td>' + (l.condition_code || '&mdash;') + '</td>' +
+181:             '<td><input type="number" name="lines[' + idx + '][quantity]" value="' + l.quantity_ordered + '" min="1" required style="width:80px;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></td>' +
+182:             '<td><input type="number" step="0.01" min="0" name="lines[' + idx + '][unit_cost]" value="' + cost + '" required style="width:100px;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;" data-line-cost/></td>' +
+183:             '<td><input type="number" min="0" name="lines[' + idx + '][lead_days]" placeholder="optional" style="width:80px;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></td>' +
+184:             '<td class="line-total" style="font-weight:600;">$' + (l.quantity_ordered * parseFloat(cost)).toFixed(2) + '</td>' +
+185:           '</tr>';
+186:         });
+187:         html += '</tbody></table>';
+188:         html += '</div>';
+189:       } else {
+190:         html += '<div style="margin-top:16px;color:#7a8a9a;font-size:.85rem;">No lines pre-filled. After creating this PO header, you can add lines on the detail page.</div>';
+191:       }
+192: 
+193:       // Notes
+194:       html += '<div style="margin-top:14px;">' + textareaField('Notes', 'notes', '', 3) + '</div>';
+195: 
+196:       html += '<button type="submit" class="btn btn-gold" style="margin-top:12px;">&#10004; Create Supplier PO</button>';
+197:       html += '</div></div></form>';
+198: 
+199:       // Live total update
+200:       html += '<script>(function(){' +
+201:         'function recalc(){' +
+202:           'document.querySelectorAll("tr").forEach(function(tr){' +
+203:             'var qtyI = tr.querySelector("input[name$=\\"[quantity]\\"]");' +
+204:             'var costI = tr.querySelector("input[name$=\\"[unit_cost]\\"]");' +
+205:             'var totalCell = tr.querySelector(".line-total");' +
+206:             'if (qtyI && costI && totalCell){ var t = (parseFloat(qtyI.value)||0) * (parseFloat(costI.value)||0); totalCell.textContent = "$" + t.toFixed(2); }' +
+207:           '});' +
+208:         '}' +
+209:         'document.querySelectorAll("input[name$=\\"[quantity]\\"], input[name$=\\"[unit_cost]\\"]").forEach(function(el){ el.addEventListener("input", recalc); });' +
+210:       '})();</script>';
+211: 
+212:       res.send(page('New Supplier PO', 'supplier-pos', html));
+213:     } catch(err) {
+214:       console.error('PO new error:', err);
+215:       res.send(page('New Supplier PO', 'supplier-pos', '<div class="alert alert-error">' + err.message + '</div>'));
+216:     }
+217:   });
+218: 
+219:   // ==========================================================================
+220:   // POST /supplier-pos/create
+... (truncated at 220 lines, total: 794)
