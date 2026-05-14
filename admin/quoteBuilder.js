@@ -465,7 +465,9 @@ async function saveQuote(rfqId, body, adminId) {
     const lineMargin = lineTotal - costSum;
     const avgUnitCost = lineQty > 0 ? (costSum / lineQty) : 0;
     const marginPct = lineTotal > 0 ? (lineMargin / lineTotal * 100) : 0;
-    const markupPct = avgUnitCost > 0 ? ((unitPrice - avgUnitCost) / avgUnitCost * 100) : 0;
+    // MARKUP_CLAMP_V1: clamp to decimal(5,2) range to avoid DB overflow
+        const _rawMarkup = avgUnitCost > 0 ? ((unitPrice - avgUnitCost) / avgUnitCost * 100) : 0;
+        const markupPct = Math.min(999.99, Math.max(-999.99, Number.isFinite(_rawMarkup) ? _rawMarkup : 0));
 
     subtotal += lineTotal;
     totalCost += costSum;

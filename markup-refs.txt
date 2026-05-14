@@ -1,0 +1,32 @@
+========== markup / mkp references ==========
+
+### admin\index.js
+  L1072: markup_pct: unitCost > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((unitPrice - unitCost) / unitCost) * 100).toFixed(2)))) : 0,
+  L1112: .input('markupPct', sql.Decimal(5,2), l.markup_pct)
+  L1117: .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,li
+  L1150: .input('markupPct', sql.Decimal(5,2), l.markup_pct)
+  L1155: .query(`INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,unit_price,line_total,line_cost,li
+
+### admin\quoteBuilder.js
+  L468: const markupPct = avgUnitCost > 0 ? ((unitPrice - avgUnitCost) / avgUnitCost * 100) : 0;
+  L487: markup_pct: markupPct,
+  L532: .input('mkp', sql.Decimal(5,2), pl.markup_pct)
+  L539: .query("INSERT INTO quote_lines (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, markup_pct, unit_price, l
+
+### routes\quotes.js
+  L43: const markupPct  = unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0;
+  L47: return { ...l, line_number: i + 1, unit_price: unitPrice, unit_cost: unitCost, line_total: lineTotal, line_cost: lineCost, line_margin: lineMargin, markup_pct: 
+  L96: .input('markupPct',  sql.Decimal(5,2),  l.markup_pct)
+  L107: item_name, condition_code, quantity, unit_of_issue, unit_cost, markup_pct,
+  L111: @itemName, @condition, @qty, @ui, @unitCost, @markupPct,
+
+
+========== SQL: quote_lines + quotes table column types for markup/margin ==========
+
+-- Run in SSMS to see the column definitions:
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE COLUMN_NAME LIKE '%markup%'
+   OR COLUMN_NAME LIKE '%margin%'
+   OR COLUMN_NAME LIKE '%mkp%';
+

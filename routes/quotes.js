@@ -40,7 +40,9 @@ router.post('/', requireAdmin, async (req, res) => {
       const lineTotal  = unitPrice * qty;
       const lineCost   = unitCost * qty;
       const lineMargin = lineTotal - lineCost;
-      const markupPct  = unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0;
+      // MARKUP_CLAMP_V1: clamp to decimal(5,2) range to avoid DB overflow
+    const _rawMarkup = unitCost > 0 ? ((unitPrice - unitCost) / unitCost) * 100 : 0;
+    const markupPct = Math.min(999.99, Math.max(-999.99, Number.isFinite(_rawMarkup) ? _rawMarkup : 0));
       const marginPct  = lineTotal > 0 ? (lineMargin / lineTotal) * 100 : 0;
       subtotal   += lineTotal;
       totalCost  += lineCost;
