@@ -1,3 +1,4 @@
+// SLINE_FIX_V1
 // LEAD_TIME_CHAIN_V1
 // admin/quoteBuilder.js
 // Rewired quote builder with supplier sourcing per line + multi-source splits.
@@ -552,8 +553,8 @@ async function saveQuote(rfqId, body, adminId) {
         .input('sid', sql.BigInt, parseInt(s.supplier_id))
         .input('aq', sql.Int, parseInt(s.allocated_qty))
         .input('uc', sql.Decimal(10,2), parseFloat(s.unit_cost))
-        .input('ld', sql.Int, s.lead_days ? parseInt(s.lead_days)
-          .input('ltt', sql.NVarChar(sql.MAX), sLine.lead_time_text || pl.lead_time_text || null) : null)
+        .input('ld', sql.Int, s.lead_days ? parseInt((s.lead_days+'').replace(/[^0-9]/g,'')) || null : null)
+        .input('ltt', sql.NVarChar(sql.MAX), s.lead_time_text || s.lead_days || pl.lead_time_text || null)
         .input('h81', sql.Bit, s.has_8130 ? 1 : 0)
         .input('hcoc', sql.Bit, s.has_coc ? 1 : 0)
         .input('htr', sql.Bit, s.has_trace ? 1 : 0)

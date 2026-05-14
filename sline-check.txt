@@ -1,0 +1,93 @@
+========== sLine references ==========
+
+L119:     const sLine = sub[lineIdx] || {};
+L120:     const part = (sLine.fulfillment_part || rl.nsn || rl.part_number || '').toUpperCase();
+L121:     const desc = sLine.item_name || rl.item_name || '';
+L122:     const qty = parseInt(sLine.quantity || rl.quantity || 1);
+L123:     const unitPrice = sLine.unit_price || '';
+L124:     const leadText = sLine.lead_time_text || '';
+L128:     if (sLine.sources) {
+L129:       sources = Object.values(sLine.sources);
+L540:       .input('ltt', sql.NVarChar(100), pl.lead_time_text)
+L541:       .query("INSERT INTO quote_lines (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, markup_pct, unit_price, line_total, line_cost, line_margin, margin_pct, lead_time_text) OUTPUT INSERTED.id VALUES (@qid, @rli, @ln, @nsn, @pn, @iname, @cond, @qty, @uc, @mkp, @up, @lt, @lc, @lm, @mpct, @ltt)");
+L556:           .input('ltt', sql.NVarChar(sql.MAX), sLine.lead_time_text || pl.lead_time_text || null) : null)
+L563:         .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, lead_time_text, has_8130, has_coc, has_trace, notes, sort_order, is_selected) VALUES (@qli, @sid, @aq, @uc, @ld, @ltt, @h81, @hcoc, @htr, @nt, @so, @issel)");
+
+========== Lines 500-570 (around the patch) ==========
+
+L500: 
+L501:   const totalMargin = subtotal - totalCost;
+L502:   const validDays = parseInt(body.valid_days || 30);
+L503:   const validUntil = new Date(Date.now() + validDays * 86400 * 1000);
+L504:   const quoteNumber = await generateNumber('QT');
+L505: 
+L506:   // Insert quote header
+L507:   const qhR = await pool.request()
+L508:     .input('rfqId', sql.BigInt, rfqId)
+L509:     .input('cid', sql.BigInt, rfq.customer_id)
+L510:     .input('qn', sql.NVarChar(20), quoteNumber)
+L511:     .input('sub', sql.Decimal(12,2), subtotal)
+L512:     .input('tot', sql.Decimal(12,2), subtotal)
+L513:     .input('tc', sql.Decimal(12,2), totalCost)
+L514:     .input('tm', sql.Decimal(12,2), totalMargin)
+L515:     .input('vu', sql.Date, validUntil)
+L516:     .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
+L517:     .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
+L518:     .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
+L519:     .query("INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, personal_message, status) OUTPUT INSERTED.id VALUES (@rfqId, @cid, @qn, @sub, @tot, @tc, @tm, @vu, @pt, @nt, @pm, 'Sent')");
+L520:   const quoteId = qhR.recordset[0].id;
+L521: 
+L522:   // Insert each quote line + its sources
+L523:   for (const pl of processedLines) {
+L524:     const qlR = await pool.request()
+L525:       .input('qid', sql.BigInt, quoteId)
+L526:       .input('rli', sql.BigInt, pl.rfq_line_id)
+L527:       .input('ln', sql.Int, pl.line_number)
+L528:       .input('nsn', sql.NVarChar(20), pl.nsn)
+L529:       .input('pn', sql.NVarChar(100), pl.part_number)
+L530:       .input('iname', sql.NVarChar(255), pl.item_name)
+L531:       .input('cond', sql.NVarChar(5), pl.condition_code)
+L532:       .input('qty', sql.Int, pl.quantity)
+L533:       .input('uc', sql.Decimal(10,2), pl.unit_cost)
+L534:       .input('mkp', sql.Decimal(5,2), pl.markup_pct)
+L535:       .input('up', sql.Decimal(10,2), pl.unit_price)
+L536:       .input('lt', sql.Decimal(12,2), pl.line_total)
+L537:       .input('lc', sql.Decimal(12,2), pl.line_cost)
+L538:       .input('lm', sql.Decimal(12,2), pl.line_margin)
+L539:       .input('mpct', sql.Decimal(5,2), pl.margin_pct)
+L540:       .input('ltt', sql.NVarChar(100), pl.lead_time_text)
+L541:       .query("INSERT INTO quote_lines (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, markup_pct, unit_price, line_total, line_cost, line_margin, margin_pct, lead_time_text) OUTPUT INSERTED.id VALUES (@qid, @rli, @ln, @nsn, @pn, @iname, @cond, @qty, @uc, @mkp, @up, @lt, @lc, @lm, @mpct, @ltt)");
+L542:     const quoteLineId = qlR.recordset[0].id;
+L543: 
+L544:     // [Rewire 7] Ensure is_selected column exists
+L545:     try {
+L546:       await pool.request().query("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('quote_line_sources') AND name='is_selected') ALTER TABLE quote_line_sources ADD is_selected BIT NOT NULL DEFAULT 1");
+L547:     } catch(e) { console.error('is_selected col check:', e.message); }
+L548:     let sortOrder = 1;
+L549:     for (const s of pl.sources) {
+L550:       await pool.request()
+L551:         .input('qli', sql.BigInt, quoteLineId)
+L552:         .input('sid', sql.BigInt, parseInt(s.supplier_id))
+L553:         .input('aq', sql.Int, parseInt(s.allocated_qty))
+L554:         .input('uc', sql.Decimal(10,2), parseFloat(s.unit_cost))
+L555:         .input('ld', sql.Int, s.lead_days ? parseInt(s.lead_days)
+L556:           .input('ltt', sql.NVarChar(sql.MAX), sLine.lead_time_text || pl.lead_time_text || null) : null)
+L557:         .input('h81', sql.Bit, s.has_8130 ? 1 : 0)
+L558:         .input('hcoc', sql.Bit, s.has_coc ? 1 : 0)
+L559:         .input('htr', sql.Bit, s.has_trace ? 1 : 0)
+L560:         .input('nt', sql.NVarChar(500), s.notes || null)
+L561:         .input('so', sql.Int, sortOrder++)
+L562:         .input('issel', sql.Bit, (s.is_selected === '1' || s.is_selected === 1 || s.is_selected === true) ? 1 : 0)
+L563:         .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, lead_time_text, has_8130, has_coc, has_trace, notes, sort_order, is_selected) VALUES (@qli, @sid, @aq, @uc, @ld, @ltt, @h81, @hcoc, @htr, @nt, @so, @issel)");
+L564:     }
+L565:   }
+L566: 
+L567:   // Update RFQ status
+L568:   await pool.request().input('rid', sql.BigInt, rfqId)
+L569:     .query("UPDATE rfq_headers SET status='Quoted', updated_at=GETDATE() WHERE id=@rid");
+L570: 
+L571:   // Try to send PDF + email (best-effort, don't fail save if email fails)
+L572:   try {
+L573:     const linesR = await pool.request().input('qid', sql.BigInt, quoteId)
+L574:       .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+L575:     const custR = await pool.request().input('cid', sql.BigInt, rfq.customer_id)
