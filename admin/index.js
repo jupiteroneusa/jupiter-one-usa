@@ -1,3 +1,4 @@
+// SUPERSEDED_EDIT_V1
 // EDIT_RESEND_V1
 // admin/index.js
 import { Router } from 'express';
@@ -2211,7 +2212,7 @@ export async function buildAdminRouter() {
         .input('ver', sql.Int, newVer)
         .input('vu', sql.Date, b.valid_until || q.valid_until)
         .input('pt', sql.NVarChar(100), b.payment_terms || q.payment_terms)
-        .query("UPDATE quotes SET version=@ver, valid_until=@vu, payment_terms=@pt, status='Sent', updated_at=GETDATE() WHERE id=@id");
+        .query("UPDATE quotes SET version=@ver, valid_until=@vu, payment_terms=@pt, status='Sent', rejected_at=NULL, rejection_reason=NULL, expired_at=NULL, updated_at=GETDATE() WHERE id=@id");
 
       // Apply line edits + recompute totals
       let newSubtotal = 0, newTotalCost = 0, newTotalMargin = 0;
