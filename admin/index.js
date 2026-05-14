@@ -1,3 +1,4 @@
+// SUPPLIER_SEARCH_V1
 // SUPPLIER_DROPDOWN_V1
 // SUPERSEDED_EDIT_V1
 // EDIT_RESEND_V1
@@ -2164,7 +2165,7 @@ export async function buildAdminRouter() {
           var rk = l.id + '_' + sIdx;
           html += '<div data-srcrow="' + rk + '" style="display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;">';
           html += '<input type="hidden" name="line_' + l.id + '_src_' + sIdx + '[id]" value="' + src.id + '"/>';
-          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><select name="line_' + l.id + '_src_' + sIdx + '[supplier_id]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;">' + _supplierOptions.replace("value=\"" + src.supplier_id + "\"", "value=\"" + src.supplier_id + "\" selected") + '</select></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><input type="text" list="supplier-list" class="sup-search" data-target-id="sup_' + l.id + '_' + sIdx + '" value="' + ((src.supplier_name || '').toString().replace(/"/g, '&quot;')) + '" placeholder="Type to search..." style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/><input type="hidden" id="sup_' + l.id + '_' + sIdx + '" name="line_' + l.id + '_src_' + sIdx + '[supplier_id]" value="' + src.supplier_id + '" required/></div>';
           html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="line_' + l.id + '_src_' + sIdx + '[allocated_qty]" value="' + (src.allocated_qty || 1) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
           html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="line_' + l.id + '_src_' + sIdx + '[unit_cost]" value="' + parseFloat(src.unit_cost || 0).toFixed(2) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
           html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="line_' + l.id + '_src_' + sIdx + '[lead_time_text]" value="' + ((src.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
@@ -2193,6 +2194,7 @@ export async function buildAdminRouter() {
       // SOURCES_FULL_EDIT_V1 - JS for adding new source rows
       html += '<script>';
       html += 'window.__SUPPLIERS = ' + JSON.stringify(_suppliersR.recordset) + ';';
+      html += '<datalist id="supplier-list">' + _suppliersR.recordset.map(function(s2) { return '<option value="' + (s2.company_name||'').replace(/"/g, '&quot;') + '" data-id="' + s2.id + '"></option>'; }).join('') + '</datalist>';
       html += 'window.__supplierOptionsHTML = function(sel) { return window.__SUPPLIERS.map(function(s) { var name = (s.company_name||"").replace(/</g,"&lt;"); return "<option value=\\"" + s.id + "\\"" + (sel == s.id ? " selected" : "") + ">" + name + "</option>"; }).join(""); };';
       html += 'window.addSrcRow = function(lineId) {';
       html += '  var container = document.getElementById("srcs-line-" + lineId);';
@@ -2206,7 +2208,7 @@ export async function buildAdminRouter() {
       html += '  div.style.cssText = "display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;";';
       html += '  div.innerHTML =';
       html += '    \'<input type="hidden" name="\' + prefix + \'[id]" value=""/>\' +';
-      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><select name="\' + prefix + \'[supplier_id]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;">\' + window.__supplierOptionsHTML() + \'</select></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><input type="text" list="supplier-list" class="sup-search" data-target-id="sup_new_\' + Date.now() + \'_\' + nextIdx + \'" placeholder="Type to search..." style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/><input type="hidden" id="sup_new_\' + Date.now() + \'_\' + nextIdx + \'" name="\' + prefix + \'[supplier_id]" required/></div>\' +';
       html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="\' + prefix + \'[allocated_qty]" value="1" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
       html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="\' + prefix + \'[unit_cost]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
       html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="\' + prefix + \'[lead_time_text]" placeholder="5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
@@ -2216,6 +2218,16 @@ export async function buildAdminRouter() {
       html += '    \'<div><button type="button" onclick="this.closest(\\\'[data-srcrow]\\\').remove();" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:5px 8px;cursor:pointer;border-radius:3px;">\\u2716</button></div>\';';
       html += '  container.appendChild(div);';
       html += '};';
+      html += 'document.addEventListener("input", function(e) {';
+      html += '  if (!e.target.classList || !e.target.classList.contains("sup-search")) return;';
+      html += '  var name = e.target.value.trim().toLowerCase();';
+      html += '  var hidId = e.target.getAttribute("data-target-id");';
+      html += '  var hid = document.getElementById(hidId);';
+      html += '  if (!hid) return;';
+      html += '  var match = window.__SUPPLIERS.find(function(s) { return (s.company_name||"").toLowerCase() === name; });';
+      html += '  hid.value = match ? match.id : "";';
+      html += '  e.target.style.borderColor = match ? "#4caf50" : (name ? "#e05050" : "#1e2d42");';
+      html += '});';
       html += '<\\/script>';
       html += '</div></form>';
       res.send(page('Edit Quote', 'quotes', html));
