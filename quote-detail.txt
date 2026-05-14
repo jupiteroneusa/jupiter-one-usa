@@ -1,0 +1,169 @@
+### admin/index.js
+  L976: .query('SELECT ql.*, rl.rfq_line_id FROM quote_lines ql LEFT JOIN quote_lines rl ON rl.id=ql.rfq_line_id WHERE ql.quote_id=@qid ORDER BY ql.line_number');
+  L1018: html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
+  L1181: .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+  L1213: <div class="label">Quote Details</div>
+  L1675: // Quote Detail
+  L1676: router.get('/quotes/:id', async (req, res) => {
+  L1690: .query('SELECT * FROM quote_lines WHERE quote_id=@id ORDER BY line_number');
+
+### admin/quoteBuilder.js
+  L72: // Validates + creates quote + quote_lines + quote_line_sources atomically
+  L422: // saveQuote - validate + INSERT quote, quote_lines, quote_line_sources
+  L547: await pool.request().query("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id=OBJECT_ID('quote_line_sources') AND name='is_selected') ALTER TABLE quote_l
+  L564: .query("INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, supplier_lead_time_days, lead_time_text, has_8130, has_coc, has_tr
+  L575: .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+
+
+========== admin/index.js GET /quotes/:id (lines 1676 to 1825) ==========
+
+L1676:   router.get('/quotes/:id', async (req, res) => {
+L1677:     if (!requireAuth(req, res)) return;
+L1678:     try {
+L1679:       const pool = await getPool();
+L1680:       const qr = await pool.request().input('id', sql.BigInt, req.params.id).query(`
+L1681:         SELECT q.*, h.rfq_number, h.id AS rfq_header_id,
+L1682:           c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone, c.id AS customer_id
+L1683:         FROM quotes q
+L1684:         JOIN rfq_headers h ON h.id=q.rfq_id
+L1685:         JOIN customers c ON c.id=q.customer_id
+L1686:         WHERE q.id=@id`);
+L1687:       if (!qr.recordset.length) return res.send(page('Quote','quotes','<div class="alert alert-error">Quote not found.</div>'));
+L1688:       const q = qr.recordset[0];
+L1689:       const lines = await pool.request().input('id', sql.BigInt, req.params.id)
+L1690:         .query('SELECT * FROM quote_lines WHERE quote_id=@id ORDER BY line_number');
+L1691:       const rfqLog = await pool.request().input('rfqIdLog', sql.BigInt, q.rfq_id)
+L1692:         .query('SELECT * FROM rfq_status_log WHERE rfq_id=@rfqIdLog ORDER BY created_at ASC');
+L1693:       const logRows = rfqLog.recordset.map(l => `<tr>
+L1694:         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
+L1695:         <td>${statusBadge(l.new_status)}</td>
+L1696:         <td style="color:#7a8a9a;">${l.note||'—'}</td>
+L1697:       </tr>`).join('');
+L1698:       const lineRows = lines.recordset.map(l => `<tr>
+L1699:         <td style="color:#7a8a9a;">${l.line_number}</td>
+L1700:         <td class="mono" style="color:#c8932a;">${l.nsn||l.part_number||'—'}</td>
+L1701:         <td>${l.item_name||'—'}</td>
+L1702:         <td>${l.quantity}</td>
+L1703:         <td style="color:#7a8a9a;">${l.condition_code||'—'}</td>
+L1704:         <td style="color:#7a8a9a;">${parseFloat(l.unit_cost||0).toFixed(2)}</td>
+L1705:         <td style="font-weight:600;">${parseFloat(l.unit_price||0).toFixed(2)}</td>
+L1706:         <td style="font-weight:600;">${parseFloat(l.line_total||0).toFixed(2)}</td>
+L1707:         <td style="color:#7a8a9a;">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '—')}</td>
+L1708:         <td style="color:${parseFloat(l.margin_pct||0)>=20?'#4caf50':'#e05050'};">${parseFloat(l.margin_pct||0).toFixed(1)}%</td>
+L1709:       </tr>`).join('');
+L1710:       res.send(page(`Quote ${q.quote_number}`,'quotes',`
+L1711:         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+L1712:           <div class="page-title">Quote ${q.quote_number}</div>
+L1713:           <div style="display:flex;gap:8px;">
+L1714:           ${q.status==='Expired' || q.status==='Rejected' ? `<button onclick="reissueQuoteDialog(${q.id})" class="btn btn-sm" style="background:#4caf50;color:#000;font-weight:600;">&#x21BB; Reissue Quote</button>` : ''}
+L1715:           ${q.status!=='Accepted' ? `<button onclick="reviseQuoteDialog(${q.id})" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">&#x270F; Revise &amp; Resend</button>` : ''}
+L1716:           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
+L1717:         </div>
+L1718:         </div>
+L1719:         <div class="page-sub">Created ${new Date(q.created_at).toLocaleString()}</div>
+L1720:         <div class="detail-grid">
+L1721:           <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${q.customer_id}" style="color:#c8932a;">${q.customer_name}</a></div></div>
+L1722:           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${q.company||'—'}</div></div>
+L1723:           <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${q.email}" style="color:#c8932a;">${q.email}</a></div></div>
+L1724:           <div class="detail-item"><div class="detail-label">RFQ</div><div class="detail-value"><a href="/admin/rfqs/${q.rfq_header_id}" style="color:#c8932a;">${q.rfq_number}</a></div></div>
+L1725:           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}${(() => { if (q.status==='Sent' && q.valid_until) {  const days = Math.ceil((new Date(q.valid_until)-new Date())/86400000);  if (days < 0) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">EXPIRED '+Math.abs(days)+'d AGO</span>';  if (days <= 3) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  if (days <= 7) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  return ' <span style="color:#7a8a9a;font-size:.7rem;margin-left:6px;">'+days+'d left</span>'; } if (q.reissued_count > 0) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Reissued '+q.reissued_count+'x</span>'; return '';})()}</div></div>${q.status==='Rejected' ? `<div class="alert alert-error" style="grid-column:1/-1;">&#9888; Customer rejected${q.rejected_at ? ' on '+new Date(q.rejected_at).toLocaleDateString() : ''}${q.rejection_reason ? '. Reason: '+q.rejection_reason : ''}</div>` : ''}${q.status==='Expired' ? `<div class="alert" style="grid-column:1/-1;background:rgba(122,138,154,0.1);border-color:#7a8a9a;color:#7a8a9a;">&#9201; This quote expired${q.expired_at ? ' on '+new Date(q.expired_at).toLocaleDateString() : (q.valid_until ? ' on '+new Date(q.valid_until).toLocaleDateString() : '')}. Use Reissue or Revise to send a new one.</div>` : ''}
+L1726:           <div class="detail-item"><div class="detail-label">Valid Until</div><div class="detail-value">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</div></div>
+L1727:           <div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">${q.payment_terms||'—'}</div></div>
+L1728:           <div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">${parseFloat(q.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
+L1729:         </div>
+L1730:         <div class="card">
+L1731:           <div class="card-header">Line Items (${lines.recordset.length})</div>
+L1732:           <div style="overflow-x:auto;">
+L1733:             <table><thead><tr>
+L1734:               <th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Condition</th>
+L1735:               <th>Unit Cost</th><th>Unit Price</th><th>Line Total</th><th>Lead Time</th><th>Margin %</th>
+L1736:             </tr></thead>
+L1737:             <tbody>${lineRows||'<tr><td colspan="10" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>'}</tbody></table>
+L1738:           </div>
+L1739:           <div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;">
+L1740:             <span style="color:#7a8a9a;margin-right:16px;">Total Cost: <strong style="color:#eef1f5;">${parseFloat(q.total_cost||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+L1741:             <span style="color:#7a8a9a;margin-right:16px;">Margin: <strong style="color:#4caf50;">${parseFloat(q.total_margin||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+L1742:             <span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">${parseFloat(q.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</strong></span>
+L1743:           </div>
+L1744:         </div>
+L1745:         ${q.notes?`<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">${q.notes}</div></div>`:''}
+L1746:         ${q.personal_message?`<div class="card"><div class="card-header">Personal Message</div><div class="card-body" style="color:#7a8a9a;font-style:italic;">&ldquo;${q.personal_message}&rdquo;</div></div>`:''}
+L1747:         <div class="card">
+L1748:           <div class="card-header">RFQ Status History</div>
+L1749:           <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
+L1750:           <tbody>${logRows||'<tr><td colspan="3" style="color:#7a8a9a;text-align:center;padding:16px;">No history yet</td></tr>'}</tbody></table>
+L1751:         </div>
+L1752:         <script>
+L1753:           function reissueQuoteDialog(id) {
+L1754:             const days = prompt('Reissue this quote: how many days valid from today?', '30');
+L1755:             if (!days) return;
+L1756:             const f = document.createElement('form'); f.method='POST'; f.action='/admin/quotes/'+id+'/reissue';
+L1757:             const i = document.createElement('input'); i.type='hidden'; i.name='valid_days'; i.value=days; f.appendChild(i);
+L1758:             document.body.appendChild(f); f.submit();
+L1759:           }
+L1760:           function reviseQuoteDialog(id) {
+L1761:             if (!confirm('This will mark the current quote as Superseded and open the requote builder for the original RFQ. Continue?')) return;
+L1762:             const f = document.createElement('form'); f.method='POST'; f.action='/admin/quotes/'+id+'/revise';
+L1763:             document.body.appendChild(f); f.submit();
+L1764:           }
+L1765:         </script>
+L1766:       `));
+L1767:     } catch(err) {
+L1768:       res.send(page('Quote','quotes',`<div class="alert alert-error">${err.message}</div>`));
+L1769:     }
+L1770:   });
+L1771: 
+L1772:   // Orders
+L1773:   router.get('/orders', async (req, res) => {
+L1774:     if (!requireAuth(req, res)) return;
+L1775:     try {
+L1776:       const pool = await getPool();
+L1777:       const result = await pool.request().query(`
+L1778:         SELECT o.id, o.order_number, o.status, o.total_amount, o.confirmed_at,
+L1779:           c.first_name+' '+c.last_name AS customer_name, c.company
+L1780:         FROM orders o
+L1781:         JOIN customers c ON c.id=o.customer_id
+L1782:         ORDER BY o.confirmed_at DESC
+L1783:       `);
+L1784:       const rows = result.recordset.map(o => `<tr>
+L1785:         <td class="mono text-gold"><a href="/admin/orders/${o.id}" style="color:#c8932a;">${o.order_number}</a></td>
+L1786:         <td>${o.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${o.company||''}</span></td>
+L1787:         <td style="font-weight:600;">$${parseFloat(o.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+L1788:         <td>${statusBadge(o.status)}</td>
+L1789:         <td style="color:#7a8a9a;font-size:.78rem;">${o.confirmed_at?new Date(o.confirmed_at).toLocaleDateString():'—'}</td>
+L1790:       </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:#7a8a9a;padding:24px;">No orders yet</td></tr>';
+L1791:       res.send(page('Orders','orders',`
+L1792:         <div class="page-title">Orders</div>
+L1793:         <div class="page-sub">All customer orders</div>
+L1794:         <div class="card">
+L1795:           <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+L1796:           <tbody>${rows}</tbody></table>
+L1797:         </div>`));
+L1798:     } catch(err) {
+L1799:       res.send(page('Orders','orders',`<div class="alert alert-error">${err.message}</div>`));
+L1800:     }
+L1801:   });
+L1802: 
+L1803:   // Invoices
+L1804:   router.get('/invoices', async (req, res) => {
+L1805:     if (!requireAuth(req, res)) return;
+L1806:     try {
+L1807:       const pool = await getPool();
+L1808:       const result = await pool.request().query(`
+L1809:         SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+L1810:           c.first_name+' '+c.last_name AS customer_name, c.company
+L1811:         FROM invoices i
+L1812:         JOIN customers c ON c.id=i.customer_id
+L1813:         ORDER BY i.created_at DESC
+L1814:       `);
+L1815:       const rows = result.recordset.map(i => `<tr>
+L1816:         <td class="mono text-gold"><a href="/admin/invoices/${i.id}" style="color:#c8932a;">${i.invoice_number}</a></td>
+L1817:         <td>${i.customer_name}<br><span style="font-size:.75rem;color:#7a8a9a;">${i.company||''}</span></td>
+L1818:         <td>$${parseFloat(i.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+L1819:         <td style="font-weight:600;${parseFloat(i.balance_due)>0?'color:#e05050;':'color:#4caf50;'}">$${parseFloat(i.balance_due||0).toLocaleString('en-US',{minimumFractionDigits:2})}</td>
+L1820:         <td>${statusBadge(i.status)}</td>
+L1821:         <td style="color:#7a8a9a;font-size:.78rem;">${i.due_date?new Date(i.due_date).toLocaleDateString():'—'}</td>
+L1822:       </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No invoices yet</td></tr>';
+L1823:       res.send(page('Invoices','invoices',`
+L1824:         <div class="page-title">Invoices</div>
+L1825:         <div class="page-sub">All customer invoices</div>
