@@ -68,8 +68,9 @@ export function mountOrderRoutes(router, requireAuth, page) {
           html += '<div style="background:rgba(200,147,42,0.1);border:1px solid #c8932a;padding:14px 18px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">';
           html += '<div><div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;font-weight:700;margin-bottom:4px;">\u26A1 Ready for Supplier POs</div>';
           html += '<div style="color:#cfd5dc;font-size:.85rem;">' + _pending + ' supplier source(s) on this order have no PO yet. One click creates Draft POs (one per supplier).</div></div>';
-          html += '<form method="POST" action="/admin/orders/' + req.params.id + '/create-supplier-pos-from-order" style="margin:0;">';
-          html += '<button type="submit" class="btn btn-gold" onclick="return confirm(\'Create draft Supplier POs grouped by supplier? You can review/edit each before sending.\')">+ Create Supplier POs (' + _pending + ')</button>';
+          // PO_BUTTON_GET_V1
+          html += '<form method="GET" action="/admin/orders/' + req.params.id + '/create-supplier-pos-from-order" style="margin:0;">';
+          html += '<button type="submit" class="btn btn-gold" title="Review and edit POs before commit">+ Create Supplier POs (' + _pending + ')</button>';
           html += '</form></div>';
         }
         html += await renderLinesTab(o, oLines, suppliers);
