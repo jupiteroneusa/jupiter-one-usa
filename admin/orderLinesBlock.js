@@ -104,14 +104,7 @@ export async function renderLinesTab(o, oLines, suppliers) {
       html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">Quantity</div><input type="number" min="1" name="quantity_ordered" value="' + (l.quantity_ordered || 1) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
       html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">Unit Price ($)</div><input type="number" step="0.01" min="0" name="unit_price" value="' + parseFloat(l.unit_price || 0).toFixed(2) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
       html += '</div>';
-html += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px;">';
-      html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Supplier</div>';
-      html += '<select name="supplier_id" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;">' + supplierOpts + '</select></div>';
-      html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Supplier Cost ($)</div>';
-      html += '<input type="number" step="0.01" min="0" name="supplier_cost" value="' + (l.supplier_cost || '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
-      html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Supplier Lead (days)</div>';
-      html += '<input type="number" min="0" name="supplier_lead_time_days" value="' + (l.supplier_lead_time_days || '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
-      html += '</div>';
+// REMOVE_MISLEADING_SUPPLIER_V1: per-line single supplier field removed. Sources shown in INTERNAL SOURCES sub-row below.
 
       // Lot/serial/COO
       html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">';

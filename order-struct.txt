@@ -1,0 +1,172 @@
+========== admin/orderLinesBlock.js (full) ==========
+
+Total lines: 159
+L1: // EDIT_LINE_V2
+L2: // admin/orderLinesBlock.js
+L3: // Renders the Lines tab content for /admin/orders/:id
+L4: 
+L5: import { currency, statusBadge } from './uiHelpers.js';
+L6:   // [Rewire 3] Load order_line_sources for split-display
+L7:   let _sourcesMap = {};
+L8:   try {
+L9:     const _pool = await getPool();
+L10:     const _ids = (oLines.recordset || oLines).map(function(l){ return l.id; }).filter(Boolean);
+L11:     if (_ids.length) {
+L12:       const _r = await _pool.request().query(
+L13:         "SELECT ols.*, s.company_name AS supplier_name FROM order_line_sources ols JOIN suppliers s ON s.id = ols.supplier_id WHERE ols.order_line_id IN (" + _ids.join(',') + ") ORDER BY ols.order_line_id, ols.sort_order"
+L14:       );
+L15:       _r.recordset.forEach(function(s) {
+L16:         if (!_sourcesMap[s.order_line_id]) _sourcesMap[s.order_line_id] = [];
+L17:         _sourcesMap[s.order_line_id].push(s);
+L18:       });
+L19:     }
+L20:   } catch(e) { console.error('Sources load error:', e.message); }
+L21: 
+L22: import { getPool, sql } from '../db/connect.js';
+L23: export async function renderLinesTab(o, oLines, suppliers) {
+L24:   let html = '';
+L25: 
+L26:   html += '<div class="card" style="margin-bottom:16px;"><div class="card-header" style="display:flex;justify-content:space-between;align-items:center;"><span>Order Line Items (' + oLines.recordset.length + ')</span>';
+L27:   if (oLines.recordset.length > 0) {
+L28:     const lineIds = oLines.recordset.map(function(l){return l.id;}).join(',');
+L29:     html += '<a href="/admin/supplier-pos/new?from_order=' + o.id + '&line_ids=' + lineIds + '" class="btn btn-gold btn-sm" style="font-size:.7rem;">+ Create Supplier PO</a>';
+L30:   }
+L31:   html += '</div>';
+L32: 
+L33:   if (oLines.recordset.length === 0) {
+L34:     html += '<div style="padding:24px;text-align:center;color:#7a8a9a;">No line items on this order.</div>';
+L35:   } else {
+L36:     html += '<div style="padding:16px;">';
+L37:     oLines.recordset.forEach(function(l) {
+L38:       // [Rewire 3] Render source splits for this order line
+L39:       const _lineSources = _sourcesMap[l.id] || [];
+L40:       let _srcHtml = '';
+L41:       if (_lineSources.length > 0) {
+L42:         const _isSplit = _lineSources.length > 1;
+L43:         _srcHtml += '<div style="background:#0a1628;border-top:1px solid #1e2d42;padding:10px 14px;margin-top:-1px;">';
+L44:         _srcHtml += '<div style="font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;margin-bottom:6px;font-weight:700;">';
+L45:         _srcHtml += '\uD83D\uDD12 INTERNAL SOURCES ' + (_isSplit ? '(SPLIT: ' + _lineSources.length + ' suppliers)' : '') + '</div>';
+L46:         _srcHtml += '<table style="width:100%;font-size:.78rem;color:#cfd5dc;"><thead><tr style="text-align:left;">';
+L47:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">SUPPLIER</th>';
+L48:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">QTY</th>';
+L49:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">RECVD</th>';
+L50:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">UNIT COST</th>';
+L51:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">LINE COST</th>';
+L52:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;text-align:center;">8130</th>';
+L53:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;text-align:center;">CoC</th>';
+L54:         _srcHtml += '<th style="padding:3px 6px;color:#7a8a9a;font-size:.65rem;">PO</th>';
+L55:         _srcHtml += '</tr></thead><tbody>';
+L56:         _lineSources.forEach(function(_s) {
+L57:           const _full = _s.received_qty >= _s.allocated_qty;
+L58:           _srcHtml += '<tr>';
+L59:           _srcHtml += '<td style="padding:3px 6px;"><a href="/admin/suppliers/' + _s.supplier_id + '" style="color:#c8932a;">' + _s.supplier_name + '</a></td>';
+L60:           _srcHtml += '<td style="padding:3px 6px;font-weight:700;">' + _s.allocated_qty + '</td>';
+L61:           _srcHtml += '<td style="padding:3px 6px;color:' + (_full ? '#4caf50' : '#7a8a9a') + ';">' + (_s.received_qty || 0) + '/' + _s.allocated_qty + (_full ? ' \u2713' : '') + '</td>';
+L62:           _srcHtml += '<td style="padding:3px 6px;">$' + parseFloat(_s.unit_cost || 0).toFixed(2) + '</td>';
+L63:           _srcHtml += '<td style="padding:3px 6px;">$' + parseFloat(_s.line_cost || (_s.allocated_qty * _s.unit_cost) || 0).toFixed(2) + '</td>';
+L64:           _srcHtml += '<td style="padding:3px 6px;text-align:center;">' + (_s.has_8130_required ? (_s.has_8130_received ? '<span style="color:#4caf50;">\u2713</span>' : '<span style="color:#e05050;">!</span>') : '\u2014') + '</td>';
+L65:           _srcHtml += '<td style="padding:3px 6px;text-align:center;">' + (_s.has_coc_required ? (_s.has_coc_received ? '<span style="color:#4caf50;">\u2713</span>' : '<span style="color:#e05050;">!</span>') : '\u2014') + '</td>';
+L66:           _srcHtml += '<td style="padding:3px 6px;">' + (_s.supplier_po_line_id ? '<a href="/admin/supplier-pos" style="color:#c8932a;">View PO</a>' : '<span style="color:#7a8a9a;">Not yet</span>') + '</td>';
+L67:           _srcHtml += '</tr>';
+L68:         });
+L69:         _srcHtml += '</tbody></table></div>';
+L70:       }
+L71:       // Build supplier options for this line
+L72:       let supplierOpts = '<option value="">-- No supplier selected --</option>';
+L73:       suppliers.recordset.forEach(function(s) {
+L74:         const sel = (l.supplier_id == s.id) ? ' selected' : '';
+L75:         supplierOpts += '<option value="' + s.id + '"' + sel + '>' + s.name + (s.country ? ' (' + s.country + ')' : '') + '</option>';
+L76:       });
+L77: 
+L78:       html += '<div style="border:1px solid #1e2d42;background:#0a1628;margin-bottom:14px;padding:14px;">';
+L79: 
+L80:       // Header row: line #, NSN/Part, qty, price
+L81:       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid #1e2d42;">';
+L82:       html += '<div>';
+L83:       html += '<div style="font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#7a8a9a;">Line #' + l.line_number + '</div>';
+L84:       html += '<div style="font-family:monospace;color:#c8932a;font-size:1rem;font-weight:600;margin-top:2px;">' + (l.nsn || l.part_number || '&mdash;') + '</div>';
+L85:       html += '<div style="font-size:.85rem;color:#eef1f5;margin-top:2px;">' + (l.item_name || '&mdash;') + '</div>';
+L86:       html += '<div style="font-size:.75rem;color:#7a8a9a;margin-top:4px;">Condition: <strong>' + (l.condition_code || 'NE') + '</strong></div>';
+L87:       html += '</div>';
+L88:       html += '<div style="text-align:right;">';
+L89:       html += '<div style="font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#7a8a9a;">Qty / Price</div>';
+L90:       html += '<div style="font-size:.95rem;color:#eef1f5;margin-top:2px;">' + l.quantity_ordered + ' \u00d7 ' + currency(l.unit_price) + '</div>';
+L91:       html += '<div style="font-size:1rem;font-weight:700;color:#c8932a;margin-top:2px;">' + currency(l.line_total) + '</div>';
+L92:       html += '</div>';
+L93:       html += '</div>';
+L94: 
+L95:       // Editable form for the line
+L96:       html += '<form method="POST" action="/admin/orders/' + o.id + '/lines/' + l.id + '/update">';
+L97: 
+L98:       // Supplier section
+L99:             // EDIT_LINE_V2: editable basic fields (cascades to invoice_lines via /lines/:id/update)
+L100:       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0;padding:8px;background:#0a1628;border:1px dashed #c8932a;"><div style="grid-column:1/-1;font-size:.7rem;letter-spacing:.1em;color:#c8932a;text-transform:uppercase;">Fix Line Details (cascades to invoice if generated)</div>';
+L101:       html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">NSN</div><input type="text" name="nsn" value="' + (l.nsn || '').toString().replace(/"/g, '&quot;') + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
+L102:       html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">Part Number</div><input type="text" name="part_number" value="' + (l.part_number || '').toString().replace(/"/g, '&quot;') + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
+L103:       html += '<div style="grid-column:1/-1;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">Item Name</div><input type="text" name="item_name" value="' + (l.item_name || '').toString().replace(/"/g, '&quot;') + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
+L104:       html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">Quantity</div><input type="number" min="1" name="quantity_ordered" value="' + (l.quantity_ordered || 1) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
+L105:       html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:2px;">Unit Price ($)</div><input type="number" step="0.01" min="0" name="unit_price" value="' + parseFloat(l.unit_price || 0).toFixed(2) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></div>';
+L106:       html += '</div>';
+L107: html += '<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px;">';
+L108:       html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Supplier</div>';
+L109:       html += '<select name="supplier_id" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;">' + supplierOpts + '</select></div>';
+L110:       html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Supplier Cost ($)</div>';
+L111:       html += '<input type="number" step="0.01" min="0" name="supplier_cost" value="' + (l.supplier_cost || '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+L112:       html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Supplier Lead (days)</div>';
+L113:       html += '<input type="number" min="0" name="supplier_lead_time_days" value="' + (l.supplier_lead_time_days || '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+L114:       html += '</div>';
+L115: 
+L116:       // Lot/serial/COO
+L117:       html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px;">';
+L118:       html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Lot Number</div>';
+L119:       html += '<input type="text" name="lot_number" value="' + (l.lot_number || '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+L120:       html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Country of Origin</div>';
+L121:       html += '<input type="text" name="country_of_origin" value="' + (l.country_of_origin || '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+L122:       html += '<div><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Received Date</div>';
+L123:       html += '<input type="datetime-local" name="received_at" value="' + (l.received_at ? new Date(l.received_at).toISOString().slice(0,16) : '') + '" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+L124:       html += '</div>';
+L125: 
+L126:       // Serial numbers
+L127:       html += '<div style="margin-bottom:10px;"><div style="font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;margin-bottom:3px;">Serial Numbers (comma-separated)</div>';
+L128:       html += '<textarea name="serial_numbers" rows="2" style="width:100%;background:#111e30;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;font-family:monospace;resize:vertical;">' + (l.serial_numbers || '') + '</textarea></div>';
+L129: 
+L130:       // Compliance certs
+L131:       html += '<div style="background:#0f1e35;padding:10px;border-left:3px solid #c8932a;margin-bottom:12px;">';
+L132:       html += '<div style="font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:8px;font-weight:600;">Compliance & Certifications</div>';
+L133:       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">';
+L134:       html += '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;cursor:pointer;"><input type="checkbox" name="cert_8130_required" value="1"' + (l.cert_8130_required ? ' checked' : '') + ' style="width:auto;accent-color:#c8932a;"/> 8130-3 Required</label>';
+L135:       html += '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;cursor:pointer;"><input type="checkbox" name="cert_8130_received" value="1"' + (l.cert_8130_received ? ' checked' : '') + ' style="width:auto;accent-color:#4caf50;"/> 8130-3 Received</label>';
+L136:       html += '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;cursor:pointer;"><input type="checkbox" name="coc_required" value="1"' + (l.coc_required ? ' checked' : '') + ' style="width:auto;accent-color:#c8932a;"/> CoC Required</label>';
+L137:       html += '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;cursor:pointer;"><input type="checkbox" name="coc_received" value="1"' + (l.coc_received ? ' checked' : '') + ' style="width:auto;accent-color:#4caf50;"/> CoC Received</label>';
+L138:       html += '</div></div>';
+L139: 
+L140:       html += '<div style="display:flex;justify-content:flex-end;"><button type="submit" class="btn btn-gold btn-sm">Save Line</button></div>';
+L141:       html += '</form>';
+L142:       html += '</div>'; // end line card
+L143:           html += _srcHtml;
+L144:       });
+L145:     html += '</div>'; // end padding
+L146:   }
+L147: 
+L148:   // Totals footer
+L149:   html += '<div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;background:#0a1628;">';
+L150:   html += '<span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong style="color:#eef1f5;">' + currency(o.subtotal) + '</strong></span>';
+L151:   if (o.shipping_cost) html += '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong style="color:#eef1f5;">' + currency(o.shipping_cost) + '</strong></span>';
+L152:   html += '<span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">' + currency(o.total_amount) + '</strong></span>';
+L153:   html += '</div>';
+L154: 
+L155:   html += '</div>'; // end card
+L156: 
+L157:   return html;
+L158: }
+L159: 
+
+
+========== Where "Create Supplier POs" button lives ==========
+admin/orderRoutes.js L64: // [Rewire 4] One-click Create Supplier POs button
+admin/orderRoutes.js L72: html += '<form method="GET" action="/admin/orders/' + req.params.id + '/create-supplier-pos-from-order" style="margin:0;">';
+admin/orderRoutes.js L73: html += '<button type="submit" class="btn btn-gold" title="Review and edit POs before commit">+ Create Supplier POs (' + _pending + ')</button>';
+admin/orderRoutes.js L512: // [Rewire 4] POST /orders/:id/create-supplier-pos-from-order
+admin/orderRoutes.js L517: router.get('/orders/:id/create-supplier-pos-from-order', async (req, res) => {
+admin/orderRoutes.js L555: html += '<form method="POST" action="/admin/orders/' + order.id + '/create-supplier-pos-commit">';
+admin/orderRoutes.js L635: router.post('/orders/:id/create-supplier-pos-commit', async (req, res) => {
