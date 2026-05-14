@@ -1,3 +1,4 @@
+// COMBO_JS_FIX_V1
 // SUPPLIER_COMBO_V1
 // SUPPLIER_SEARCH_V1
 // SUPPLIER_DROPDOWN_V1
@@ -2227,7 +2228,7 @@ export async function buildAdminRouter() {
             html += '  dd.innerHTML = matches.map(function(s) { var name = (s.company_name||"").replace(/</g,"&lt;"); return "<div class=\\"sup-opt\\" data-id=\\"" + s.id + "\\" data-name=\\"" + name.replace(/\\"/g, "&quot;") + "\\" style=\\"padding:6px 10px;cursor:pointer;font-size:.82rem;color:#eef1f5;border-bottom:1px solid #1e2d42;\\">" + name + "</div>"; }).join("");';
             html += '  dd.style.display = "block";';
             html += '}';
-            html += 'document.addEventListener("focus", function(e) {',
+            html += 'document.addEventListener("focus", function(e) {';
             html += '  if (!e.target.classList || !e.target.classList.contains("sup-combo")) return;';
             html += '  renderSupOptions(e.target, e.target.value);';
             html += '}, true);';
