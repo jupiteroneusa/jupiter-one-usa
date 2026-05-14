@@ -1,0 +1,22 @@
+Line endings: CRLF=1994  LF-only=156
+Total lines: 2151
+
+Around L1717:
+L1711: [        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">]
+L1712: [          <div class="page-title">Quote ${q.quote_number}</div>]
+L1713: [          <div style="display:flex;gap:8px;">]
+L1714: [          ${q.status==='Expired' || q.status==='Rejected' ? `<button onclick="reissueQuoteDialog(${q.id})" class="btn btn-sm" style="background:#4caf50;color:#000;font-weight:600;">&#x21BB; Reissue Quote</button>` : ''}]
+L1715: [          ${q.status!=='Accepted' ? `<button onclick="reviseQuoteDialog(${q.id})" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">&#x270F; Revise &amp; Resend</button>` : ''}]
+L1716: [          <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>]
+L1717: [        </div>]
+L1718: [        </div>]
+L1719: [        <div class="page-sub">Created ${new Date(q.created_at).toLocaleString()}</div>]
+L1720: [        <div class="detail-grid">]
+L1721: [          <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${q.customer_id}" style="color:#c8932a;">${q.customer_name}</a></div></div>]
+L1722: [          <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${q.company||'—'}</div></div>]
+L1723: [          <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${q.email}" style="color:#c8932a;">${q.email}</a></div></div>]
+L1724: [          <div class="detail-item"><div class="detail-label">RFQ</div><div class="detail-value"><a href="/admin/rfqs/${q.rfq_header_id}" style="color:#c8932a;">${q.rfq_number}</a></div></div>]
+L1725: [          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}${(() => { if (q.status==='Sent' && q.valid_until) {  const days = Math.ceil((new Date(q.valid_until)-new Date())/86400000);  if (days < 0) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">EXPIRED '+Math.abs(days)+'d AGO</span>';  if (days <= 3) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  if (days <= 7) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  return ' <span style="color:#7a8a9a;font-size:.7rem;margin-left:6px;">'+days+'d left</span>'; } if (q.reissued_count > 0) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Reissued '+q.reissued_count+'x</span>'; return '';})()}</div></div>${q.status==='Rejected' ? `<div class="alert alert-error" style="grid-column:1/-1;">&#9888; Customer rejected${q.rejected_at ? ' on '+new Date(q.rejected_at).toLocaleDateString() : ''}${q.rejection_reason ? '. Reason: '+q.rejection_reason : ''}</div>` : ''}${q.status==='Expired' ? `<div class="alert" style="grid-column:1/-1;background:rgba(122,138,154,0.1);border-color:#7a8a9a;color:#7a8a9a;">&#9201; This quote expired${q.expired_at ? ' on '+new Date(q.expired_at).toLocaleDateString() : (q.valid_until ? ' on '+new Date(q.valid_until).toLocaleDateString() : '')}. Use Reissue or Revise to send a new one.</div>` : ''}]
+
+Raw bytes around the unit_cost line area (after first patch fail):
+"\n        <td>${l.quantity}</td>\r\n        <td style=\"color:#7a8a9a;\">${l.condition_code||'—'}</td>\r\n        <td style=\"color:#7a8a9a;\">${parseFloat(l.unit_cost||0).toFixed(2)}</td>\r\n        <td style=\"font-weight:600;\">${parseFloat(l.unit_price||0).toFixed(2)}</td>\r\n        <td style=\"font-weight:600;\">${parseFloat(l.line_total||0).toFixed(2)}</td>\r\n        <td style=\"color:#7a8a9a;\">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '—')}</td>\r\n        <td style=\"color:${parseFloat(l.margin_pct||0)>=20?'#4caf50':'#e05050'};\">${parseFloat(l.margin_pct||0).toFixed(1)}%</td>\r"
