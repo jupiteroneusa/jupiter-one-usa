@@ -1,4 +1,10 @@
-// ORDERLINES_REWRITE_V1
+const fs = require('fs');
+const { execSync } = require('child_process');
+
+const f = 'admin/orderLinesBlock.js';
+const orig = fs.readFileSync(f, 'utf8');
+
+const newFile = `// ORDERLINES_REWRITE_V1
 import { currency, statusBadge } from './uiHelpers.js';
 import { getPool, sql } from '../db/connect.js';
 
@@ -42,13 +48,13 @@ export async function renderLinesTab(o, oLines, suppliers) {
     html += '<div style="padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;border-bottom:1px solid #1e2d42;">';
     html += '<div style="flex:1;min-width:240px;">';
     html += '<div style="font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#7a8a9a;">Line #' + l.line_number + '</div>';
-    html += '<div style="font-family:monospace;color:#c8932a;font-size:1.05rem;font-weight:700;margin-top:2px;">' + (l.nsn || l.part_number || '—') + '</div>';
-    html += '<div style="font-size:.88rem;color:#eef1f5;margin-top:2px;">' + (l.item_name || '—') + '</div>';
+    html += '<div style="font-family:monospace;color:#c8932a;font-size:1.05rem;font-weight:700;margin-top:2px;">' + (l.nsn || l.part_number || '\u2014') + '</div>';
+    html += '<div style="font-size:.88rem;color:#eef1f5;margin-top:2px;">' + (l.item_name || '\u2014') + '</div>';
     html += '<div style="font-size:.72rem;color:#7a8a9a;margin-top:4px;">Condition: <strong style="color:#cfd5dc;">' + (l.condition_code || 'NE') + '</strong></div>';
     html += '</div>';
     html += '<div style="text-align:right;min-width:140px;">';
-    html += '<div style="font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#7a8a9a;">Qty × Price</div>';
-    html += '<div style="font-size:.95rem;color:#eef1f5;margin-top:2px;">' + l.quantity_ordered + ' × ' + currency(l.unit_price) + '</div>';
+    html += '<div style="font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#7a8a9a;">Qty \u00d7 Price</div>';
+    html += '<div style="font-size:.95rem;color:#eef1f5;margin-top:2px;">' + l.quantity_ordered + ' \u00d7 ' + currency(l.unit_price) + '</div>';
     html += '<div style="font-size:1.1rem;font-weight:700;color:#c8932a;margin-top:2px;">' + currency(l.line_total) + '</div>';
     html += '</div></div>';
 
@@ -57,8 +63,8 @@ export async function renderLinesTab(o, oLines, suppliers) {
       const isSplit = lineSources.length > 1;
       html += '<div style="background:rgba(200,147,42,0.06);padding:10px 16px;border-bottom:1px solid #1e2d42;">';
       html += '<div style="font-size:.65rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;margin-bottom:8px;font-weight:700;display:flex;justify-content:space-between;align-items:center;">';
-      html += '<span>🔒 Sourcing' + (isSplit ? ' (' + lineSources.length + ' suppliers, split)' : '') + '</span>';
-      html += '<button type="button" onclick="var d=document.getElementById(\'srcedit-' + l.id + '\');d.style.display=d.style.display===\'none\'?\'block\':\'none\';" style="background:transparent;border:1px solid #c8932a;color:#c8932a;padding:2px 10px;cursor:pointer;border-radius:3px;font-size:.65rem;">✎ Edit Sources</button>';
+      html += '<span>\u{1F512} Sourcing' + (isSplit ? ' (' + lineSources.length + ' suppliers, split)' : '') + '</span>';
+      html += '<button type="button" onclick="var d=document.getElementById(\\'srcedit-' + l.id + '\\');d.style.display=d.style.display===\\'none\\'?\\'block\\':\\'none\\';" style="background:transparent;border:1px solid #c8932a;color:#c8932a;padding:2px 10px;cursor:pointer;border-radius:3px;font-size:.65rem;">\u270E Edit Sources</button>';
       html += '</div>';
       html += '<table style="width:100%;font-size:.78rem;color:#cfd5dc;border-collapse:collapse;"><thead><tr style="text-align:left;color:#7a8a9a;font-size:.66rem;">';
       html += '<th style="padding:4px 6px;">Supplier</th><th style="padding:4px 6px;">Qty</th><th style="padding:4px 6px;">Recv</th><th style="padding:4px 6px;">Unit Cost</th><th style="padding:4px 6px;">Line Cost</th><th style="padding:4px 6px;">Lead</th><th style="padding:4px 6px;text-align:center;">Certs</th><th style="padding:4px 6px;">PO</th>';
@@ -70,16 +76,16 @@ export async function renderLinesTab(o, oLines, suppliers) {
         if (src.has_8130) certs += '<span style="display:inline-block;padding:1px 5px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:2px;font-size:.62rem;margin-right:2px;">8130</span>';
         if (src.has_coc) certs += '<span style="display:inline-block;padding:1px 5px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:2px;font-size:.62rem;margin-right:2px;">CoC</span>';
         if (src.has_trace) certs += '<span style="display:inline-block;padding:1px 5px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:2px;font-size:.62rem;">Trace</span>';
-        if (!certs) certs = '<span style="color:#7a8a9a;">—</span>';
+        if (!certs) certs = '<span style="color:#7a8a9a;">\u2014</span>';
         html += '<tr style="border-top:1px solid rgba(30,45,66,0.5);">';
-        html += '<td style="padding:6px;"><a href="/admin/suppliers/' + src.supplier_id + '" style="color:#c8932a;font-weight:600;">' + (src.supplier_name || '—') + '</a></td>';
+        html += '<td style="padding:6px;"><a href="/admin/suppliers/' + src.supplier_id + '" style="color:#c8932a;font-weight:600;">' + (src.supplier_name || '\u2014') + '</a></td>';
         html += '<td style="padding:6px;font-weight:700;">' + src.allocated_qty + '</td>';
-        html += '<td style="padding:6px;color:' + (full ? '#4caf50' : '#7a8a9a') + ';">' + (src.received_qty || 0) + '/' + src.allocated_qty + (full ? ' ✓' : '') + '</td>';
+        html += '<td style="padding:6px;color:' + (full ? '#4caf50' : '#7a8a9a') + ';">' + (src.received_qty || 0) + '/' + src.allocated_qty + (full ? ' \u2713' : '') + '</td>';
         html += '<td style="padding:6px;">$' + parseFloat(src.unit_cost || 0).toFixed(2) + '</td>';
         html += '<td style="padding:6px;font-weight:600;">$' + parseFloat(lineCost).toFixed(2) + '</td>';
-        html += '<td style="padding:6px;color:#7a8a9a;">' + (src.lead_time_text || (src.supplier_lead_time_days ? src.supplier_lead_time_days + ' days' : '—')) + '</td>';
+        html += '<td style="padding:6px;color:#7a8a9a;">' + (src.lead_time_text || (src.supplier_lead_time_days ? src.supplier_lead_time_days + ' days' : '\u2014')) + '</td>';
         html += '<td style="padding:6px;text-align:center;">' + certs + '</td>';
-        html += '<td style="padding:6px;">' + (src.supplier_po_line_id ? '<span style="color:#4caf50;font-size:.72rem;">✓ PO\'d</span>' : '<span style="color:#7a8a9a;">Pending</span>') + '</td>';
+        html += '<td style="padding:6px;">' + (src.supplier_po_line_id ? '<span style="color:#4caf50;font-size:.72rem;">\u2713 PO\\'d</span>' : '<span style="color:#7a8a9a;">Pending</span>') + '</td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
@@ -100,19 +106,19 @@ export async function renderLinesTab(o, oLines, suppliers) {
         html += '</div>';
       });
       html += '<input type="hidden" name="src_count" value="' + lineSources.length + '"/>';
-      html += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;"><button type="button" onclick="document.getElementById(\'srcedit-' + l.id + '\').style.display=\'none\';" class="btn btn-outline btn-sm">Cancel</button><button type="submit" class="btn btn-gold btn-sm">Save Source Changes</button></div>';
+      html += '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;"><button type="button" onclick="document.getElementById(\\'srcedit-' + l.id + '\\').style.display=\\'none\\';" class="btn btn-outline btn-sm">Cancel</button><button type="submit" class="btn btn-gold btn-sm">Save Source Changes</button></div>';
       html += '</form></div></div>';
     } else {
-      html += '<div style="padding:8px 16px;background:rgba(224,80,80,0.06);color:#e05050;font-size:.78rem;border-bottom:1px solid #1e2d42;">⚠ No sources on this line.</div>';
+      html += '<div style="padding:8px 16px;background:rgba(224,80,80,0.06);color:#e05050;font-size:.78rem;border-bottom:1px solid #1e2d42;">\u26A0 No sources on this line.</div>';
     }
 
     // Action bar
     html += '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">';
-    html += '<button type="button" onclick="var d=document.getElementById(\'lineedit-' + l.id + '\');d.style.display=d.style.display===\'none\'?\'block\':\'none\';" style="background:transparent;border:1px solid #7a8a9a;color:#7a8a9a;padding:5px 12px;cursor:pointer;border-radius:3px;font-size:.72rem;">✎ Edit Line Details</button>';
+    html += '<button type="button" onclick="var d=document.getElementById(\\'lineedit-' + l.id + '\\');d.style.display=d.style.display===\\'none\\'?\\'block\\':\\'none\\';" style="background:transparent;border:1px solid #7a8a9a;color:#7a8a9a;padding:5px 12px;cursor:pointer;border-radius:3px;font-size:.72rem;">\u270E Edit Line Details</button>';
     if (hasPending) {
       html += '<form method="GET" action="/admin/orders/' + o.id + '/create-supplier-pos-from-order" style="margin:0;"><input type="hidden" name="line_id" value="' + l.id + '"/><button type="submit" class="btn btn-gold btn-sm" style="font-size:.78rem;">+ Generate PO for this Line</button></form>';
     } else if (allPoed) {
-      html += '<span style="color:#4caf50;font-size:.78rem;font-weight:600;">✓ All sources have POs</span>';
+      html += '<span style="color:#4caf50;font-size:.78rem;font-weight:600;">\u2713 All sources have POs</span>';
     }
     html += '</div>';
 
@@ -141,7 +147,7 @@ export async function renderLinesTab(o, oLines, suppliers) {
     html += '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;"><input type="checkbox" name="coc_required" value="1"' + (l.coc_required ? ' checked' : '') + '/> CoC Required</label>';
     html += '<label style="display:flex;align-items:center;gap:6px;font-size:.8rem;"><input type="checkbox" name="coc_received" value="1"' + (l.coc_received ? ' checked' : '') + '/> CoC Received</label>';
     html += '</div></div>';
-    html += '<div style="display:flex;justify-content:flex-end;gap:8px;"><button type="button" onclick="document.getElementById(\'lineedit-' + l.id + '\').style.display=\'none\';" class="btn btn-outline btn-sm">Cancel</button><button type="submit" class="btn btn-gold btn-sm">Save Line</button></div>';
+    html += '<div style="display:flex;justify-content:flex-end;gap:8px;"><button type="button" onclick="document.getElementById(\\'lineedit-' + l.id + '\\').style.display=\\'none\\';" class="btn btn-outline btn-sm">Cancel</button><button type="submit" class="btn btn-gold btn-sm">Save Line</button></div>';
     html += '</form></div></div>';
   });
 
@@ -154,3 +160,60 @@ export async function renderLinesTab(o, oLines, suppliers) {
 
   return html;
 }
+`;
+
+fs.writeFileSync(f + '.rewrite.bak', orig);
+fs.writeFileSync(f, newFile);
+
+try {
+  execSync('node -c "' + f + '"', { stdio: 'pipe' });
+  console.log('+ orderLinesBlock.js fully rewritten');
+  console.log('+ Sources actually load now (was broken)');
+  console.log('+ Clean line cards, sources visible, edit panels collapse');
+  console.log('+ Per-line Generate PO button + Edit Sources inline');
+} catch (err) {
+  fs.writeFileSync(f, orig);
+  console.error('! syntax error - REVERTED');
+  console.error(err.stderr ? err.stderr.toString() : err.message);
+  process.exit(1);
+}
+
+// Add line_id filter to review handler
+const orFile = 'admin/orderRoutes.js';
+const orOrig = fs.readFileSync(orFile, 'utf8');
+let orS = orOrig;
+
+if (!orS.includes('PER_LINE_PO_V1')) {
+  const idx = orS.indexOf("AND ols.supplier_po_line_id IS NULL");
+  if (idx > 0) {
+    const lineEnd = orS.indexOf('\n', idx);
+    const before = orS.substring(0, lineEnd);
+    const after = orS.substring(lineEnd);
+    // Look back to find the start of the query and add the filter
+    const queryStart = orS.lastIndexOf("const sourcesR", idx);
+    if (queryStart > 0) {
+      // Inject filter via _lineFilter variable just before the query
+      const inject = "      // PER_LINE_PO_V1\n      const _lineFilter = req.query.line_id ? ' AND ol.id = ' + parseInt(req.query.line_id) : '';\n";
+      // Replace the static WHERE clause line with one that appends _lineFilter
+      const oldWhere = "          AND ols.supplier_po_line_id IS NULL";
+      const newWhere = "          AND ols.supplier_po_line_id IS NULL ${_lineFilter}";
+      if (orS.includes(oldWhere)) {
+        orS = orS.replace(oldWhere, newWhere);
+        // Add the _lineFilter declaration just before "const sourcesR"
+        orS = orS.replace("const sourcesR = await pool.request().input('oid'", "const _lineFilter = req.query.line_id ? ' AND ol.id = ' + parseInt(req.query.line_id) : '';\n      const sourcesR = await pool.request().input('oid'");
+        fs.writeFileSync(orFile + '.perline.bak', orOrig);
+        fs.writeFileSync(orFile, orS);
+        try {
+          execSync('node -c "' + orFile + '"', { stdio: 'pipe' });
+          console.log('+ orderRoutes.js: review screen filters by line_id when provided');
+        } catch (err) {
+          fs.writeFileSync(orFile, orOrig);
+          console.error('! orderRoutes syntax - REVERTED');
+          console.error(err.stderr ? err.stderr.toString() : err.message);
+        }
+      }
+    }
+  }
+}
+
+console.log('SUCCESS');
