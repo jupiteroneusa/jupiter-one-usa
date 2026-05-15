@@ -93,6 +93,55 @@ export function mountOrderRoutes(router, requireAuth, page) {
     }
   });
 
+    // SOURCES_UPDATE_HANDLER_V1: save per-source edits + recompute line cost
+  router.post('/orders/:id/lines/:lineId/sources-update', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const orderId = parseInt(req.params.id);
+      const lineId = parseInt(req.params.lineId);
+      const count = parseInt(b.src_count) || 0;
+      if (count === 0) return res.redirect('/admin/orders/' + orderId + '?tab=lines&error=No+sources');
+
+      let totalQty = 0, totalCost = 0;
+      for (let i = 0; i < count; i++) {
+        const id = parseInt(b['src_' + i + '_id']);
+        const qty = parseInt(b['src_' + i + '_qty']) || 0;
+        const cost = parseFloat(b['src_' + i + '_cost']) || 0;
+        const lead = b['src_' + i + '_lead'] || null;
+        const h8 = b['src_' + i + '_8130'] === 'on' || b['src_' + i + '_8130'] === '1' ? 1 : 0;
+        const hc = b['src_' + i + '_coc'] === 'on' || b['src_' + i + '_coc'] === '1' ? 1 : 0;
+        const ht = b['src_' + i + '_trace'] === 'on' || b['src_' + i + '_trace'] === '1' ? 1 : 0;
+        totalQty += qty;
+        totalCost += qty * cost;
+
+        await pool.request()
+          .input('id', sql.BigInt, id)
+          .input('qty', sql.Int, qty)
+          .input('cost', sql.Decimal(10,2), cost)
+          .input('lc', sql.Decimal(12,2), qty * cost)
+          .input('lead', sql.NVarChar(sql.MAX), lead)
+          .input('h8', sql.Bit, h8)
+          .input('hc', sql.Bit, hc)
+          .input('ht', sql.Bit, ht)
+          .query('UPDATE order_line_sources SET allocated_qty=@qty, unit_cost=@cost, line_cost=@lc, lead_time_text=@lead, has_8130=@h8, has_coc=@hc, has_trace=@ht, updated_at=GETDATE() WHERE id=@id');
+      }
+
+      // Recompute line unit_cost as weighted average (cascades to PO PDF + analytics)
+      const newLineUnitCost = totalQty > 0 ? totalCost / totalQty : 0;
+      await pool.request()
+        .input('id', sql.BigInt, lineId)
+        .input('uc', sql.Decimal(10,2), newLineUnitCost)
+        .query('UPDATE order_lines SET supplier_cost=@uc WHERE id=@id');
+
+      res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=Sources+updated');
+    } catch (err) {
+      console.error('Sources update error:', err);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
+    }
+  });
+
   router.post('/orders/:id/overview-update', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
