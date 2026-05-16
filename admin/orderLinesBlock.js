@@ -107,7 +107,6 @@ export async function renderLinesTab(o, oLines, suppliers) {
   ].join("\n");
   html += '<' + '/script>';
 
-  return html;
   }
 
   html += '<div style="padding:16px;">';
