@@ -1,0 +1,30 @@
+========== Existing PO send logic ==========
+
+admin/supplierPoRoutes.js L11: import { generatePoPdf } from '../services/poPdfService.js';
+admin/supplierPoRoutes.js L656: const pdfRaw = await generatePoPdf(req.params.id);
+admin/supplierPoRoutes.js L698: const pdfBuffer = await generatePoPdf(req.params.id);
+admin/supplierPoRoutes.js L742: const sendResult = await transporter.sendMail({
+admin/supplierPoRoutes.js L749: attachments: [{
+admin/orderRoutes.js L550: if (pdfBuffer) mailOpts.attachments = [{ filename: 'Invoice-'+invoiceNumber+'.pdf', content: pdfBuffer, contentType: 'application/pdf' }];
+admin/orderRoutes.js L551: await transporter.sendMail(mailOpts);
+admin/orderRoutes.js L911: mailOpts.attachments = [{
+admin/orderRoutes.js L917: await transporter.sendMail(mailOpts);
+services/poPdfService.js L19: export async function generatePoPdf(poId) {
+
+========== ORD-2026-00012 POs - SQL to run in SSMS ==========
+
+USE jupiteroneusa;
+
+PRINT '----- Order 12 POs -----';
+SELECT id, po_number, supplier_id, status, total, issued_at, expected_delivery, notes
+FROM supplier_pos WHERE order_id = 12 ORDER BY id;
+
+PRINT '----- PO lines -----';
+SELECT spl.id, spl.supplier_po_id, sp.po_number, s.company_name, spl.line_number, spl.nsn, spl.part_number,
+       spl.item_name, spl.quantity, spl.unit_cost, spl.line_total
+FROM supplier_po_lines spl
+INNER JOIN supplier_pos sp ON sp.id = spl.supplier_po_id
+INNER JOIN suppliers s ON s.id = sp.supplier_id
+WHERE sp.order_id = 12
+ORDER BY sp.id, spl.line_number;
+
