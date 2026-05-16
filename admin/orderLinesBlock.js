@@ -225,7 +225,6 @@ export async function renderLinesTab(o, oLines, suppliers) {
     '  if (!container) return;',
     '  var existing = container.querySelectorAll("[data-srcrow]");',
     '  var nextIdx = existing.length;',
-    '  while (container.querySelector("[data-srcrow=\"" + lineId + "_" + nextIdx + "\"]")) nextIdx++;',
     '  var hidId = "sup_" + lineId + "_" + nextIdx + "_new";',
     '  var div = document.createElement("div");',
     '  div.setAttribute("data-srcrow", lineId + "_" + nextIdx);',
