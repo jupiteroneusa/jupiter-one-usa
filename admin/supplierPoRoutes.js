@@ -352,215 +352,6 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         html += '<div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">' + currency(po.total) + '</div></div>';
         html += '<div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">' + (po.supplier_payment_terms || '&mdash;') + '</div></div>';
         html += '<div class="detail-item"><div class="detail-label">Issued</div><div class="detail-value">' + shortDateTime(po.issued_at) + '</div></div>';
-        // PO_DETAIL_EDIT_V1: editable expected delivery + shipping terms
-        const expDate = po.expected_delivery ? new Date(po.expected_delivery).toISOString().substring(0,10) : '';
-        html += '<div class="detail-item" style="grid-column:1/-1;">';
-        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/po-details" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;">';
-        html += '<div><div class="detail-label">Expected Delivery</div><input type="date" name="expected_delivery" value="' + expDate + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
-        html += '<div><div class="detail-label">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="' + parseFloat(po.shipping_cost || 0).toFixed(2) + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
-        html += '<div><div class="detail-label">Shipping Terms</div><input type="text" name="shipping_terms" placeholder="e.g. Pre-Pay and Add Ground" value="' + ((po.shipping_terms || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
-        html += '<button type="submit" class="btn btn-gold btn-sm">Save</button>';
-        html += '</form></div>';
-        html += '<div class="detail-item"><div class="detail-label">Received</div><div class="detail-value">' + shortDateTime(po.received_at) + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Paid</div><div class="detail-value">' + (po.paid_at ? '<span style="color:#4caf50;">' + shortDateTime(po.paid_at) + '</span>' : '<span style="color:#e05050;">Unpaid</span>') + '</div></div>';
-        html += '</div>';
-
-        // Status update form
-        html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
-        html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">Update Status</div>';
-        const statusOptions = ['Draft', 'Sent', 'Confirmed', 'Received', 'Closed', 'Cancelled'];
-        let stOpts = '';
-        statusOptions.forEach(function(s) { stOpts += '<option value="' + s + '"' + (po.status === s ? ' selected' : '') + '>' + s + '</option>'; });
-        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/status" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">';
-        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">' + stOpts + '</select></div>';
-        html += '<div style="flex:1;min-width:200px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Note (optional)</div><input type="text" name="note" placeholder="Reason for status change..." style="width:100%;"/></div>';
-        html += '<button type="submit" class="btn btn-gold">Update</button></form>';
-        html += '<div style="font-size:.78rem;color:#7a8a9a;margin-top:10px;">Setting status to <strong>Received</strong> will mark all lines as fully received and update the linked order.</div>';
-        html += '</div>';
-
-        // Send PO button (Draft only)
-        if (po.status === 'Draft') {
-          html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;background:rgba(200,147,42,0.06);padding:16px;border-radius:6px;border:1px solid rgba(200,147,42,0.3);">';
-          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">&#128231; Send PO to Supplier</div>';
-          html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/send" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">';
-          html += '<div style="flex:1;min-width:240px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Email To</div>';
-          html += '<input type="email" name="email_to" required value="' + (po.supplier_email || '') + '" placeholder="supplier@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
-          html += '<div style="flex:1;min-width:200px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">CC (optional)</div>';
-          html += '<input type="email" name="email_cc" placeholder="cc@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
-          html += '<button type="submit" class="btn btn-gold">&#128231; Send PO + PDF</button>';
-          html += '</form>';
-          html += '<div style="font-size:.78rem;color:#7a8a9a;margin-top:8px;">Generates PO PDF, emails it to supplier, and sets status to <strong>Sent</strong>.</div>';
-          html += '</div>';
-        } else if (po.sent_at) {
-          html += '<div style="margin-top:16px;padding:10px 14px;background:rgba(76,175,80,0.08);border-left:3px solid #4caf50;font-size:.85rem;">&#10004; PO sent to <strong>' + (po.email_to || 'supplier') + '</strong> on ' + shortDateTime(po.sent_at) + '. <a href="/admin/supplier-pos/' + po.id + '/pdf" target="_blank" style="color:#c8932a;margin-left:8px;">View PDF</a></div>';
-        }
-
-        // PDF preview link (always available)
-        html += '<div style="margin-top:16px;"><a href="/admin/supplier-pos/' + po.id + '/pdf" target="_blank" class="btn btn-outline btn-sm">&#128196; Preview PO PDF</a></div>';
-
-        // Notes editor
-        html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
-        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/notes-update">';
-        html += textareaField('Notes', 'notes', po.notes, 3);
-        html += '<button type="submit" class="btn btn-outline btn-sm">Save Notes</button>';
-        html += '</form></div>';
-      }
-
-      // ---------- LINES TAB ----------
-      if (activeTab === 'lines') {
-        if (linesR.recordset.length === 0) {
-          html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No lines on this PO yet.</div>';
-        } else {
-          html += '<table><thead><tr>' +
-            '<th>#</th><th>NSN/Part</th><th>Item</th><th>Cond</th><th>Qty</th><th>Received</th><th>Unit Cost</th><th>Line Total</th><th>Receive</th>' +
-            '</tr></thead><tbody>';
-          linesR.recordset.forEach(function(l) {
-            const remaining = (l.quantity || 0) - (l.received_quantity || 0);
-            const fullReceived = remaining <= 0;
-            html += '<tr>' +
-              '<td>' + l.line_number + '</td>' +
-              '<td class="mono" style="color:#c8932a;">' + (l.nsn || l.part_number || '&mdash;') + '</td>' +
-              '<td style="font-size:.8rem;">' + (l.item_name || '&mdash;') + '</td>' +
-              '<td>' + (l.condition_code || '&mdash;') + '</td>' +
-              '<td style="font-weight:600;">' + l.quantity + '</td>' +
-              '<td>' + (l.received_quantity || 0) + ' / ' + l.quantity + (fullReceived ? ' <span style="color:#4caf50;">&#10004;</span>' : '') + '</td>' +
-              '<td>' + currency(l.unit_cost) + '</td>' +
-              '<td style="font-weight:600;">' + currency(l.line_total) + '</td>' +
-              '<td>';
-            if (!fullReceived) {
-              html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/lines/' + l.id + '/receive" style="display:flex;gap:4px;align-items:center;">' +
-                '<input type="number" name="qty" min="1" max="' + remaining + '" value="' + remaining + '" style="width:70px;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:4px 6px;font-size:.8rem;"/>' +
-                '<button type="submit" class="btn btn-gold btn-sm" style="font-size:.7rem;padding:5px 10px;">Receive</button>' +
-              '</form>';
-            } else {
-              html += '<span style="color:#4caf50;font-size:.78rem;">Complete</span>';
-            }
-            html += '</td></tr>';
-          });
-          html += '</tbody></table>';
-          html += '<div style="margin-top:14px;font-size:.78rem;color:#7a8a9a;">When all PO lines are fully received, the PO auto-marks <strong>Received</strong> and the linked order line gets a <strong>received_at</strong> date. When all order lines are received, the order auto-progresses to <strong>Ready to Ship</strong>.</div>';
-        }
-      }
-
-      // ---------- PAYMENT TAB ----------
-      if (activeTab === 'payment') {
-        const isPaid = !!po.paid_at;
-        html += '<div class="detail-grid">';
-        html += '<div class="detail-item"><div class="detail-label">PO Total</div><div class="detail-value" style="font-weight:600;">' + currency(po.total) + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + (isPaid ? '<span style="color:#4caf50;font-weight:600;">&#10004; Paid</span>' : '<span style="color:#e05050;font-weight:600;">Unpaid</span>') + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Method</div><div class="detail-value">' + (po.payment_method || '&mdash;') + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Reference</div><div class="detail-value" style="font-family:monospace;">' + (po.payment_reference || '&mdash;') + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Paid Date</div><div class="detail-value">' + shortDateTime(po.paid_at) + '</div></div>';
-        html += '<div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">' + (po.supplier_payment_terms || '&mdash;') + '</div></div>';
-        html += '</div>';
-
-        if (!isPaid) {
-          html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
-          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">Mark Paid</div>';
-          html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/mark-paid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:flex-end;">';
-          html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Method</div><select name="payment_method"><option>Wire Transfer</option><option>ACH</option><option>Check</option><option>Credit Card</option><option>Other</option></select></div>';
-          html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Date</div><input type="date" name="paid_date" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;"/></div>';
-          html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Reference</div><input type="text" name="payment_reference" placeholder="Wire ref / check #" style="width:100%;"/></div>';
-          html += '<div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">&#10004; Mark PO Paid</button></div>';
-          html += '</form>';
-          html += '</div>';
-        } else {
-          html += '<div class="alert alert-success" style="margin-top:16px;">This PO has been paid to the supplier.</div>';
-        }
-      }
-
-      // ---------- DOCUMENTS TAB ----------
-      if (activeTab === 'documents') {
-        // Upload form (always visible)
-        html += '<div style="background:rgba(200,147,42,0.06);border:1px solid rgba(200,147,42,0.3);padding:16px;border-radius:6px;margin-bottom:20px;">';
-        html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:12px;">&#128206; Upload Document</div>';
-        html += '<form id="docUploadForm" enctype="multipart/form-data" style="display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:10px;align-items:flex-end;">';
-        html += '<input type="hidden" name="related_to_type" value="supplier_po"/>';
-        html += '<input type="hidden" name="related_to_id" value="' + po.id + '"/>';
-        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Document Type</div>';
-        html += '<select name="doc_type" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;">' +
-          '<option value="">-- Select --</option>' +
-          '<option value="8130">FAA 8130-3</option>' +
-          '<option value="CoC">Certificate of Conformance</option>' +
-          '<option value="Trace">Traceability</option>' +
-          '<option value="PackingSlip">Packing Slip</option>' +
-          '<option value="Invoice">Supplier Invoice</option>' +
-          '<option value="Quote">Supplier Quote</option>' +
-          '<option value="Other">Other</option>' +
-          '</select></div>';
-        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">File (max 25MB)</div>';
-        html += '<input type="file" name="file" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
-        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Notes (optional)</div>';
-        html += '<input type="text" name="notes" placeholder="Line ref, cert details..." style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;"/></div>';
-        html += '<button type="button" onclick="uploadDoc()" class="btn btn-gold">Upload</button>';
-        html += '</form>';
-        html += '<div id="uploadStatus" style="margin-top:10px;font-size:.85rem;"></div>';
-        html += '</div>';
-
-        html += '<script>function uploadDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/admin/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
-
-        // Document list
-        if (docsR.recordset.length === 0) {
-          html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No documents uploaded yet.</div>';
-        } else {
-          html += '<table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th><th>Notes</th><th></th></tr></thead><tbody>';
-          docsR.recordset.forEach(function(d) {
-            html += '<tr>' +
-              '<td>' + statusBadge(d.doc_type) + '</td>' +
-              '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">&#128206; ' + d.file_name + '</a></td>' +
-              '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDateTime(d.uploaded_at) + '</td>' +
-              '<td style="color:#7a8a9a;font-size:.82rem;">' + (d.notes || '&mdash;') + '</td>' +
-              '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/admin/api/documents/' + d.id + '/delete\',{method:\'POST\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>' +
-            '</tr>';
-          });
-          html += '</tbody></table>';
-        }
-      }
-
-      html += '</div></div>';
-
-      res.send(page(po.po_number + ' \u2014 Supplier PO', 'supplier-pos', html));
-    } catch(err) {
-      console.error('PO detail error:', err);
-      res.send(page('Supplier PO', 'supplier-pos', '<div class="alert alert-error">' + err.message + '</div>'));
-    }
-  });
-
-  // ==========================================================================
-  // POST /supplier-pos/:id/status - update status
-  // ==========================================================================
-  router.post('/supplier-pos/:id/status', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const newStatus = req.body.status;
-      const setIssued = (newStatus === 'Sent') ? ", issued_at=ISNULL(issued_at, GETDATE())" : '';
-      const setReceived = (newStatus === 'Received') ? ", received_at=ISNULL(received_at, GETDATE())" : '';
-
-      await pool.request()
-        .input('id', sql.BigInt, req.params.id)
-        .input('s', sql.NVarChar(30), newStatus)
-        .query("UPDATE supplier_pos SET status=@s" + setIssued + setReceived + ", updated_at=GETDATE() WHERE id=@id");
-
-      // If marking Received, mark all lines as received-in-full and cascade to order_lines
-      if (newStatus === 'Received') {
-        await pool.request().input('id', sql.BigInt, req.params.id)
-          .query("UPDATE supplier_po_lines SET received_quantity = quantity, received_at = ISNULL(received_at, GETDATE()) WHERE supplier_po_id=@id");
-
-        // Cascade to linked order_lines
-        await pool.request().input('id', sql.BigInt, req.params.id)
-          .query("UPDATE ol SET ol.received_at = ISNULL(ol.received_at, GETDATE()) FROM order_lines ol INNER JOIN supplier_po_lines pl ON pl.order_line_id = ol.id WHERE pl.supplier_po_id = @id");
-
-        // Check if all order_lines for the linked order are now received -> mark order Ready to Ship
-        await maybeMarkOrderReadyToShip(pool, req.params.id);
-      }
-
-      res.redirect('/admin/supplier-pos/' + req.params.id + '?saved=1');
-    } catch(err) {
-      console.error('PO status error:', err);
-      res.redirect('/admin/supplier-pos/' + req.params.id + '?error=' + encodeURIComponent(err.message));
-    }
-  });
 
   // ==========================================================================
   // POST /supplier-pos/:id/notes-update
@@ -773,6 +564,216 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
     }
   });
 
+  // PODETAILS_SCOPE_FIX_V2: moved out of helper into setup scope
+        // PO_DETAIL_EDIT_V1: editable expected delivery + shipping terms
+        const expDate = po.expected_delivery ? new Date(po.expected_delivery).toISOString().substring(0,10) : '';
+        html += '<div class="detail-item" style="grid-column:1/-1;">';
+        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/po-details" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;">';
+        html += '<div><div class="detail-label">Expected Delivery</div><input type="date" name="expected_delivery" value="' + expDate + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+        html += '<div><div class="detail-label">Shipping Cost ($)</div><input type="number" step="0.01" min="0" name="shipping_cost" value="' + parseFloat(po.shipping_cost || 0).toFixed(2) + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+        html += '<div><div class="detail-label">Shipping Terms</div><input type="text" name="shipping_terms" placeholder="e.g. Pre-Pay and Add Ground" value="' + ((po.shipping_terms || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 10px;font-size:.85rem;"/></div>';
+        html += '<button type="submit" class="btn btn-gold btn-sm">Save</button>';
+        html += '</form></div>';
+        html += '<div class="detail-item"><div class="detail-label">Received</div><div class="detail-value">' + shortDateTime(po.received_at) + '</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Paid</div><div class="detail-value">' + (po.paid_at ? '<span style="color:#4caf50;">' + shortDateTime(po.paid_at) + '</span>' : '<span style="color:#e05050;">Unpaid</span>') + '</div></div>';
+        html += '</div>';
+
+        // Status update form
+        html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
+        html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">Update Status</div>';
+        const statusOptions = ['Draft', 'Sent', 'Confirmed', 'Received', 'Closed', 'Cancelled'];
+        let stOpts = '';
+        statusOptions.forEach(function(s) { stOpts += '<option value="' + s + '"' + (po.status === s ? ' selected' : '') + '>' + s + '</option>'; });
+        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/status" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">' + stOpts + '</select></div>';
+        html += '<div style="flex:1;min-width:200px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Note (optional)</div><input type="text" name="note" placeholder="Reason for status change..." style="width:100%;"/></div>';
+        html += '<button type="submit" class="btn btn-gold">Update</button></form>';
+        html += '<div style="font-size:.78rem;color:#7a8a9a;margin-top:10px;">Setting status to <strong>Received</strong> will mark all lines as fully received and update the linked order.</div>';
+        html += '</div>';
+
+        // Send PO button (Draft only)
+        if (po.status === 'Draft') {
+          html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;background:rgba(200,147,42,0.06);padding:16px;border-radius:6px;border:1px solid rgba(200,147,42,0.3);">';
+          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">&#128231; Send PO to Supplier</div>';
+          html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/send" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">';
+          html += '<div style="flex:1;min-width:240px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Email To</div>';
+          html += '<input type="email" name="email_to" required value="' + (po.supplier_email || '') + '" placeholder="supplier@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+          html += '<div style="flex:1;min-width:200px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">CC (optional)</div>';
+          html += '<input type="email" name="email_cc" placeholder="cc@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+          html += '<button type="submit" class="btn btn-gold">&#128231; Send PO + PDF</button>';
+          html += '</form>';
+          html += '<div style="font-size:.78rem;color:#7a8a9a;margin-top:8px;">Generates PO PDF, emails it to supplier, and sets status to <strong>Sent</strong>.</div>';
+          html += '</div>';
+        } else if (po.sent_at) {
+          html += '<div style="margin-top:16px;padding:10px 14px;background:rgba(76,175,80,0.08);border-left:3px solid #4caf50;font-size:.85rem;">&#10004; PO sent to <strong>' + (po.email_to || 'supplier') + '</strong> on ' + shortDateTime(po.sent_at) + '. <a href="/admin/supplier-pos/' + po.id + '/pdf" target="_blank" style="color:#c8932a;margin-left:8px;">View PDF</a></div>';
+        }
+
+        // PDF preview link (always available)
+        html += '<div style="margin-top:16px;"><a href="/admin/supplier-pos/' + po.id + '/pdf" target="_blank" class="btn btn-outline btn-sm">&#128196; Preview PO PDF</a></div>';
+
+        // Notes editor
+        html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
+        html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/notes-update">';
+        html += textareaField('Notes', 'notes', po.notes, 3);
+        html += '<button type="submit" class="btn btn-outline btn-sm">Save Notes</button>';
+        html += '</form></div>';
+      }
+
+      // ---------- LINES TAB ----------
+      if (activeTab === 'lines') {
+        if (linesR.recordset.length === 0) {
+          html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No lines on this PO yet.</div>';
+        } else {
+          html += '<table><thead><tr>' +
+            '<th>#</th><th>NSN/Part</th><th>Item</th><th>Cond</th><th>Qty</th><th>Received</th><th>Unit Cost</th><th>Line Total</th><th>Receive</th>' +
+            '</tr></thead><tbody>';
+          linesR.recordset.forEach(function(l) {
+            const remaining = (l.quantity || 0) - (l.received_quantity || 0);
+            const fullReceived = remaining <= 0;
+            html += '<tr>' +
+              '<td>' + l.line_number + '</td>' +
+              '<td class="mono" style="color:#c8932a;">' + (l.nsn || l.part_number || '&mdash;') + '</td>' +
+              '<td style="font-size:.8rem;">' + (l.item_name || '&mdash;') + '</td>' +
+              '<td>' + (l.condition_code || '&mdash;') + '</td>' +
+              '<td style="font-weight:600;">' + l.quantity + '</td>' +
+              '<td>' + (l.received_quantity || 0) + ' / ' + l.quantity + (fullReceived ? ' <span style="color:#4caf50;">&#10004;</span>' : '') + '</td>' +
+              '<td>' + currency(l.unit_cost) + '</td>' +
+              '<td style="font-weight:600;">' + currency(l.line_total) + '</td>' +
+              '<td>';
+            if (!fullReceived) {
+              html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/lines/' + l.id + '/receive" style="display:flex;gap:4px;align-items:center;">' +
+                '<input type="number" name="qty" min="1" max="' + remaining + '" value="' + remaining + '" style="width:70px;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:4px 6px;font-size:.8rem;"/>' +
+                '<button type="submit" class="btn btn-gold btn-sm" style="font-size:.7rem;padding:5px 10px;">Receive</button>' +
+              '</form>';
+            } else {
+              html += '<span style="color:#4caf50;font-size:.78rem;">Complete</span>';
+            }
+            html += '</td></tr>';
+          });
+          html += '</tbody></table>';
+          html += '<div style="margin-top:14px;font-size:.78rem;color:#7a8a9a;">When all PO lines are fully received, the PO auto-marks <strong>Received</strong> and the linked order line gets a <strong>received_at</strong> date. When all order lines are received, the order auto-progresses to <strong>Ready to Ship</strong>.</div>';
+        }
+      }
+
+      // ---------- PAYMENT TAB ----------
+      if (activeTab === 'payment') {
+        const isPaid = !!po.paid_at;
+        html += '<div class="detail-grid">';
+        html += '<div class="detail-item"><div class="detail-label">PO Total</div><div class="detail-value" style="font-weight:600;">' + currency(po.total) + '</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + (isPaid ? '<span style="color:#4caf50;font-weight:600;">&#10004; Paid</span>' : '<span style="color:#e05050;font-weight:600;">Unpaid</span>') + '</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Method</div><div class="detail-value">' + (po.payment_method || '&mdash;') + '</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Reference</div><div class="detail-value" style="font-family:monospace;">' + (po.payment_reference || '&mdash;') + '</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Paid Date</div><div class="detail-value">' + shortDateTime(po.paid_at) + '</div></div>';
+        html += '<div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">' + (po.supplier_payment_terms || '&mdash;') + '</div></div>';
+        html += '</div>';
+
+        if (!isPaid) {
+          html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
+          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">Mark Paid</div>';
+          html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/mark-paid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:flex-end;">';
+          html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Method</div><select name="payment_method"><option>Wire Transfer</option><option>ACH</option><option>Check</option><option>Credit Card</option><option>Other</option></select></div>';
+          html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Date</div><input type="date" name="paid_date" value="' + new Date().toISOString().slice(0,10) + '" style="width:100%;"/></div>';
+          html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Reference</div><input type="text" name="payment_reference" placeholder="Wire ref / check #" style="width:100%;"/></div>';
+          html += '<div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">&#10004; Mark PO Paid</button></div>';
+          html += '</form>';
+          html += '</div>';
+        } else {
+          html += '<div class="alert alert-success" style="margin-top:16px;">This PO has been paid to the supplier.</div>';
+        }
+      }
+
+      // ---------- DOCUMENTS TAB ----------
+      if (activeTab === 'documents') {
+        // Upload form (always visible)
+        html += '<div style="background:rgba(200,147,42,0.06);border:1px solid rgba(200,147,42,0.3);padding:16px;border-radius:6px;margin-bottom:20px;">';
+        html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:12px;">&#128206; Upload Document</div>';
+        html += '<form id="docUploadForm" enctype="multipart/form-data" style="display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:10px;align-items:flex-end;">';
+        html += '<input type="hidden" name="related_to_type" value="supplier_po"/>';
+        html += '<input type="hidden" name="related_to_id" value="' + po.id + '"/>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Document Type</div>';
+        html += '<select name="doc_type" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;">' +
+          '<option value="">-- Select --</option>' +
+          '<option value="8130">FAA 8130-3</option>' +
+          '<option value="CoC">Certificate of Conformance</option>' +
+          '<option value="Trace">Traceability</option>' +
+          '<option value="PackingSlip">Packing Slip</option>' +
+          '<option value="Invoice">Supplier Invoice</option>' +
+          '<option value="Quote">Supplier Quote</option>' +
+          '<option value="Other">Other</option>' +
+          '</select></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">File (max 25MB)</div>';
+        html += '<input type="file" name="file" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Notes (optional)</div>';
+        html += '<input type="text" name="notes" placeholder="Line ref, cert details..." style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;"/></div>';
+        html += '<button type="button" onclick="uploadDoc()" class="btn btn-gold">Upload</button>';
+        html += '</form>';
+        html += '<div id="uploadStatus" style="margin-top:10px;font-size:.85rem;"></div>';
+        html += '</div>';
+
+        html += '<script>function uploadDoc(){var f=document.getElementById("docUploadForm");var fd=new FormData(f);var st=document.getElementById("uploadStatus");st.innerHTML="<span style=\"color:#c8932a;\">Uploading...</span>";fetch("/admin/api/documents/upload",{method:"POST",body:fd,credentials:"same-origin"}).then(function(r){return r.json().then(function(j){return{ok:r.ok,j:j};});}).then(function(res){if(res.ok){st.innerHTML="<span style=\"color:#4caf50;\">&#10004; Uploaded. Reloading...</span>";setTimeout(function(){location.reload();},800);}else{st.innerHTML="<span style=\"color:#e05050;\">Error: "+(res.j.error||"Upload failed")+"</span>";}}).catch(function(err){st.innerHTML="<span style=\"color:#e05050;\">Network error: "+err.message+"</span>";});}</script>';
+
+        // Document list
+        if (docsR.recordset.length === 0) {
+          html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No documents uploaded yet.</div>';
+        } else {
+          html += '<table><thead><tr><th>Type</th><th>File</th><th>Uploaded</th><th>Notes</th><th></th></tr></thead><tbody>';
+          docsR.recordset.forEach(function(d) {
+            html += '<tr>' +
+              '<td>' + statusBadge(d.doc_type) + '</td>' +
+              '<td><a href="' + d.file_url + '" target="_blank" style="color:#c8932a;">&#128206; ' + d.file_name + '</a></td>' +
+              '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDateTime(d.uploaded_at) + '</td>' +
+              '<td style="color:#7a8a9a;font-size:.82rem;">' + (d.notes || '&mdash;') + '</td>' +
+              '<td><button onclick="if(confirm(\'Delete this document?\')){fetch(\'/admin/api/documents/' + d.id + '/delete\',{method:\'POST\',credentials:\'same-origin\'}).then(function(){location.reload();});}" class="btn btn-outline btn-sm" style="font-size:.7rem;padding:4px 8px;color:#e05050;border-color:#e05050;">Delete</button></td>' +
+            '</tr>';
+          });
+          html += '</tbody></table>';
+        }
+      }
+
+      html += '</div></div>';
+
+      res.send(page(po.po_number + ' \u2014 Supplier PO', 'supplier-pos', html));
+    } catch(err) {
+      console.error('PO detail error:', err);
+      res.send(page('Supplier PO', 'supplier-pos', '<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
+
+  // ==========================================================================
+  // POST /supplier-pos/:id/status - update status
+  // ==========================================================================
+  router.post('/supplier-pos/:id/status', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const newStatus = req.body.status;
+      const setIssued = (newStatus === 'Sent') ? ", issued_at=ISNULL(issued_at, GETDATE())" : '';
+      const setReceived = (newStatus === 'Received') ? ", received_at=ISNULL(received_at, GETDATE())" : '';
+
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('s', sql.NVarChar(30), newStatus)
+        .query("UPDATE supplier_pos SET status=@s" + setIssued + setReceived + ", updated_at=GETDATE() WHERE id=@id");
+
+      // If marking Received, mark all lines as received-in-full and cascade to order_lines
+      if (newStatus === 'Received') {
+        await pool.request().input('id', sql.BigInt, req.params.id)
+          .query("UPDATE supplier_po_lines SET received_quantity = quantity, received_at = ISNULL(received_at, GETDATE()) WHERE supplier_po_id=@id");
+
+        // Cascade to linked order_lines
+        await pool.request().input('id', sql.BigInt, req.params.id)
+          .query("UPDATE ol SET ol.received_at = ISNULL(ol.received_at, GETDATE()) FROM order_lines ol INNER JOIN supplier_po_lines pl ON pl.order_line_id = ol.id WHERE pl.supplier_po_id = @id");
+
+        // Check if all order_lines for the linked order are now received -> mark order Ready to Ship
+        await maybeMarkOrderReadyToShip(pool, req.params.id);
+      }
+
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?saved=1');
+    } catch(err) {
+      console.error('PO status error:', err);
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
 }
 
 // ==========================================================================
