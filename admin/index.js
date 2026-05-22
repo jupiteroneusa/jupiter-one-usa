@@ -1633,6 +1633,78 @@ export async function buildAdminRouter() {
   });
 
   // Quotes
+  /* QUOTE_DRAFTS_v2 ROUTES START */
+router.post('/quote-drafts/save', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const rfqId = b.rfq_id ? Number(b.rfq_id) : null;
+    const quoteId = b.quote_id ? Number(b.quote_id) : null;
+    const draftJson = b.draft_json || '';
+    if ((!rfqId && !quoteId) || (rfqId && quoteId)) return res.status(400).json({ ok:false, error:'rfq_id OR quote_id required (not both)' });
+    if (!draftJson) return res.status(400).json({ ok:false, error:'draft_json required' });
+    const pool = await getPool();
+    const adminId = req.adminId || null;
+    if (rfqId) {
+      await pool.request()
+        .input('rfqId', sql.BigInt, rfqId)
+        .input('adminId', sql.BigInt, adminId)
+        .input('json', sql.NVarChar(sql.MAX), draftJson)
+        .query('MERGE quote_drafts AS t USING (SELECT @rfqId AS rfq_id) AS s ON t.rfq_id = s.rfq_id WHEN MATCHED THEN UPDATE SET draft_json=@json, updated_at=SYSUTCDATETIME(), admin_id=@adminId WHEN NOT MATCHED THEN INSERT (rfq_id, quote_id, admin_id, draft_json) VALUES (@rfqId, NULL, @adminId, @json);');
+    } else {
+      await pool.request()
+        .input('quoteId', sql.BigInt, quoteId)
+        .input('adminId', sql.BigInt, adminId)
+        .input('json', sql.NVarChar(sql.MAX), draftJson)
+        .query('MERGE quote_drafts AS t USING (SELECT @quoteId AS quote_id) AS s ON t.quote_id = s.quote_id WHEN MATCHED THEN UPDATE SET draft_json=@json, updated_at=SYSUTCDATETIME(), admin_id=@adminId WHEN NOT MATCHED THEN INSERT (rfq_id, quote_id, admin_id, draft_json) VALUES (NULL, @quoteId, @adminId, @json);');
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('quote-drafts save error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/quote-drafts/load', async (req, res) => {
+  try {
+    const rfqId = req.query.rfq_id ? Number(req.query.rfq_id) : null;
+    const quoteId = req.query.quote_id ? Number(req.query.quote_id) : null;
+    if ((!rfqId && !quoteId) || (rfqId && quoteId)) return res.status(400).json({ ok:false, error:'rfq_id OR quote_id required' });
+    const pool = await getPool();
+    let r;
+    if (rfqId) {
+      r = await pool.request().input('rfqId', sql.BigInt, rfqId)
+        .query('SELECT TOP 1 draft_json, updated_at FROM quote_drafts WHERE rfq_id=@rfqId');
+    } else {
+      r = await pool.request().input('quoteId', sql.BigInt, quoteId)
+        .query('SELECT TOP 1 draft_json, updated_at FROM quote_drafts WHERE quote_id=@quoteId');
+    }
+    if (!r.recordset.length) return res.json({ ok: true, draft: null });
+    res.json({ ok: true, draft: r.recordset[0] });
+  } catch (err) {
+    console.error('quote-drafts load error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.post('/quote-drafts/delete', async (req, res) => {
+  try {
+    const b = req.body || {};
+    const rfqId = b.rfq_id ? Number(b.rfq_id) : null;
+    const quoteId = b.quote_id ? Number(b.quote_id) : null;
+    if (!rfqId && !quoteId) return res.status(400).json({ ok:false, error:'rfq_id or quote_id required' });
+    const pool = await getPool();
+    if (rfqId) {
+      await pool.request().input('rfqId', sql.BigInt, rfqId).query('DELETE FROM quote_drafts WHERE rfq_id=@rfqId');
+    } else {
+      await pool.request().input('quoteId', sql.BigInt, quoteId).query('DELETE FROM quote_drafts WHERE quote_id=@quoteId');
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('quote-drafts delete error:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+/* QUOTE_DRAFTS_v2 ROUTES END */
   router.get('/quotes', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -2138,6 +2210,252 @@ export async function buildAdminRouter() {
       html += '<div class="page-title">Edit Quote ' + q.quote_number + ' &mdash; v' + (q.version || 1) + ' \u2192 v' + ((q.version || 1) + 1) + '</div>';
       html += '<div class="page-sub">Editing creates a new version. Customer will receive an email with the revised PDF.</div>';
       html += '<form method="POST" action="/admin/quotes/' + q.id + '/edit-save">';
+      /* QUOTE_DRAFTS_v2 START: save button + restore banner */
+      html += "<div id='qd-restore-banner' style='display:none;background:#1a2942;border:1px solid #c8932a;color:#e8c87a;padding:10px 14px;margin-bottom:12px;border-radius:4px;font-size:.85rem;'>";
+      html += "<span id='qd-restore-msg' style='margin-right:14px;'></span>";
+      html += "<button type='button' id='qd-restore-btn' style='background:#c8932a;color:#0a1628;border:none;padding:5px 12px;border-radius:3px;cursor:pointer;font-weight:700;margin-right:6px;'>Restore</button>";
+      html += "<button type='button' id='qd-discard-btn' style='background:transparent;color:#e05050;border:1px solid #e05050;padding:5px 12px;border-radius:3px;cursor:pointer;'>Discard</button>";
+      html += "</div>";
+      html += "<div id='qd-save-bar' style='position:fixed;bottom:18px;right:18px;z-index:9999;background:#0a1628;border:1px solid #c8932a;padding:8px 12px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.5);font-size:.82rem;display:flex;align-items:center;gap:10px;'>";
+      html += "<span id='qd-save-status' style='color:#7a8a9a;font-size:.75rem;min-width:120px;'>Not saved</span>";
+      html += "<button type='button' id='qd-save-btn' style='background:#c8932a;color:#0a1628;border:none;padding:6px 14px;border-radius:3px;cursor:pointer;font-weight:700;'>Save Draft</button>";
+      html += "</div>";
+      /* QUOTE_DRAFTS_v2 END */
+      /* QUOTE_DRAFTS_v2 SCRIPT START */
+      html += "<script>";
+      html += "(function(){";
+      html += "\n";
+      html += "  var MODE = \"quote\";";
+      html += "\n";
+      html += "  var ID = ";
+      html += q.id;
+      html += ";";
+      html += "\n";
+      html += "  var DIRTY = false;";
+      html += "\n";
+      html += "  var LAST_SAVE = null;";
+      html += "\n";
+      html += "  function $(id){ return document.getElementById(id); }";
+      html += "\n";
+      html += "  function fmtTime(d){";
+      html += "\n";
+      html += "    var h=d.getHours(), m=d.getMinutes(), ap=h>=12?\"PM\":\"AM\";";
+      html += "\n";
+      html += "    h = h%12 || 12;";
+      html += "\n";
+      html += "    return h+\":\"+(m<10?\"0\"+m:m)+\" \"+ap;";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function status(t,c){";
+      html += "\n";
+      html += "    var el=$(\"qd-save-status\");";
+      html += "\n";
+      html += "    if(el){ el.textContent=t; el.style.color=c||\"#7a8a9a\"; }";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function getForm(){";
+      html += "\n";
+      html += "    return document.getElementById(\"quote-send-form\")";
+      html += "\n";
+      html += "        || document.querySelector(\"form[action*=\\\"/quote\\\"]\")";
+      html += "\n";
+      html += "        || document.querySelector(\"form\");";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function collect(){";
+      html += "\n";
+      html += "    var form=getForm(); if(!form) return null;";
+      html += "\n";
+      html += "    var fd=new FormData(form); var obj={};";
+      html += "\n";
+      html += "    fd.forEach(function(v,k){";
+      html += "\n";
+      html += "      if(obj[k]!==undefined){";
+      html += "\n";
+      html += "        if(!Array.isArray(obj[k])) obj[k]=[obj[k]];";
+      html += "\n";
+      html += "        obj[k].push(v);";
+      html += "\n";
+      html += "      } else { obj[k]=v; }";
+      html += "\n";
+      html += "    });";
+      html += "\n";
+      html += "    return obj;";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function save(silent){";
+      html += "\n";
+      html += "    var data=collect(); if(!data) return;";
+      html += "\n";
+      html += "    status(\"Saving...\", \"#c8932a\");";
+      html += "\n";
+      html += "    var payload={ draft_json: JSON.stringify(data) };";
+      html += "\n";
+      html += "    if(MODE===\"rfq\") payload.rfq_id=ID; else payload.quote_id=ID;";
+      html += "\n";
+      html += "    fetch(\"/admin/quote-drafts/save\", {";
+      html += "\n";
+      html += "      method:\"POST\",";
+      html += "\n";
+      html += "      headers:{\"Content-Type\":\"application/json\"},";
+      html += "\n";
+      html += "      body: JSON.stringify(payload),";
+      html += "\n";
+      html += "      credentials:\"same-origin\"";
+      html += "\n";
+      html += "    }).then(function(r){return r.json();}).then(function(d){";
+      html += "\n";
+      html += "      if(d.ok){";
+      html += "\n";
+      html += "        LAST_SAVE=new Date(); DIRTY=false;";
+      html += "\n";
+      html += "        status(\"Saved \"+fmtTime(LAST_SAVE), \"#4caf50\");";
+      html += "\n";
+      html += "      } else { status(\"Save failed\", \"#e05050\"); }";
+      html += "\n";
+      html += "    }).catch(function(){ status(\"Save failed\", \"#e05050\"); });";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function load(){";
+      html += "\n";
+      html += "    var url=\"/admin/quote-drafts/load?\"+(MODE===\"rfq\"?\"rfq_id=\":\"quote_id=\")+ID;";
+      html += "\n";
+      html += "    fetch(url, {credentials:\"same-origin\"})";
+      html += "\n";
+      html += "      .then(function(r){return r.json();})";
+      html += "\n";
+      html += "      .then(function(d){";
+      html += "\n";
+      html += "        if(d.ok && d.draft){";
+      html += "\n";
+      html += "          var b=$(\"qd-restore-banner\"); var msg=$(\"qd-restore-msg\");";
+      html += "\n";
+      html += "          if(b && msg){";
+      html += "\n";
+      html += "            var when=new Date(d.draft.updated_at);";
+      html += "\n";
+      html += "            msg.textContent=\"Unsaved draft from \"+fmtTime(when)+\" — restore your work?\";";
+      html += "\n";
+      html += "            b.style.display=\"block\";";
+      html += "\n";
+      html += "            window._qdDraftData=d.draft.draft_json;";
+      html += "\n";
+      html += "          }";
+      html += "\n";
+      html += "        }";
+      html += "\n";
+      html += "      }).catch(function(){});";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function restore(){";
+      html += "\n";
+      html += "    var raw=window._qdDraftData; if(!raw) return;";
+      html += "\n";
+      html += "    var data; try { data = typeof raw === \"string\" ? JSON.parse(raw) : raw; } catch(e){ return; }";
+      html += "\n";
+      html += "    var form=getForm(); if(!form) return;";
+      html += "\n";
+      html += "    Object.keys(data).forEach(function(k){";
+      html += "\n";
+      html += "      var vals = Array.isArray(data[k]) ? data[k] : [data[k]];";
+      html += "\n";
+      html += "      var sel = \"[name=\\\"\" + k.replace(/\"/g, \"\\\\\\\"\") + \"\\\"]\";";
+      html += "\n";
+      html += "      var els = form.querySelectorAll(sel);";
+      html += "\n";
+      html += "      for(var i=0; i<els.length; i++){";
+      html += "\n";
+      html += "        if(vals[i]!==undefined){";
+      html += "\n";
+      html += "          if(els[i].type===\"checkbox\" || els[i].type===\"radio\"){";
+      html += "\n";
+      html += "            els[i].checked = String(els[i].value)===String(vals[i]);";
+      html += "\n";
+      html += "          } else { els[i].value = vals[i]; }";
+      html += "\n";
+      html += "        }";
+      html += "\n";
+      html += "      }";
+      html += "\n";
+      html += "    });";
+      html += "\n";
+      html += "    $(\"qd-restore-banner\").style.display=\"none\";";
+      html += "\n";
+      html += "    status(\"Restored — not saved\", \"#c8932a\");";
+      html += "\n";
+      html += "    DIRTY=true;";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  function discard(){";
+      html += "\n";
+      html += "    var payload = MODE===\"rfq\" ? {rfq_id:ID} : {quote_id:ID};";
+      html += "\n";
+      html += "    fetch(\"/admin/quote-drafts/delete\", {";
+      html += "\n";
+      html += "      method:\"POST\",";
+      html += "\n";
+      html += "      headers:{\"Content-Type\":\"application/json\"},";
+      html += "\n";
+      html += "      body:JSON.stringify(payload),";
+      html += "\n";
+      html += "      credentials:\"same-origin\"";
+      html += "\n";
+      html += "    }).then(function(){ $(\"qd-restore-banner\").style.display=\"none\"; });";
+      html += "\n";
+      html += "  }";
+      html += "\n";
+      html += "  document.addEventListener(\"DOMContentLoaded\", function(){";
+      html += "\n";
+      html += "    load();";
+      html += "\n";
+      html += "    var btn=$(\"qd-save-btn\"); if(btn) btn.addEventListener(\"click\", function(){ save(false); });";
+      html += "\n";
+      html += "    var rb=$(\"qd-restore-btn\"); if(rb) rb.addEventListener(\"click\", restore);";
+      html += "\n";
+      html += "    var db=$(\"qd-discard-btn\"); if(db) db.addEventListener(\"click\", discard);";
+      html += "\n";
+      html += "    var form=getForm();";
+      html += "\n";
+      html += "    if(form){";
+      html += "\n";
+      html += "      form.addEventListener(\"input\", function(){ DIRTY=true; });";
+      html += "\n";
+      html += "      form.addEventListener(\"change\", function(){ DIRTY=true; });";
+      html += "\n";
+      html += "    }";
+      html += "\n";
+      html += "    setInterval(function(){ if(DIRTY) save(true); }, 30000);";
+      html += "\n";
+      html += "    document.addEventListener(\"keydown\", function(e){";
+      html += "\n";
+      html += "      if((e.ctrlKey || e.metaKey) && e.key === \"s\"){";
+      html += "\n";
+      html += "        e.preventDefault();";
+      html += "\n";
+      html += "        save(false);";
+      html += "\n";
+      html += "      }";
+      html += "\n";
+      html += "    });";
+      html += "\n";
+      html += "    window.addEventListener(\"beforeunload\", function(e){";
+      html += "\n";
+      html += "      if(DIRTY){ e.preventDefault(); e.returnValue=\"\"; }";
+      html += "\n";
+      html += "    });";
+      html += "\n";
+      html += "  });";
+      html += "\n";
+      html += "})();";
+      html += "<\/script>";
+      /* QUOTE_DRAFTS_v2 SCRIPT END */
       html += '<div class="card"><div class="card-body">';
       html += '<div class="detail-grid">';
       html += '<div><div class="detail-label">Valid Until</div><input type="date" name="valid_until" value="' + (q.valid_until ? new Date(q.valid_until).toISOString().substring(0,10) : '') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
@@ -2400,6 +2718,11 @@ export async function buildAdminRouter() {
           }
         } catch (mailErr) { console.error('Quote revise email error:', mailErr.message); }
       }
+      /* QUOTE_DRAFTS_v2: clean up draft on successful edit-save */
+try {
+  const pool3 = await getPool();
+  await pool3.request().input('qIdDel', sql.BigInt, qid).query('DELETE FROM quote_drafts WHERE quote_id=@qIdDel');
+} catch (e) { console.error('draft cleanup skipped:', e.message); }
       res.redirect('/admin/quotes/' + qid + '?saved=1&new_version=' + newVer);
     } catch (err) { console.error('Quote edit-save error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
   });
