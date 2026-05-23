@@ -2188,6 +2188,11 @@ export async function buildAdminRouter() {
       html += '<div class="card" style="margin-top:14px;"><div class="card-body">';
       html += '<div class="detail-label">Revision Note (visible to admin only, optional)</div>';
       html += '<input type="text" name="revision_note" placeholder="e.g. Updated price per Mike at Acme" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;margin-bottom:10px;"/>';
+      /* QUOTE_EMAIL_v1: CC recipients input on edit page */
+html += '<div style="margin-bottom:10px;">';
+html += '<div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(comma-separated, optional)</span></div>';
+html += '<input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/>';
+html += '</div>';
       html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" name="email_customer" value="1" checked/> Email customer the revised quote PDF</label>';
       html += '</div></div>';
       html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">';
@@ -2396,7 +2401,38 @@ export async function buildAdminRouter() {
           if (process.env.SMTP_HOST) {
             const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT || '587'), auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
             const body = '<p>Hello ' + q.customer_name + ',</p><p>Your quote ' + q.quote_number + ' has been revised (version ' + newVer + '). Please review and let us know if you have any questions.</p><p>View: <a href="https://jupiteroneusa.com/quote/' + q.accept_token + '">https://jupiteroneusa.com/quote/' + q.accept_token + '</a></p><p>Thank you,<br/>Jupiter One USA</p>';
-            await transport.sendMail({ from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com', to: q.email, subject: 'Revised Quote ' + q.quote_number + ' (v' + newVer + ')', html: body });
+            /* QUOTE_EMAIL_v1: PDF attachment + CC recipients */
+            let pdfBuf = null;
+            try {
+              const pdfMod = await import('../services/pdfService.js');
+              const linesR = await pool.request().input('qidPdf', sql.BigInt, qid)
+                .query('SELECT * FROM quote_lines WHERE quote_id=@qidPdf ORDER BY line_number');
+              pdfBuf = await pdfMod.generateQuotePdf({ quote: q, lines: linesR.recordset });
+            } catch (e) { console.error('PDF generation error:', e.message); }
+            
+            const ccList = (b.cc_emails || '')
+              .split(',')
+              .map(function(s){ return s.trim(); })
+              .filter(function(s){ return s && s.indexOf('@') > -1; });
+            
+            const mailOptions = {
+              from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
+              to: q.email,
+              subject: 'Revised Quote ' + q.quote_number + ' (v' + newVer + ')',
+              html: body
+            };
+            if (ccList.length > 0) mailOptions.cc = ccList;
+            if (pdfBuf) {
+              mailOptions.attachments = [{
+                filename: 'Quote_' + q.quote_number + '_v' + newVer + '.pdf',
+                content: pdfBuf,
+                contentType: 'application/pdf'
+              }];
+            } else {
+              console.warn('Sending quote email WITHOUT PDF attachment (generation failed)');
+            }
+            await transport.sendMail(mailOptions);
+            console.log('Quote ' + q.quote_number + ' v' + newVer + ' emailed to ' + q.email + (ccList.length ? ' (cc: ' + ccList.join(',') + ')' : '') + (pdfBuf ? ' WITH PDF' : ' WITHOUT PDF'));
           }
         } catch (mailErr) { console.error('Quote revise email error:', mailErr.message); }
       }
