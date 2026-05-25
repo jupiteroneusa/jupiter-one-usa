@@ -52,9 +52,9 @@ export function mountAdminDocRoutes(router, requireAuth) {
         .input('notes',    sql.NVarChar(500),  notes || null)
         .input('custVis',  sql.Bit,            (is_customer_visible === 'true' || is_customer_visible === true) ? 1 : 0)
         .query(`
-          INSERT INTO documents (related_to_type, related_to_id, doc_type, file_name, file_url, file_size_bytes, mime_type, notes, is_customer_visible)
+          INSERT INTO documents (related_to_type, related_to_id, doc_type, file_name, file_url, file_size_bytes, mime_type, notes, is_customer_visible, uploaded_at, created_at) /* DOC_UPLOAD_v1 */
           OUTPUT INSERTED.*
-          VALUES (@relType, @relId, @docType, @fileName, @fileUrl, @sizeB, @mimeType, @notes, @custVis)
+          VALUES (@relType, @relId, @docType, @fileName, @fileUrl, @sizeB, @mimeType, @notes, @custVis, GETDATE(), GETDATE())
         `);
 
       res.status(201).json(result.recordset[0]);
