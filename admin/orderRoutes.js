@@ -525,7 +525,10 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const orderLineCount = await pool.request().input('oidCheck', sql.BigInt, req.params.id).query('SELECT COUNT(*) AS cnt FROM order_lines WHERE order_id=@oidCheck');
       if (!orderLineCount.recordset[0].cnt) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=' + encodeURIComponent('Cannot generate invoice: this order has no line items. Add lines from the source quote first.'));
       const invoiceNumber = await generateNumber('INV');
-      const dueDays = parseInt(req.body.due_days)||0;
+      /* PAID_IN_FULL_v1: handle due_days='paid_in_full' as zero-balance prepaid invoice */
+      const dueDaysRaw = req.body.due_days || '0';
+      const isPaidInFull = (dueDaysRaw === 'paid_in_full');
+      const dueDays = isPaidInFull ? 0 : (parseInt(dueDaysRaw) || 0);
       const issueDate = new Date();
       const dueDate = new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000);
       const invResult = await pool.request()
@@ -535,7 +538,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('subtotal', sql.Decimal(12,2), o.subtotal||0)
         .input('shipAmt', sql.Decimal(12,2), o.shipping_cost||0)
         .input('total', sql.Decimal(12,2), o.total_amount||0)
-        .input('balance', sql.Decimal(12,2), o.total_amount||0)
+        .input('balance', sql.Decimal(12,2), isPaidInFull ? 0 : (o.total_amount || 0)) /* PAID_IN_FULL_v1 */
         .input('issueDate', sql.Date, issueDate)
         .input('dueDate', sql.Date, dueDate)
         .input('notes', sql.NVarChar(sql.MAX), req.body.notes||null)
@@ -555,6 +558,27 @@ export function mountOrderRoutes(router, requireAuth, page) {
           .input('price', sql.Decimal(10,2), l.unit_price)
           .input('total', sql.Decimal(12,2), l.line_total)
           .query('INSERT INTO invoice_lines (invoice_id,order_line_id,line_number,description,nsn,part_number,condition_code,quantity,unit_price,line_total) VALUES (@invId,@olId,@lineNum,@desc,@nsn,@pn,@cond,@qty,@price,@total)');
+      }
+      /* PAID_IN_FULL_v1: if paid in full, mark invoice paid + record payment + mark order paid */
+      if (isPaidInFull) {
+        const fullAmt = parseFloat(o.total_amount || 0);
+        await pool.request().input('invId', sql.BigInt, invoiceId)
+          .query("UPDATE invoices SET status='Paid', balance_due=0 WHERE id=@invId");
+        await pool.request()
+          .input('oid', sql.BigInt, req.params.id)
+          .input('iid', sql.BigInt, invoiceId)
+          .input('cid', sql.BigInt, o.customer_id)
+          .input('amt', sql.Decimal(12, 2), fullAmt)
+          .input('pm',  sql.NVarChar(50), req.body.paid_in_full_method || 'Pre-paid')
+          .input('pref',sql.NVarChar(100), req.body.paid_in_full_ref || 'Pre-payment')
+          .input('rcv', sql.DateTime, issueDate)
+          .input('notes', sql.NVarChar(500), 'Invoice generated as Paid in Full')
+          .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
+        await pool.request()
+          .input('id', sql.BigInt, req.params.id)
+          .input('paidAt', sql.DateTime, issueDate)
+          .input('paidAmt', sql.Decimal(12, 2), fullAmt)
+          .query("UPDATE orders SET status='Paid', paid_at=ISNULL(paid_at,@paidAt), paid_amount=@paidAmt, updated_at=GETDATE() WHERE id=@id");
       }
       let pdfBuffer = null;
       try {

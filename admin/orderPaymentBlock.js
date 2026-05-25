@@ -76,7 +76,7 @@ export function renderPaymentTab(o, invoices, payments) {
     html += '<p style="font-size:.85rem;color:#7a8a9a;margin-bottom:16px;">Generate and email a final invoice to the customer including all line items and shipping cost.</p>';
     html += '<form method="POST" action="/admin/orders/' + o.id + '/generate-invoice" onsubmit="return confirm(\'Generate and send invoice to ' + o.email + '?\')">';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
-    html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Due</div><select name="due_days"><option value="0">Due on Receipt</option><option value="15">Net 15</option><option value="30">Net 30</option></select></div>';
+    html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Due</div><select name="due_days"><option value="0">Due on Receipt</option><option value="15">Net 15</option><option value="30">Net 30</option><option value="paid_in_full">Paid in Full</option></select></div>';
     html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes (optional)</div><input type="text" name="notes" placeholder="Additional invoice notes..." style="width:100%;"/></div>';
     html += '</div><button type="submit" class="btn btn-gold">&#128228; Generate &amp; Send Invoice</button></form>';
     html += '</div></div>';
