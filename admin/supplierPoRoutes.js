@@ -416,7 +416,55 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
 
       // ---------- LINES TAB ----------
       if (activeTab === 'lines') {
-        if (linesR.recordset.length === 0) {
+        /* PO_EDIT_LINES_v1: editable mode when status=Draft */
+        if (po.status === 'Draft') {
+                  html += '<div style="background:rgba(200,147,42,0.06);border:1px solid rgba(200,147,42,0.3);padding:14px;border-radius:6px;margin-bottom:16px;font-size:.78rem;color:#c8932a;">&#9998; <strong>Editable PO</strong> &middot; Change qty/cost, add ad-hoc lines (CC surcharge, packaging, fees), or remove lines. Click <strong>Save Lines</strong> when done.</div>';
+                  html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/lines-update" id="poLinesForm">';
+                  html += '<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #1e2d42;">' +
+                    '<th style="text-align:left;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;">#</th>' +
+                    '<th style="text-align:left;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;">NSN/Part</th>' +
+                    '<th style="text-align:left;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;">Item / Description</th>' +
+                    '<th style="text-align:center;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;">Qty</th>' +
+                    '<th style="text-align:right;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;">Unit Cost</th>' +
+                    '<th style="text-align:right;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;">Line Total</th>' +
+                    '<th style="text-align:center;padding:6px;font-size:.7rem;letter-spacing:.05em;color:#7a8a9a;"></th>' +
+                    '</tr></thead><tbody id="poLinesTbody">';
+                  linesR.recordset.forEach(function(l, idx){
+                    const isAdHoc = !l.order_line_id;
+                    const recv = (l.received_quantity || 0);
+                    const protectDel = recv > 0;
+                    const itemEsc = (l.item_name || '').replace(/"/g, '&quot;');
+                    const nsnEsc = (l.nsn || l.part_number || '').replace(/"/g, '&quot;');
+                    html += '<tr data-linerow style="border-bottom:1px solid rgba(30,45,66,0.5);">';
+                    html += '<td style="padding:6px;">' + l.line_number + '<input type="hidden" name="line_' + idx + '_id" value="' + l.id + '"/></td>';
+                    html += '<td style="padding:6px;">';
+                    if (isAdHoc) {
+                      html += '<span style="color:#7a8a9a;font-size:.7rem;font-style:italic;">ad-hoc</span>';
+                    } else {
+                      html += '<span class="mono" style="color:#c8932a;font-size:.8rem;">' + nsnEsc + '</span>';
+                    }
+                    html += '</td>';
+                    html += '<td style="padding:6px;"><input type="text" name="line_' + idx + '_item" value="' + itemEsc + '" placeholder="' + (isAdHoc ? 'e.g. 3.5% CC surcharge' : 'Item name') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></td>';
+                    html += '<td style="padding:6px;text-align:center;"><input type="number" name="line_' + idx + '_qty" min="1" value="' + (l.quantity || 1) + '" style="width:70px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 6px;font-size:.78rem;text-align:center;"/></td>';
+                    html += '<td style="padding:6px;text-align:right;">$<input type="number" step="0.01" name="line_' + idx + '_cost" value="' + parseFloat(l.unit_cost || 0).toFixed(2) + '" style="width:100px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 6px;font-size:.78rem;text-align:right;"/></td>';
+                    html += '<td style="padding:6px;text-align:right;color:#7a8a9a;font-size:.78rem;">computed on save</td>';
+                    html += '<td style="padding:6px;text-align:center;">';
+                    if (protectDel) {
+                      html += '<span title="Has received qty &mdash; cannot remove" style="color:#7a8a9a;font-size:.7rem;">received</span>';
+                    } else {
+                      html += '<button type="button" onclick="if(confirm(\u0027Remove this line?\u0027)) this.closest(\u0027[data-linerow]\u0027).remove();" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:3px 8px;cursor:pointer;border-radius:3px;font-size:.7rem;">&#10006;</button>';
+                    }
+                    html += '</td></tr>';
+                  });
+                  html += '</tbody></table>';
+                  html += '<div style="margin-top:10px;display:flex;gap:10px;justify-content:space-between;align-items:center;flex-wrap:wrap;">';
+                  html += '<button type="button" onclick="window.addPoLineRow()" style="background:rgba(200,147,42,0.1);border:1px solid #c8932a;color:#c8932a;padding:6px 14px;cursor:pointer;border-radius:3px;font-size:.78rem;">+ Add Line (ad-hoc fee/charge)</button>';
+                  html += '<button type="submit" class="btn btn-gold" style="font-weight:700;">&#128190; Save Lines</button>';
+                  html += '</div>';
+                  html += '</form>';
+                  // JS for + Add Line
+                  html += '<script>(function(){var idx=' + linesR.recordset.length + ';window.addPoLineRow=function(){var tb=document.getElementById("poLinesTbody");var tr=document.createElement("tr");tr.setAttribute("data-linerow","");tr.style.borderBottom="1px solid rgba(30,45,66,0.5)";tr.innerHTML="<td style=\"padding:6px;\">new<input type=\\\"hidden\\\" name=\\\"line_"+idx+"_id\\\" value=\\\"\\\"/></td>"+"<td style=\"padding:6px;\"><span style=\"color:#7a8a9a;font-size:.7rem;font-style:italic;\">ad-hoc</span></td>"+"<td style=\"padding:6px;\"><input type=\\\"text\\\" name=\\\"line_"+idx+"_item\\\" placeholder=\\\"e.g. 3.5% CC surcharge\\\" style=\\\"width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;\\\"/></td>"+"<td style=\"padding:6px;text-align:center;\"><input type=\\\"number\\\" name=\\\"line_"+idx+"_qty\\\" min=\\\"1\\\" value=\\\"1\\\" style=\\\"width:70px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 6px;font-size:.78rem;text-align:center;\\\"/></td>"+"<td style=\"padding:6px;text-align:right;\">$<input type=\\\"number\\\" step=\\\"0.01\\\" name=\\\"line_"+idx+"_cost\\\" value=\\\"0.00\\\" style=\\\"width:100px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 6px;font-size:.78rem;text-align:right;\\\"/></td>"+"<td style=\"padding:6px;text-align:right;color:#7a8a9a;font-size:.78rem;\">computed on save</td>"+"<td style=\"padding:6px;text-align:center;\"><button type=\"button\" onclick=\"if(confirm(\\u0027Remove this line?\\u0027)) this.closest(\\u0027[data-linerow]\\u0027).remove();\" style=\"background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:3px 8px;cursor:pointer;border-radius:3px;font-size:.7rem;\">&#10006;</button></td>";tb.appendChild(tr);idx++;};})();</script>';
+                } else if (linesR.recordset.length === 0) {
           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No lines on this PO yet.</div>';
         } else {
           html += '<table><thead><tr>' +
@@ -788,7 +836,118 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
 
   // PODETAILS_SCOPE_FIX_V3: moved out of maybeMarkOrderReadyToShip helper into setup scope
     // ==========================================================================
-  // PO_REGEN_v2: POST /supplier-pos/:id/regenerate
+    // ==========================================================================
+  // PO_EDIT_LINES_v1: POST /supplier-pos/:id/lines-update
+  // Update/insert/delete PO lines based on submitted form fields.
+  // Supports ad-hoc lines (NULL order_line_id) for fees/surcharges.
+  // Recomputes PO subtotal + total. Protects received lines from delete.
+  // ==========================================================================
+  router.post('/supplier-pos/:id/lines-update', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const poId = parseInt(req.params.id);
+      const pool = await getPool();
+      const b = req.body || {};
+
+      // Verify PO is Draft (only Draft POs are editable)
+      const poR = await pool.request().input('id', sql.BigInt, poId)
+        .query('SELECT * FROM supplier_pos WHERE id=@id');
+      if (!poR.recordset.length) return res.redirect('/admin/supplier-pos?error=PO+not+found');
+      const po = poR.recordset[0];
+      if (po.status !== 'Draft') {
+        return res.redirect('/admin/supplier-pos/' + poId + '?error=Only+Draft+POs+can+be+edited');
+      }
+
+      // Scan submitted rows: line_0_id, line_0_item, line_0_qty, line_0_cost, etc.
+      const submitted = [];
+      for (let i = 0; i < 200; i++) {
+        if (b['line_' + i + '_item'] === undefined && b['line_' + i + '_id'] === undefined) {
+          let lookAhead = false;
+          for (let j = i + 1; j < i + 8 && j < 200; j++) {
+            if (b['line_' + j + '_item'] !== undefined || b['line_' + j + '_id'] !== undefined) { lookAhead = true; break; }
+          }
+          if (!lookAhead) break;
+          continue;
+        }
+        const rawId = b['line_' + i + '_id'];
+        submitted.push({
+          idx: i,
+          id: (rawId && rawId !== '') ? parseInt(rawId) : null,
+          item: (b['line_' + i + '_item'] || '').trim(),
+          qty: parseInt(b['line_' + i + '_qty']) || 0,
+          cost: parseFloat(b['line_' + i + '_cost']) || 0
+        });
+      }
+
+      const validRows = submitted.filter(function(r){ return r.item && r.qty > 0; });
+
+      // Get existing lines for diff
+      const existR = await pool.request().input('pid', sql.BigInt, poId)
+        .query('SELECT id, order_line_id, received_quantity FROM supplier_po_lines WHERE supplier_po_id=@pid');
+      const existing = existR.recordset || [];
+      const submittedIds = new Set(validRows.filter(function(r){ return r.id; }).map(function(r){ return r.id; }));
+
+      // Rows in DB but not in submission -> DELETE (skip if received_quantity > 0)
+      const toDelete = existing.filter(function(row){
+        return !submittedIds.has(row.id) && (row.received_quantity || 0) === 0;
+      });
+
+      // Process: UPDATE existing, INSERT new, DELETE removed
+      let subtotal = 0;
+      let nextLineNum = 1;
+
+      // First pass: UPDATE existing rows (preserves their NSN/part/cond)
+      for (const r of validRows) {
+        const lineTotal = r.qty * r.cost;
+        subtotal += lineTotal;
+        if (r.id) {
+          await pool.request()
+            .input('id', sql.BigInt, r.id)
+            .input('item', sql.NVarChar(500), r.item)
+            .input('qty', sql.Int, r.qty)
+            .input('cost', sql.Decimal(10, 2), r.cost)
+            .input('lt', sql.Decimal(12, 2), lineTotal)
+            .input('ln', sql.Int, nextLineNum++)
+            .query('UPDATE supplier_po_lines SET item_name=@item, quantity=@qty, unit_cost=@cost, line_total=@lt, line_number=@ln WHERE id=@id');
+        } else {
+          // New ad-hoc line: no order_line_id, no NSN/part
+          await pool.request()
+            .input('pid', sql.BigInt, poId)
+            .input('ln', sql.Int, nextLineNum++)
+            .input('item', sql.NVarChar(500), r.item)
+            .input('qty', sql.Int, r.qty)
+            .input('cost', sql.Decimal(10, 2), r.cost)
+            .input('lt', sql.Decimal(12, 2), lineTotal)
+            .query(
+              'INSERT INTO supplier_po_lines (supplier_po_id, line_number, item_name, condition_code, quantity, unit_cost, line_total, received_quantity, created_at) ' +
+              'VALUES (@pid, @ln, @item, \'NA\', @qty, @cost, @lt, 0, GETDATE())'
+            );
+        }
+      }
+
+      // DELETE removed rows
+      for (const d of toDelete) {
+        await pool.request().input('id', sql.BigInt, d.id)
+          .query('DELETE FROM supplier_po_lines WHERE id=@id');
+      }
+
+      // Recompute total = subtotal + shipping
+      const totalAmt = subtotal + parseFloat(po.shipping_cost || 0);
+      await pool.request()
+        .input('id', sql.BigInt, poId)
+        .input('sub', sql.Decimal(12, 2), subtotal)
+        .input('tot', sql.Decimal(12, 2), totalAmt)
+        .query('UPDATE supplier_pos SET subtotal=@sub, total=@tot, updated_at=GETDATE() WHERE id=@id');
+
+      const added = validRows.filter(function(r){return !r.id;}).length;
+      const removed = toDelete.length;
+      res.redirect('/admin/supplier-pos/' + poId + '?tab=lines&saved=Lines+saved+%28' + added + '+added%2C+' + removed + '+removed%29');
+    } catch (err) {
+      console.error('PO lines update error:', err);
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
+    }
+  });
+// PO_REGEN_v2: POST /supplier-pos/:id/regenerate
   // Snapshots current PO into po_versions, rebuilds from order_line_sources,
   // resets PO status to Draft so user can re-send.
   // ==========================================================================
@@ -837,7 +996,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       }
 
       await pool.request().input('pid', sql.BigInt, poId)
-        .query('DELETE FROM supplier_po_lines WHERE supplier_po_id=@pid');
+        .query('DELETE FROM supplier_po_lines WHERE supplier_po_id=@pid AND order_line_id IS NOT NULL'); /* PO_EDIT_LINES_v1: preserve ad-hoc lines */
 
       let subtotal = 0;
       let lineNum = 1;
