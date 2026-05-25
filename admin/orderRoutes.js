@@ -7,6 +7,7 @@ import { renderOverviewTab } from './orderOverviewBlock.js';
 import { renderShippingTab } from './orderShippingBlock.js';
 import { renderProformaTab } from './orderProformaBlock.js';
 import { generateProformaPdf } from '../services/proformaPdfService.js';
+import { generateCcAuthPdf } from '../services/ccAuthPdfService.js'; // CC_AUTH_PDF_v1
 import crypto from 'crypto';
 // PROFORMA_ROUTES_V1
 import { renderPaymentTab } from './orderPaymentBlock.js';
@@ -864,7 +865,20 @@ export function mountOrderRoutes(router, requireAuth, page) {
     }
   });
 
-  // PROFORMA_ROUTES_V1: Send proforma
+    // CC_AUTH_PDF_v1: GET /cc-authorizations/:id/pdf
+  router.get('/cc-authorizations/:id/pdf', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const buf = await generateCcAuthPdf(parseInt(req.params.id));
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="cc-auth-' + req.params.id + '.pdf"');
+      res.send(buf);
+    } catch (err) {
+      console.error('CC auth PDF error:', err);
+      res.status(500).send('PDF generation failed: ' + err.message);
+    }
+  });
+// PROFORMA_ROUTES_V1: Send proforma
   router.post('/orders/:id/send-proforma', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {

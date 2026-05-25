@@ -19,11 +19,11 @@ export function renderProformaTab(o, proformas, authorizations, baseUrl) {
       if (auth && auth.captured_at) {
         // Already charged
         const refLine = auth.captured_reference ? '<div style="font-size:.7rem;color:#7a8a9a;">ref: ' + auth.captured_reference + '</div>' : '';
-        authCell = '<div style="color:#4caf50;">\u2713 Charged ' + shortDate(auth.captured_at) + (auth.card_last4 ? ' \u00B7 ending ' + auth.card_last4 : '') + '</div>' + refLine;
+        authCell = '<div style="color:#4caf50;">\u2713 Charged ' + shortDate(auth.captured_at) + (auth.card_last4 ? ' \u00B7 ending ' + auth.card_last4 : '') + ' <a href="/admin/cc-authorizations/' + auth.id + '/pdf" target="_blank" style="color:#c8932a;font-size:.7rem;margin-left:6px;">[PDF]</a></div>' + refLine; /* CC_AUTH_PDF_v1 */
       } else if (auth && auth.status === 'Signed') {
         // Signed, not yet captured -> show button
         const amt = parseFloat(auth.amount_authorized || pf.total || 0);
-        authCell = '<div style="color:#4caf50;font-size:.78rem;">\u2713 Signed ' + shortDate(auth.signed_at) + (auth.card_last4 ? ' \u00B7 ending ' + auth.card_last4 : '') + '</div>' +
+        authCell = '<div style="color:#4caf50;font-size:.78rem;">\u2713 Signed ' + shortDate(auth.signed_at) + (auth.card_last4 ? ' \u00B7 ending ' + auth.card_last4 : '') + ' <a href="/admin/cc-authorizations/' + auth.id + '/pdf" target="_blank" style="color:#c8932a;font-size:.7rem;margin-left:6px;">[PDF]</a></div>' +
           '<button type="button" onclick="openCharge(' + auth.id + ',' + amt + ',\'' + (auth.card_last4 || '') + '\')" class="btn btn-gold btn-sm" style="margin-top:6px;font-size:.7rem;padding:4px 10px;">Mark CC Charged</button>';
       } else if (auth) {
         authCell = '<span style="color:#7a8a9a;">Pending</span>';
