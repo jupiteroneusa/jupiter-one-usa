@@ -393,6 +393,14 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
           html += '</div>';
         } else if (po.sent_at) {
           html += '<div style="margin-top:16px;padding:10px 14px;background:rgba(76,175,80,0.08);border-left:3px solid #4caf50;font-size:.85rem;">&#10004; PO sent to <strong>' + (po.email_to || 'supplier') + '</strong> on ' + shortDateTime(po.sent_at) + '. <a href="/admin/supplier-pos/' + po.id + '/pdf" target="_blank" style="color:#c8932a;margin-left:8px;">View PDF</a></div>';
+          /* PO_REGEN_v2: Regenerate from Sources button */
+          html += '<div style="margin-top:12px;padding:14px;border:1px solid #c8932a;background:rgba(200,147,42,0.06);border-radius:4px;">';
+          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:8px;">&#x21bb; Regenerate</div>';
+          html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/regenerate" onsubmit="return confirm(\u0027Regenerate this PO from current order sources? Old PO snapshot will be saved, totals recalculated, PO reset to Draft so you can review and re-send.\u0027);" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">';
+          html += '<button type="submit" class="btn" style="background:#1a2942;border:1px solid #c8932a;color:#c8932a;padding:8px 18px;cursor:pointer;border-radius:3px;font-weight:700;">&#x21bb; Regenerate from Sources</button>';
+          html += '<div style="font-size:.72rem;color:#7a8a9a;">Snapshots current PO &middot; rebuilds from order sources &middot; resets to Draft</div>';
+          html += '</form>';
+          html += '</div>';
         }
 
         // PDF preview link (always available)
@@ -774,7 +782,97 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
   });
 
   // PODETAILS_SCOPE_FIX_V3: moved out of maybeMarkOrderReadyToShip helper into setup scope
-  // PO_DETAIL_EDIT_V1: POST /supplier-pos/:id/po-details — update expected delivery + shipping
+    // ==========================================================================
+  // PO_REGEN_v2: POST /supplier-pos/:id/regenerate
+  // Snapshots current PO into po_versions, rebuilds from order_line_sources,
+  // resets PO status to Draft so user can re-send.
+  // ==========================================================================
+  router.post('/supplier-pos/:id/regenerate', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const poId = parseInt(req.params.id);
+      const pool = await getPool();
+
+      const poR = await pool.request().input('id', sql.BigInt, poId)
+        .query('SELECT * FROM supplier_pos WHERE id=@id');
+      if (!poR.recordset.length) return res.redirect('/admin/supplier-pos?error=PO+not+found');
+      const po = poR.recordset[0];
+
+      const oldLinesR = await pool.request().input('pid', sql.BigInt, poId)
+        .query('SELECT * FROM supplier_po_lines WHERE supplier_po_id=@pid ORDER BY line_number');
+      const oldLines = oldLinesR.recordset;
+
+      const verR = await pool.request().input('pid', sql.BigInt, poId)
+        .query('SELECT ISNULL(MAX(version),0)+1 AS nextVer FROM po_versions WHERE supplier_po_id=@pid');
+      const nextVersion = verR.recordset[0].nextVer;
+      const snapshot = { po: po, lines: oldLines };
+      await pool.request()
+        .input('pid', sql.BigInt, poId)
+        .input('pn', sql.NVarChar(50), po.po_number)
+        .input('v', sql.Int, nextVersion)
+        .input('snap', sql.NVarChar(sql.MAX), JSON.stringify(snapshot))
+        .input('by', sql.NVarChar(100), (req.adminEmail || 'admin'))
+        .input('reason', sql.NVarChar(500), (req.body && req.body.reason) ? req.body.reason : 'Manual regenerate')
+        .query('INSERT INTO po_versions (supplier_po_id, po_number, version, snapshot_json, regenerated_by, reason) VALUES (@pid, @pn, @v, @snap, @by, @reason)');
+
+      const srcR = await pool.request()
+        .input('oid', sql.BigInt, po.order_id)
+        .input('sid', sql.BigInt, po.supplier_id)
+        .query(
+          'SELECT ols.*, ol.nsn, ol.part_number, ol.item_name, ol.condition_code, ol.line_number AS order_line_num ' +
+          'FROM order_line_sources ols ' +
+          'INNER JOIN order_lines ol ON ol.id = ols.order_line_id ' +
+          'WHERE ol.order_id=@oid AND ols.supplier_id=@sid ' +
+          'ORDER BY ol.line_number, ols.sort_order'
+        );
+      const sources = srcR.recordset;
+
+      if (sources.length === 0) {
+        return res.redirect('/admin/supplier-pos/' + poId + '?error=No+sources+found+for+this+supplier+on+the+order');
+      }
+
+      await pool.request().input('pid', sql.BigInt, poId)
+        .query('DELETE FROM supplier_po_lines WHERE supplier_po_id=@pid');
+
+      let subtotal = 0;
+      let lineNum = 1;
+      for (const s of sources) {
+        const lineTotal = (s.allocated_qty || 0) * parseFloat(s.unit_cost || 0);
+        subtotal += lineTotal;
+        await pool.request()
+          .input('pid', sql.BigInt, poId)
+          .input('olId', sql.BigInt, s.order_line_id)
+          .input('ln', sql.Int, lineNum++)
+          .input('nsn', sql.VarChar(50), s.nsn || null)
+          .input('pn', sql.VarChar(50), s.part_number || null)
+          .input('item', sql.NVarChar(500), s.item_name || null)
+          .input('cond', sql.VarChar(10), s.condition_code || 'NE')
+          .input('qty', sql.Int, s.allocated_qty || 0)
+          .input('cost', sql.Decimal(10, 2), parseFloat(s.unit_cost || 0))
+          .input('lt', sql.Decimal(12, 2), lineTotal)
+          .input('lead', sql.NVarChar(sql.MAX), s.lead_time_text || null)
+          .query(
+            'INSERT INTO supplier_po_lines (supplier_po_id, order_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, line_total, received_quantity, lead_time_text, created_at) ' +
+            'VALUES (@pid, @olId, @ln, @nsn, @pn, @item, @cond, @qty, @cost, @lt, 0, @lead, GETDATE())'
+          );
+      }
+
+      const totalAmt = subtotal + parseFloat(po.shipping_cost || 0);
+      await pool.request()
+        .input('id', sql.BigInt, poId)
+        .input('sub', sql.Decimal(12, 2), subtotal)
+        .input('tot', sql.Decimal(12, 2), totalAmt)
+        .query(
+          'UPDATE supplier_pos SET subtotal=@sub, total=@tot, status=\'Draft\', sent_at=NULL, updated_at=GETDATE() WHERE id=@id'
+        );
+
+      res.redirect('/admin/supplier-pos/' + poId + '?saved=Regenerated+v' + nextVersion + '+from+current+sources.+Status+reset+to+Draft.+Click+Send+to+Supplier+to+re-send.');
+    } catch (err) {
+      console.error('PO regenerate error:', err);
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
+// PO_DETAIL_EDIT_V1: POST /supplier-pos/:id/po-details — update expected delivery + shipping
   router.post('/supplier-pos/:id/po-details', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
