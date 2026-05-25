@@ -186,11 +186,17 @@ export async function generateQuotePdf({ quote, lines }) {
 
       doc.setTextColor(60, 60, 60);
       doc.setFont('helvetica', 'normal');
-      doc.text(String(l.item_name || '').substring(0, 32), colX.desc, y);
+      /* QUOTE_PDF_WRAP_v1: wrap long descriptions, track extra row height */
+const __descRaw = String(l.item_name || '');
+const __descLines = doc.splitTextToSize(__descRaw, 53);
+for (let __di = 0; __di < __descLines.length; __di++) {
+  doc.text(__descLines[__di], colX.desc, y + (__di * 3.2));
+}
+const __descExtraY = Math.max(0, (__descLines.length - 1) * 3.2);
       if (l.lead_time_text) {
         doc.setFontSize(7);
         doc.setTextColor(120, 120, 120);
-        doc.text('Lead: ' + String(l.lead_time_text).substring(0, 30), colX.desc, y + 3);
+        doc.text('Lead: ' + String(l.lead_time_text).substring(0, 30), colX.desc, y + 3 + __descExtraY);
         doc.setFontSize(8);
         doc.setTextColor(60, 60, 60);
       }
@@ -204,8 +210,8 @@ export async function generateQuotePdf({ quote, lines }) {
 
       doc.setDrawColor(220, 220, 220);
       doc.setLineWidth(0.1);
-      doc.line(margin, y + 2, pageW - margin, y + 2);
-      y += 8;
+      doc.line(margin, y + 2 + __descExtraY, pageW - margin, y + 2 + __descExtraY);
+      y += 8 + __descExtraY;
     });
 
     y += 4;
