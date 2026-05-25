@@ -95,47 +95,119 @@ export function mountOrderRoutes(router, requireAuth, page) {
 
     // SOURCES_UPDATE_HANDLER_V1: save per-source edits + recompute line cost
   router.post('/orders/:id/lines/:lineId/sources-update', async (req, res) => {
+    // ORDER_SOURCES_FIX_v1: full add/update/delete support, correct column names
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
-      const b = req.body;
+      const b = req.body || {};
       const orderId = parseInt(req.params.id);
       const lineId = parseInt(req.params.lineId);
-      const count = parseInt(b.src_count) || 0;
-      if (count === 0) return res.redirect('/admin/orders/' + orderId + '?tab=lines&error=No+sources');
 
-      let totalQty = 0, totalCost = 0;
-      for (let i = 0; i < count; i++) {
-        const id = parseInt(b['src_' + i + '_id']);
-        const qty = parseInt(b['src_' + i + '_qty']) || 0;
-        const cost = parseFloat(b['src_' + i + '_cost']) || 0;
-        const lead = b['src_' + i + '_lead'] || null;
-        const h8 = b['src_' + i + '_8130'] === 'on' || b['src_' + i + '_8130'] === '1' ? 1 : 0;
-        const hc = b['src_' + i + '_coc'] === 'on' || b['src_' + i + '_coc'] === '1' ? 1 : 0;
-        const ht = b['src_' + i + '_trace'] === 'on' || b['src_' + i + '_trace'] === '1' ? 1 : 0;
-        totalQty += qty;
-        totalCost += qty * cost;
-
-        await pool.request()
-          .input('id', sql.BigInt, id)
-          .input('qty', sql.Int, qty)
-          .input('cost', sql.Decimal(10,2), cost)
-          .input('lc', sql.Decimal(12,2), qty * cost)
-          .input('lead', sql.NVarChar(sql.MAX), lead)
-          .input('h8', sql.Bit, h8)
-          .input('hc', sql.Bit, hc)
-          .input('ht', sql.Bit, ht)
-          .query('UPDATE order_line_sources SET allocated_qty=@qty, unit_cost=@cost, line_cost=@lc, lead_time_text=@lead, has_8130=@h8, has_coc=@hc, has_trace=@ht, updated_at=GETDATE() WHERE id=@id');
+      // Scan submitted rows (no src_count needed). A row is "present" if
+      // at minimum src_X_supplier_id is in the body (Add Source rows lack id).
+      const submitted = [];
+      for (let i = 0; i < 200; i++) {
+        const hasId = (b['src_' + i + '_id'] !== undefined);
+        const hasSup = (b['src_' + i + '_supplier_id'] !== undefined);
+        if (!hasId && !hasSup) {
+          // Not necessarily the end — there can be gaps. Continue scanning a few more.
+          let foundAhead = false;
+          for (let j = i + 1; j < i + 8 && j < 200; j++) {
+            if (b['src_' + j + '_id'] !== undefined || b['src_' + j + '_supplier_id'] !== undefined) {
+              foundAhead = true; break;
+            }
+          }
+          if (!foundAhead) break;
+          continue;
+        }
+        submitted.push({
+          idx: i,
+          id: hasId && b['src_' + i + '_id'] !== '' ? parseInt(b['src_' + i + '_id']) : null,
+          supplier_id: parseInt(b['src_' + i + '_supplier_id']) || null,
+          qty: parseInt(b['src_' + i + '_qty']) || 0,
+          cost: parseFloat(b['src_' + i + '_cost']) || 0,
+          lead: b['src_' + i + '_lead'] || null,
+          h8: (b['src_' + i + '_8130'] === 'on' || b['src_' + i + '_8130'] === '1') ? 1 : 0,
+          hc: (b['src_' + i + '_coc'] === 'on' || b['src_' + i + '_coc'] === '1') ? 1 : 0,
+          ht: (b['src_' + i + '_trace'] === 'on' || b['src_' + i + '_trace'] === '1') ? 1 : 0
+        });
       }
 
-      // Recompute line unit_cost as weighted average (cascades to PO PDF + analytics)
+      // Validate: every row must have a supplier_id and qty > 0
+      const validRows = submitted.filter(function(r){ return r.supplier_id && r.qty > 0; });
+      if (validRows.length === 0) {
+        return res.redirect('/admin/orders/' + orderId + '?tab=lines&error=No+sources');
+      }
+
+      // Fetch existing DB rows for this line so we know what to UPDATE/DELETE
+      const existR = await pool.request().input('lineId', sql.BigInt, lineId)
+        .query('SELECT id, supplier_po_line_id FROM order_line_sources WHERE order_line_id=@lineId');
+      const existing = existR.recordset || [];
+      const submittedIds = new Set(validRows.filter(function(r){ return r.id; }).map(function(r){ return r.id; }));
+
+      // Determine rows to DELETE (in DB but not in submission). Skip rows that
+      // already have a supplier_po_line_id — those are PO'd and protected.
+      const toDelete = existing.filter(function(row){
+        return !submittedIds.has(row.id) && !row.supplier_po_line_id;
+      });
+
+      // Compute totals for line cost recalc, and the next sort_order for INSERTs
+      let totalQty = 0, totalCost = 0;
+      const maxSortR = await pool.request().input('lineId', sql.BigInt, lineId)
+        .query('SELECT ISNULL(MAX(sort_order),0) AS maxs FROM order_line_sources WHERE order_line_id=@lineId');
+      let nextSort = (maxSortR.recordset[0] && maxSortR.recordset[0].maxs) || 0;
+
+      // UPDATE / INSERT each submitted valid row
+      for (let k = 0; k < validRows.length; k++) {
+        const r = validRows[k];
+        totalQty += r.qty;
+        totalCost += r.qty * r.cost;
+
+        if (r.id) {
+          // UPDATE existing
+          await pool.request()
+            .input('id', sql.BigInt, r.id)
+            .input('sup', sql.BigInt, r.supplier_id)
+            .input('qty', sql.Int, r.qty)
+            .input('cost', sql.Decimal(10, 2), r.cost)
+            .input('lead', sql.NVarChar(sql.MAX), r.lead)
+            .input('h8', sql.Bit, r.h8)
+            .input('hc', sql.Bit, r.hc)
+            .input('ht', sql.Bit, r.ht)
+            .query("UPDATE order_line_sources SET supplier_id=@sup, allocated_qty=@qty, unit_cost=@cost, lead_time_text=@lead, has_8130_required=@h8, has_coc_required=@hc, has_trace_required=@ht, updated_at=GETDATE() WHERE id=@id");
+        } else {
+          // INSERT new (Add Source path). line_cost is COMPUTED — do not insert.
+          nextSort += 1;
+          await pool.request()
+            .input('olId', sql.BigInt, lineId)
+            .input('sup', sql.BigInt, r.supplier_id)
+            .input('qty', sql.Int, r.qty)
+            .input('cost', sql.Decimal(10, 2), r.cost)
+            .input('lead', sql.NVarChar(sql.MAX), r.lead)
+            .input('h8', sql.Bit, r.h8)
+            .input('hc', sql.Bit, r.hc)
+            .input('ht', sql.Bit, r.ht)
+            .input('sortO', sql.Int, nextSort)
+            .query("INSERT INTO order_line_sources (order_line_id, supplier_id, allocated_qty, received_qty, unit_cost, lead_time_text, has_8130_required, has_8130_received, has_coc_required, has_coc_received, has_trace_required, has_trace_received, sort_order, created_at, updated_at) VALUES (@olId, @sup, @qty, 0, @cost, @lead, @h8, 0, @hc, 0, @ht, 0, @sortO, GETDATE(), GETDATE())");
+        }
+      }
+
+      // DELETE removed rows
+      for (let d = 0; d < toDelete.length; d++) {
+        await pool.request()
+          .input('delId', sql.BigInt, toDelete[d].id)
+          .query('DELETE FROM order_line_sources WHERE id=@delId');
+      }
+
+      // Recompute line's supplier_cost (weighted average across remaining sources)
       const newLineUnitCost = totalQty > 0 ? totalCost / totalQty : 0;
       await pool.request()
         .input('id', sql.BigInt, lineId)
-        .input('uc', sql.Decimal(10,2), newLineUnitCost)
+        .input('uc', sql.Decimal(10, 2), newLineUnitCost)
         .query('UPDATE order_lines SET supplier_cost=@uc WHERE id=@id');
 
-      res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=Sources+updated');
+      const summary = 'Sources+updated+%28' + validRows.filter(function(r){return !r.id;}).length + '+added%2C+' + toDelete.length + '+removed%29';
+      res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=' + summary);
     } catch (err) {
       console.error('Sources update error:', err);
       res.redirect('/admin/orders/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
