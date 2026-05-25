@@ -1,6 +1,4 @@
-.env
-node_modulespdf-check.txt
-*.diag.txt
-node_modules/
-pdf-check.txt
-*.bak
+PATCH_*.cjs 
+*.bak 
+*.bak.* 
+test_*.pdf 
