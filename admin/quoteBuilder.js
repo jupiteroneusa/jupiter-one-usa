@@ -578,11 +578,22 @@ async function saveQuote(rfqId, body, adminId) {
     const quoteRow = (await pool.request().input('id', sql.BigInt, quoteId)
       .query('SELECT * FROM quotes WHERE id=@id')).recordset[0];
 
-    const pdfUrl = await generateQuotePdf({ quote: quoteRow, lines: linesR.recordset });
-    await pool.request().input('id', sql.BigInt, quoteId).input('url', sql.NVarChar(500), pdfUrl)
-      .query('UPDATE quotes SET pdf_url=@url, sent_at=GETDATE() WHERE id=@id');
+    /* QUOTE_INITIAL_SEND_v1: capture PDF Buffer + pass cc_emails through */
+    const pdfBuf = await generateQuotePdf({ quote: quoteRow, lines: linesR.recordset });
+    // Mark quote as sent (sent_at). pdf_url left null; we attach the buffer directly to email.
+    await pool.request().input('id', sql.BigInt, quoteId)
+      .query('UPDATE quotes SET sent_at=GETDATE() WHERE id=@id');
     if (custR.recordset.length) {
-      sendQuoteToCustomer({ customer: custR.recordset[0], quote: quoteRow, lines: linesR.recordset, pdfUrl }).catch(function(e){ console.error('Email error:', e.message); });
+      const ccEmails = (body && body.cc_emails) ? String(body.cc_emails).trim() : '';
+      const attachPdf = !!(body && (body.attach_pdf === '1' || body.attach_pdf === 'on' || body.attach_pdf === 1 || body.attach_pdf === true));
+      sendQuoteToCustomer({
+        customer: custR.recordset[0],
+        quote: quoteRow,
+        lines: linesR.recordset,
+        ccEmails: ccEmails,
+        attachPdf: attachPdf,
+        pdfBuffer: pdfBuf
+      }).catch(function(e){ console.error('Email error:', e.message); });
     }
   } catch (sendErr) {
     console.error('PDF/email best-effort error:', sendErr.message);
