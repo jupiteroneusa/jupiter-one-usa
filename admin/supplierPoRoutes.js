@@ -386,7 +386,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
           html += '<div style="flex:1;min-width:240px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Email To</div>';
           html += '<input type="email" name="email_to" required value="' + (po.supplier_email || '') + '" placeholder="supplier@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
           html += '<div style="flex:1;min-width:200px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">CC (optional)</div>';
-          html += '<input type="email" name="email_cc" placeholder="cc@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+          html += '<input type="text" name="email_cc" placeholder="cc1@example.com, cc2@example.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>'; /* PO_CC_COMMA_v1 */
           html += '<button type="submit" class="btn btn-gold">&#128231; Send PO + PDF</button>';
           html += '</form>';
           html += '<div style="font-size:.78rem;color:#7a8a9a;margin-top:8px;">Generates PO PDF, emails it to supplier, and sets status to <strong>Sent</strong>.</div>';
@@ -683,7 +683,12 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
     try {
       const pool = await getPool();
       const emailTo = (req.body.email_to || '').trim();
-      const emailCc = (req.body.email_cc || '').trim();
+      /* PO_CC_COMMA_v1: parse comma-separated CC list into array */
+      const emailCcArr = (req.body.email_cc || '')
+        .split(',')
+        .map(function(s){ return s.trim(); })
+        .filter(function(s){ return s && s.indexOf('@') > -1; });
+      const emailCc = emailCcArr.length > 0 ? emailCcArr : '';
 
       if (!emailTo) {
         return res.redirect('/admin/supplier-pos/' + req.params.id + '?error=Email+recipient+required');
@@ -750,7 +755,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const sendResult = await transporter.sendMail({
         from: '"Derek Torchia - Jupiter One USA" <' + fromAddr + '>',
         to: emailTo,
-        cc: emailCc || undefined,
+        cc: (emailCcArr && emailCcArr.length > 0) ? emailCcArr : undefined, /* PO_CC_COMMA_v1 */
         bcc: 'DTorchia@JupiterOneUSA.com',
         subject: 'Jupiter One USA - Purchase Order ' + po.po_number,
         html: htmlBody,
