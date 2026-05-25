@@ -885,11 +885,11 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const existR = await pool.request().input('pid', sql.BigInt, poId)
         .query('SELECT id, order_line_id, received_quantity FROM supplier_po_lines WHERE supplier_po_id=@pid');
       const existing = existR.recordset || [];
-      const submittedIds = new Set(validRows.filter(function(r){ return r.id; }).map(function(r){ return r.id; }));
+      const submittedIds = new Set(validRows.filter(function(r){ return r.id; }).map(function(r){ return String(r.id); })); /* PO_LINES_TYPE_FIX_v1 */
 
       // Rows in DB but not in submission -> DELETE (skip if received_quantity > 0)
       const toDelete = existing.filter(function(row){
-        return !submittedIds.has(row.id) && (row.received_quantity || 0) === 0;
+        return !submittedIds.has(String(row.id)) && (row.received_quantity || 0) === 0; /* PO_LINES_TYPE_FIX_v1 */
       });
 
       // Process: UPDATE existing, INSERT new, DELETE removed
