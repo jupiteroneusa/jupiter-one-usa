@@ -2,3 +2,11 @@ PATCH_*.cjs
 *.bak 
 *.bak.* 
 test_*.pdf 
+node_modules/ 
+.env 
+.env.local 
+.DS_Store 
+*.log 
+tmp/ 
+dist/ 
+.vscode/ 
