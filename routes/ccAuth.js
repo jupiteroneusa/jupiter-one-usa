@@ -25,7 +25,7 @@ router.get('/cc-auth/:token', async (req, res) => {
     const pfR = await pool.request().input('tok', sql.NVarChar(64), tok).query(
       'SELECT pf.*, o.order_number, o.id AS order_id, o.ship_to_address1, o.ship_to_city,' +
       ' o.ship_to_state, o.ship_to_zip, o.ship_to_country,' +
-      ' c.first_name, c.last_name, c.email, c.phone, c.company' +
+      ' c.first_name, c.last_name, c.email, c.phone, c.company, o.buyer_name, o.buyer_email, o.buyer_phone, o.bill_to_address1, o.bill_to_city, o.bill_to_state, o.bill_to_zip, o.bill_to_country' +
       ' FROM proformas pf' +
       ' INNER JOIN orders o ON o.id = pf.order_id' +
       ' INNER JOIN customers c ON c.id = o.customer_id' +
@@ -57,7 +57,8 @@ router.get('/cc-auth/:token', async (req, res) => {
       return res.send(renderPage('Already Signed', alreadyHtml));
     }
 
-    const fullName = [pf.first_name, pf.last_name].filter(Boolean).join(' ');
+    /* BILL_TO_BUYER_v2: prefer buyer name when set */
+    const fullName = (pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : [pf.first_name, pf.last_name].filter(Boolean).join(' ');
     const tokSafe = esc(req.params.token);
 
     const form =
@@ -82,17 +83,17 @@ router.get('/cc-auth/:token', async (req, res) => {
             '<div class="field"><label>Title</label>' +
               '<input type="text" name="cardholder_title" placeholder="CFO, Purchasing Manager"/></div>' +
             '<div class="field"><label>Email</label>' +
-              '<input type="email" name="cardholder_email" value="' + esc(pf.email || '') + '"/></div>' +
+              '<input type="email" name="cardholder_email" value="' + esc(pf.buyer_email || pf.email || '') /* BILL_TO_BUYER_v2 */ + '"/></div>' +
             '<div class="field full"><label>Billing Address</label>' +
-              '<input type="text" name="billing_address1" value="' + esc(pf.ship_to_address1 || '') + '"/></div>' +
+              '<input type="text" name="billing_address1" value="' + esc(pf.bill_to_address1 || pf.ship_to_address1 || '') /* BILL_TO_BUYER_v2 */ + '"/></div>' +
             '<div class="field"><label>City</label>' +
-              '<input type="text" name="billing_city" value="' + esc(pf.ship_to_city || '') + '"/></div>' +
+              '<input type="text" name="billing_city" value="' + esc(pf.bill_to_city || pf.ship_to_city || '') /* BILL_TO_BUYER_v2 */ + '"/></div>' +
             '<div class="field"><label>State</label>' +
-              '<input type="text" name="billing_state" value="' + esc(pf.ship_to_state || '') + '"/></div>' +
+              '<input type="text" name="billing_state" value="' + esc(pf.bill_to_state || pf.ship_to_state || '') /* BILL_TO_BUYER_v2 */ + '"/></div>' +
             '<div class="field"><label>ZIP <span class="req">*</span></label>' +
-              '<input type="text" name="billing_zip" required value="' + esc(pf.ship_to_zip || '') + '"/></div>' +
+              '<input type="text" name="billing_zip" required value="' + esc(pf.bill_to_zip || pf.ship_to_zip || '') /* BILL_TO_BUYER_v2 */ + '"/></div>' +
             '<div class="field"><label>Country</label>' +
-              '<input type="text" name="billing_country" value="' + esc(pf.ship_to_country || 'USA') + '"/></div>' +
+              '<input type="text" name="billing_country" value="' + esc(pf.bill_to_country || pf.ship_to_country || 'USA') /* BILL_TO_BUYER_v2 */ + '"/></div>' +
           '</div>' +
         '</div>' +
 

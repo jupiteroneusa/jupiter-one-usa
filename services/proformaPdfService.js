@@ -23,6 +23,8 @@ export async function generateProformaPdf(proformaId) {
            o.ship_to_address1 AS bill_address1, o.ship_to_city AS bill_city,
            o.ship_to_state AS bill_state, o.ship_to_zip AS bill_zip,
            o.ship_to_country AS bill_country,
+           o.buyer_name, o.buyer_email, o.buyer_phone,
+           o.bill_to_address1, o.bill_to_city, o.bill_to_state, o.bill_to_zip, o.bill_to_country, /* BILL_TO_BUYER_v2 */
            q.quote_number
     FROM proformas pf
     INNER JOIN orders o ON o.id = pf.order_id
@@ -102,16 +104,18 @@ export async function generateProformaPdf(proformaId) {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(...navy);
-  doc.text(pf.company || (pf.first_name + ' ' + pf.last_name), margin, y);
+  /* BILL_TO_BUYER_v2: prefer buyer over customer when set */
+  doc.text((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : (pf.company || (pf.first_name + ' ' + pf.last_name)), margin, y);
   y += 5;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(60, 60, 60);
-  if (pf.company) { doc.text('Attn: ' + pf.first_name + ' ' + pf.last_name, margin, y); y += 4; }
-  if (pf.bill_address1) { doc.text(pf.bill_address1, margin, y); y += 4; }
-  const cityLine = [pf.bill_city, pf.bill_state, pf.bill_zip].filter(Boolean).join(', ');
+  /* BILL_TO_BUYER_v2: attn line uses buyer name when set */
+  if (pf.company) { doc.text('Attn: ' + ((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : (pf.first_name + ' ' + pf.last_name)), margin, y); y += 4; }
+  if ((pf.bill_to_address1 || pf.bill_address1) /* BILL_TO_BUYER_v2 */) { doc.text(pf.bill_address1, margin, y); y += 4; }
+  const cityLine = [(pf.bill_to_city || pf.bill_city) /* BILL_TO_BUYER_v2 */, (pf.bill_to_state || pf.bill_state) /* BILL_TO_BUYER_v2 */, (pf.bill_to_zip || pf.bill_zip) /* BILL_TO_BUYER_v2 */].filter(Boolean).join(', ');
   if (cityLine) { doc.text(cityLine, margin, y); y += 4; }
-  if (pf.bill_country) { doc.text(pf.bill_country, margin, y); y += 4; }
+  if ((pf.bill_to_country || pf.bill_country) /* BILL_TO_BUYER_v2 */) { doc.text(pf.bill_country, margin, y); y += 4; }
   if (pf.email) { doc.text(pf.email, margin, y); y += 4; }
   if (pf.phone) { doc.text(pf.phone, margin, y); y += 4; }
 
