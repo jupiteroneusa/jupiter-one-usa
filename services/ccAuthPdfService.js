@@ -62,7 +62,7 @@ export async function generateCcAuthPdf(authId) {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor.apply(doc, midGray);
-  doc.text('2965 Eldron Blvd, Palm Bay, FL 32909', margin, y + 10);
+  doc.text('400 N Tampa St, Suite 1550, Tampa FL', margin, y + 10);
   doc.text('(347) 821-7412  ·  contact@jupiteroneusa.com', margin, y + 14);
 
   // Right side: doc title

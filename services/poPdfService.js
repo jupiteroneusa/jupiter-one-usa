@@ -70,9 +70,9 @@ export async function generatePoPdf(poId) {
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(80, 80, 80);
   // EDIT-ME: Company header address — appears top-left of every PO PDF
-  doc.text('1101 Porter Ave NW', margin, y);
+  doc.text('400 N Tampa St, Suite 1550', margin, y);
   y += 4;
-  doc.text('Palm Bay, FL 32907', margin, y);
+  doc.text('Tampa, FL', margin, y);
   y += 4;
   doc.text('(347) 821-7412 · contact@jupiteroneusa.com', margin, y);
 
@@ -132,8 +132,8 @@ export async function generatePoPdf(poId) {
 
   // EDIT-ME: Ship-to address — where suppliers should ship parts
   const shipLines = [
-    '1101 Porter Ave NW',
-    'Palm Bay, FL 32907',
+    '400 N Tampa St, Suite 1550',
+    'Tampa, FL',
     'USA',
     'Attn: Receiving / Derek Torchia'
   ];

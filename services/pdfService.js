@@ -59,8 +59,8 @@ export async function generateQuotePdf({ quote, lines }) {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(80, 80, 80);
-    doc.text('1101 Porter Ave NW', margin, y); y += 4;
-    doc.text('Palm Bay, FL 32907', margin, y); y += 4;
+    doc.text('400 N Tampa St, Suite 1550', margin, y); y += 4;
+    doc.text('Tampa, FL', margin, y); y += 4;
     doc.text('(347) 821-7412 | contact@jupiteroneusa.com', margin, y);
 
     // Quote number block (right side)

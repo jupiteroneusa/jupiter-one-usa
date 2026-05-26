@@ -1007,7 +1007,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           '<p style="font-size:13px;color:#555;">If you have any questions, reply to this email or call (347) 821-7412.</p>' +
           '</div>' +
           '<div style="background:#0a1628;padding:14px 20px;">' +
-          '<p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 1101 Porter Ave NW, Palm Bay, FL 32907 | (347) 821-7412</p>' +
+          '<p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | (347) 821-7412</p>' +
           '</div></div>';
 
         const mailOpts = {
