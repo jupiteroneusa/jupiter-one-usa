@@ -112,12 +112,12 @@ export async function generateProformaPdf(proformaId) {
   doc.setTextColor(60, 60, 60);
   /* BILL_TO_BUYER_v2: attn line uses buyer name when set */
   if (pf.company) { doc.text('Attn: ' + ((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : (pf.first_name + ' ' + pf.last_name)), margin, y); y += 4; }
-  if ((pf.bill_to_address1 || pf.bill_address1) /* BILL_TO_BUYER_v2 */) { doc.text(pf.bill_address1, margin, y); y += 4; }
+  if ((pf.bill_to_address1 || pf.bill_address1) /* BILL_TO_BUYER_v2 */) { doc.text((pf.bill_to_address1 || pf.bill_address1), margin, y); y += 4; /* BILL_TO_BUYER_v2 */ }
   const cityLine = [(pf.bill_to_city || pf.bill_city) /* BILL_TO_BUYER_v2 */, (pf.bill_to_state || pf.bill_state) /* BILL_TO_BUYER_v2 */, (pf.bill_to_zip || pf.bill_zip) /* BILL_TO_BUYER_v2 */].filter(Boolean).join(', ');
   if (cityLine) { doc.text(cityLine, margin, y); y += 4; }
-  if ((pf.bill_to_country || pf.bill_country) /* BILL_TO_BUYER_v2 */) { doc.text(pf.bill_country, margin, y); y += 4; }
-  if (pf.email) { doc.text(pf.email, margin, y); y += 4; }
-  if (pf.phone) { doc.text(pf.phone, margin, y); y += 4; }
+  if ((pf.bill_to_country || pf.bill_country) /* BILL_TO_BUYER_v2 */) { doc.text((pf.bill_to_country || pf.bill_country), margin, y); y += 4; /* BILL_TO_BUYER_v2 */ }
+  if (pf.buyer_email || pf.email) { doc.text(pf.buyer_email || pf.email, margin, y); y += 4; } /* BILL_TO_BUYER_v2 */
+  if (pf.buyer_phone || pf.phone) { doc.text(pf.buyer_phone || pf.phone, margin, y); y += 4; } /* BILL_TO_BUYER_v2 */
 
   y += 4;
 
