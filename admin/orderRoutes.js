@@ -903,6 +903,38 @@ export function mountOrderRoutes(router, requireAuth, page) {
     }
   });
 // PROFORMA_ROUTES_V1: Send proforma
+    // ==========================================================================
+  // BILL_TO_BUYER_v1: POST /orders/:id/buyer-update
+  // Save optional buyer + bill-to fields on the order.
+  // ==========================================================================
+  router.post('/orders/:id/buyer-update', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const trim = function(v) { return (v === undefined || v === null) ? null : (String(v).trim() || null); };
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('bn',  sql.NVarChar(150), trim(b.buyer_name))
+        .input('be',  sql.NVarChar(150), trim(b.buyer_email))
+        .input('bp',  sql.NVarChar(30),  trim(b.buyer_phone))
+        .input('ba1', sql.NVarChar(200), trim(b.bill_to_address1))
+        .input('bc',  sql.NVarChar(100), trim(b.bill_to_city))
+        .input('bs',  sql.NVarChar(50),  trim(b.bill_to_state))
+        .input('bz',  sql.NVarChar(20),  trim(b.bill_to_zip))
+        .input('bco', sql.NVarChar(50),  trim(b.bill_to_country))
+        .query(`UPDATE orders SET
+          buyer_name=@bn, buyer_email=@be, buyer_phone=@bp,
+          bill_to_address1=@ba1, bill_to_city=@bc, bill_to_state=@bs,
+          bill_to_zip=@bz, bill_to_country=@bco, updated_at=GETDATE()
+          WHERE id=@id`);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=proforma&saved=1');
+    } catch (err) {
+      console.error('Buyer update error:', err);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=proforma&error=' + encodeURIComponent(err.message));
+    }
+  });
+
   router.post('/orders/:id/send-proforma', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
@@ -995,7 +1027,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           '<p style="color:#aaa;margin:4px 0 0;font-size:12px;">Aerospace &amp; Defense Parts Supply</p>' +
           '</div>' +
           '<div style="background:#fff;padding:28px;">' +
-          '<p>Hi ' + o.first_name + ',</p>' +
+          '<p>Hi ' + ((o.buyer_name && String(o.buyer_name).split(/\s+/)[0]) || o.first_name) + ',</p>' /* BILL_TO_BUYER_v1 */ +
           '<p>Attached is your proforma invoice <strong>' + proformaNumber + '</strong> for order <strong>' + o.order_number + '</strong>.</p>' +
           '<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;">' +
           '<tr><td style="color:#888;padding:4px 0;width:160px;">Proforma #</td><td><strong>' + proformaNumber + '</strong></td></tr>' +
@@ -1010,9 +1042,19 @@ export function mountOrderRoutes(router, requireAuth, page) {
           '<p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | (347) 821-7412</p>' +
           '</div></div>';
 
+        /* BILL_TO_BUYER_v1: route email to buyer if set, CC customer + extras */
+        const _buyerEmail = (o.buyer_email && String(o.buyer_email).trim()) ? String(o.buyer_email).trim() : null;
+        const _primaryTo = _buyerEmail || o.email;
+        const _ccArr = [];
+        if (_buyerEmail && o.email && o.email !== _buyerEmail) _ccArr.push(o.email); /* CC the customer when emailing buyer */
+        if (b.cc_emails) {
+          const extras = String(b.cc_emails).split(/[,;]/).map(function(s){return s.trim();}).filter(function(s){return s && s.indexOf('@') > 0;});
+          for (const e of extras) if (_ccArr.indexOf(e) === -1) _ccArr.push(e);
+        }
         const mailOpts = {
           from: '"Derek Torchia - Jupiter One USA" <' + (process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com') + '>',
-          to: o.email,
+          to: _primaryTo,
+          cc: _ccArr.length ? _ccArr : undefined,
           bcc: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
           subject: 'Proforma ' + proformaNumber + ' - Jupiter One USA',
           html: emailHtml

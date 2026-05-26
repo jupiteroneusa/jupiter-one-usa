@@ -47,8 +47,48 @@ export function renderProformaTab(o, proformas, authorizations, baseUrl) {
 
   // === SEND NEW PROFORMA FORM ===
   html += '<div class="card"><div class="card-header">Send Proforma to Customer</div><div class="card-body">';
+
+  // BILL_TO_BUYER_v1: Billing Recipient section (optional buyer/cardholder different from customer)
+  html += '<div class="card" style="margin-bottom:20px;border-left:3px solid #c8932a;"><div class="card-body">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">';
+  html += '<div style="font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;color:#c8932a;font-weight:700;">&#128179; Billing Recipient (optional)</div>';
+  html += '<div style="font-size:.7rem;color:#7a8a9a;">Leave blank to bill the customer directly</div>';
+  html += '</div>';
+  html += '<p style="font-size:.78rem;color:#7a8a9a;margin:0 0 12px;">When a different person (buyer/cardholder) places the order on behalf of the customer, fill these in. Proforma email + CC auth link will go to this person.</p>';
+  html += '<form method="POST" action="/admin/orders/' + o.id + '/buyer-update" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Buyer Name</div>';
+  html += '<input type="text" name="buyer_name" value="' + ((o.buyer_name || '').toString().replace(/"/g,"&quot;")) + '" placeholder="e.g. Mary Smith" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Buyer Email</div>';
+  html += '<input type="email" name="buyer_email" value="' + ((o.buyer_email || '').toString().replace(/"/g,"&quot;")) + '" placeholder="mary@company.com" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Buyer Phone</div>';
+  html += '<input type="text" name="buyer_phone" value="' + ((o.buyer_phone || '').toString().replace(/"/g,"&quot;")) + '" placeholder="(optional)" style="width:100%;"/></div>';
+  html += '<div></div>';
+  html += '<div style="grid-column:1/-1;border-top:1px solid #1e2d42;padding-top:10px;margin-top:4px;"><div style="font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#7a8a9a;font-weight:700;margin-bottom:6px;">Bill-To Address (for credit card)</div></div>';
+  html += '<div style="grid-column:1/-1;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Street Address</div>';
+  html += '<input type="text" name="bill_to_address1" value="' + ((o.bill_to_address1 || '').toString().replace(/"/g,"&quot;")) + '" placeholder="e.g. 123 Main St" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">City</div>';
+  html += '<input type="text" name="bill_to_city" value="' + ((o.bill_to_city || '').toString().replace(/"/g,"&quot;")) + '" style="width:100%;"/></div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">State</div>';
+  html += '<input type="text" name="bill_to_state" value="' + ((o.bill_to_state || '').toString().replace(/"/g,"&quot;")) + '" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Zip</div>';
+  html += '<input type="text" name="bill_to_zip" value="' + ((o.bill_to_zip || '').toString().replace(/"/g,"&quot;")) + '" style="width:100%;"/></div>';
+  html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Country</div>';
+  html += '<input type="text" name="bill_to_country" value="' + ((o.bill_to_country || 'USA').toString().replace(/"/g,"&quot;")) + '" style="width:100%;"/></div>';
+  html += '</div>';
+  html += '<div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;">';
+  html += '<button type="submit" class="btn btn-outline btn-sm">Save Billing Recipient</button>';
+  html += '<button type="button" onclick="if(confirm(\u0027Clear billing recipient? Proforma will go to the customer.\u0027)){this.form.buyer_name.value=\u0027\u0027;this.form.buyer_email.value=\u0027\u0027;this.form.buyer_phone.value=\u0027\u0027;this.form.bill_to_address1.value=\u0027\u0027;this.form.bill_to_city.value=\u0027\u0027;this.form.bill_to_state.value=\u0027\u0027;this.form.bill_to_zip.value=\u0027\u0027;this.form.bill_to_country.value=\u0027\u0027;this.form.submit();}" class="btn btn-outline btn-sm" style="color:#e05050;border-color:#5a2828;">Clear</button>';
+  if (o.buyer_email) html += '<span style="font-size:.72rem;color:#4caf50;margin-left:6px;">&#10003; Buyer set</span>';
+  html += '</div>';
+  html += '</form>';
+  html += '</div></div>';
   html += '<p style="font-size:.85rem;color:#7a8a9a;margin-bottom:14px;">Generate a proforma invoice with payment instructions. For CC payments, customer receives an e-sign link to authorize the charge (no full card data is stored).</p>';
   html += '<form method="POST" action="/admin/orders/' + o.id + '/send-proforma" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">';
+
+    // BILL_TO_BUYER_v1: CC additional recipients
+  html += '<div style="grid-column:1/-1;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">CC additional recipients (comma-separated emails, optional)</div>';
+  html += '<input type="text" name="cc_emails" placeholder="e.g. jake@company.com, accounting@company.com" style="width:100%;"/></div>';
 
   html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Method</div>';
   html += '<select name="payment_method" id="pf_method" onchange="window._pfCalc&&window._pfCalc()" style="width:100%;">';
