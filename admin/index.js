@@ -1527,36 +1527,54 @@ export async function buildAdminRouter() {
     try {
       const pool = await getPool();
       const b = req.body;
+      /* CUSTOMER_UPDATE_MERGE_v1: fetch existing customer and preserve fields not submitted */
+      const _existR = await pool.request().input('cid', sql.BigInt, req.params.id)
+        .query('SELECT * FROM customers WHERE id=@cid');
+      if (!_existR.recordset.length) {
+        return res.redirect('/admin/customers?error=Customer+not+found');
+      }
+      const _exist = _existR.recordset[0];
+      // pick: if submitted key is missing entirely, keep existing; if submitted empty string, clear to null (allow user to blank fields)
+      const _pick = function(submittedKey, existingKey) {
+        if (b[submittedKey] === undefined) return _exist[existingKey] === undefined ? null : _exist[existingKey];
+        return b[submittedKey] === '' ? null : b[submittedKey];
+      };
+      // pickRequired: never allow null; if missing/blank, fall back to existing
+      const _pickRequired = function(submittedKey, existingKey) {
+        const v = b[submittedKey];
+        if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) return _exist[existingKey];
+        return v;
+      };
       await pool.request()
         .input('id', sql.BigInt, req.params.id)
-        .input('firstName', sql.NVarChar(100), b.first_name||null)
-        .input('lastName', sql.NVarChar(100), b.last_name||null)
-        .input('email', sql.NVarChar(150), b.email||null)
-        .input('phone', sql.NVarChar(30), b.phone||null)
-        .input('country', sql.NVarChar(100), b.country||null)
-        .input('company', sql.NVarChar(150), b.company||null)
-        .input('jobTitle', sql.NVarChar(100), b.job_title||null)
-        .input('website', sql.NVarChar(150), b.website||null)
-        .input('cageCode', sql.NVarChar(10), b.cage_code||null)
-        .input('dunsNumber', sql.NVarChar(20), b.duns_number||null)
-        .input('accountManager', sql.NVarChar(100), b.account_manager||null)
-        .input('billingAddress1', sql.NVarChar(150), b.billing_address1||null)
-        .input('billingAddress2', sql.NVarChar(150), b.billing_address2||null)
-        .input('billingCity', sql.NVarChar(100), b.billing_city||null)
-        .input('billingState', sql.NVarChar(50), b.billing_state||null)
-        .input('billingZip', sql.NVarChar(20), b.billing_zip||null)
-        .input('billingCountry', sql.NVarChar(50), b.billing_country||null)
-        .input('shippingAddress1', sql.NVarChar(150), b.shipping_address1||null)
-        .input('shippingAddress2', sql.NVarChar(150), b.shipping_address2||null)
-        .input('shippingCity', sql.NVarChar(100), b.shipping_city||null)
-        .input('shippingState', sql.NVarChar(50), b.shipping_state||null)
-        .input('shippingZip', sql.NVarChar(20), b.shipping_zip||null)
-        .input('shippingCountry', sql.NVarChar(50), b.shipping_country||null)
-        .input('paymentTerms', sql.NVarChar(50), b.payment_terms||null)
-        .input('creditLimit', sql.Decimal(12,2), parseFloat(b.credit_limit)||null)
-        .input('taxExempt', sql.Bit, b.tax_exempt==='1'?1:0)
-        .input('taxExemptNumber', sql.NVarChar(50), b.tax_exempt_number||null)
-        .input('internalNotes', sql.NVarChar(sql.MAX), b.internal_notes||null)
+        .input('firstName', sql.NVarChar(100), _pickRequired('first_name', 'first_name'))
+        .input('lastName', sql.NVarChar(100), _pickRequired('last_name', 'last_name'))
+        .input('email', sql.NVarChar(150), _pickRequired('email', 'email'))
+        .input('phone', sql.NVarChar(30), _pick('phone', 'phone'))
+        .input('country', sql.NVarChar(100), _pick('country', 'country'))
+        .input('company', sql.NVarChar(150), _pick('company', 'company'))
+        .input('jobTitle', sql.NVarChar(100), _pick('job_title', 'job_title'))
+        .input('website', sql.NVarChar(150), _pick('website', 'website'))
+        .input('cageCode', sql.NVarChar(10), _pick('cage_code', 'cage_code'))
+        .input('dunsNumber', sql.NVarChar(20), _pick('duns_number', 'duns_number'))
+        .input('accountManager', sql.NVarChar(100), _pick('account_manager', 'account_manager'))
+        .input('billingAddress1', sql.NVarChar(150), _pick('billing_address1', 'billing_address1'))
+        .input('billingAddress2', sql.NVarChar(150), _pick('billing_address2', 'billing_address2'))
+        .input('billingCity', sql.NVarChar(100), _pick('billing_city', 'billing_city'))
+        .input('billingState', sql.NVarChar(50), _pick('billing_state', 'billing_state'))
+        .input('billingZip', sql.NVarChar(20), _pick('billing_zip', 'billing_zip'))
+        .input('billingCountry', sql.NVarChar(50), _pick('billing_country', 'billing_country'))
+        .input('shippingAddress1', sql.NVarChar(150), _pick('shipping_address1', 'shipping_address1'))
+        .input('shippingAddress2', sql.NVarChar(150), _pick('shipping_address2', 'shipping_address2'))
+        .input('shippingCity', sql.NVarChar(100), _pick('shipping_city', 'shipping_city'))
+        .input('shippingState', sql.NVarChar(50), _pick('shipping_state', 'shipping_state'))
+        .input('shippingZip', sql.NVarChar(20), _pick('shipping_zip', 'shipping_zip'))
+        .input('shippingCountry', sql.NVarChar(50), _pick('shipping_country', 'shipping_country'))
+        .input('paymentTerms', sql.NVarChar(50), _pick('payment_terms', 'payment_terms'))
+        .input('creditLimit', sql.Decimal(12,2), (b.credit_limit !== undefined ? (parseFloat(b.credit_limit) || null) : _exist.credit_limit))
+        .input('taxExempt', sql.Bit, (b.tax_exempt !== undefined ? (b.tax_exempt==='1'?1:0) : (_exist.tax_exempt ? 1 : 0)))
+        .input('taxExemptNumber', sql.NVarChar(50), _pick('tax_exempt_number', 'tax_exempt_number'))
+        .input('internalNotes', sql.NVarChar(sql.MAX), _pick('internal_notes', 'internal_notes'))
         .query(`UPDATE customers SET
           first_name=@firstName, last_name=@lastName, email=@email, phone=@phone, country=@country,
           company=@company, job_title=@jobTitle, website=@website, cage_code=@cageCode,
