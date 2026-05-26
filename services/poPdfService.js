@@ -113,7 +113,23 @@ export async function generatePoPdf(poId) {
   doc.setFontSize(10);
   doc.setTextColor(...navy);
   doc.text(po.supplier_name || '—', margin, y);
-  doc.text('Jupiter One USA', margin + 100, y);
+  // PO_SHIPTO_v1: per-PO ship-to override; default to Palm Bay warehouse
+  let shipLines;
+  let shipName;
+  if (po.ship_to_address && String(po.ship_to_address).trim()) {
+    const _raw = String(po.ship_to_address).split(/\r?\n/).map(function(s){return s.trim();}).filter(Boolean);
+    shipName = _raw[0] || 'Jupiter One USA';
+    shipLines = _raw.slice(1);
+  } else {
+    shipName = 'Jupiter One USA';
+    shipLines = [
+      '1101 Porter Ave NW',
+      'Palm Bay, FL 32907',
+      'USA',
+      'Attn: Receiving / Derek Torchia'
+    ];
+  }
+    doc.text(shipName, margin + 100, y); /* PO_SHIPTO_v1 */
   y += 5;
 
   doc.setFont('helvetica', 'normal');
@@ -130,13 +146,7 @@ export async function generatePoPdf(poId) {
   if (po.supplier_email) supLines.push(po.supplier_email);
   if (po.supplier_phone) supLines.push(po.supplier_phone);
 
-  // EDIT-ME: Ship-to address — where suppliers should ship parts
-  const shipLines = [
-    '400 N Tampa St, Suite 1550',
-    'Tampa, FL',
-    'USA',
-    'Attn: Receiving / Derek Torchia'
-  ];
+  /* PO_SHIPTO_v1: shipLines now defined above (in let block) */
 
   const maxLines = Math.max(supLines.length, shipLines.length);
   let supY = y;

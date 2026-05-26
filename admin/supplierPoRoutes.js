@@ -406,6 +406,28 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         // PDF preview link (always available)
         html += '<div style="margin-top:16px;"><a href="/admin/supplier-pos/' + po.id + '/pdf" target="_blank" class="btn btn-outline btn-sm">&#128196; Preview PO PDF</a></div>';
 
+        // PO_SHIPTO_v1: Ship-To editor (Draft only)
+        if (po.status === 'Draft') {
+          const _existingShipTo = (po.ship_to_address || '').toString();
+          html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
+          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:8px;">&#128666; Ship To</div>';
+          html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/ship-to-update">';
+          html += '<textarea id="shipToTA" name="ship_to_address" rows="5" placeholder="' + 'Jupiter One USA\n1101 Porter Ave NW\nPalm Bay, FL 32907\nUSA\nAttn: Receiving / Derek Torchia' + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 10px;font-size:.85rem;font-family:monospace;">' + _existingShipTo.replace(/</g,"&lt;") + '</textarea>';
+          html += '<div style="font-size:.7rem;color:#7a8a9a;margin-top:4px;">Leave blank for default (Palm Bay warehouse). One line per address line; first line is the recipient name.</div>';
+          html += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">';
+          html += '<button type="button" onclick="document.getElementById(\u0027shipToTA\u0027).value=\u0027Jupiter One USA\n1101 Porter Ave NW\nPalm Bay, FL 32907\nUSA\nAttn: Receiving / Derek Torchia\u0027" class="btn btn-outline btn-sm" style="font-size:.7rem;">Set to Palm Bay warehouse</button>';
+          html += '<button type="button" onclick="document.getElementById(\u0027shipToTA\u0027).value=\u0027\u0027" class="btn btn-outline btn-sm" style="font-size:.7rem;">Clear (use default)</button>';
+          html += '<button type="submit" class="btn btn-gold btn-sm">Save Ship-To</button>';
+          html += '</div>';
+          html += '</form></div>';
+        } else if (po.ship_to_address) {
+          // Read-only view for non-Draft POs
+          html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
+          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:8px;">&#128666; Ship To</div>';
+          html += '<pre style="background:#0a1628;border:1px solid #1e2d42;color:#cfd5dc;padding:10px;font-size:.85rem;white-space:pre-wrap;margin:0;">' + (po.ship_to_address || '').replace(/</g, '&lt;') + '</pre>';
+          html += '</div>';
+        }
+
         // Notes editor
         html += '<div style="margin-top:24px;border-top:1px solid #1e2d42;padding-top:16px;">';
         html += '<form method="POST" action="/admin/supplier-pos/' + po.id + '/notes-update">';
@@ -947,7 +969,28 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       res.redirect('/admin/supplier-pos/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
     }
   });
-// PO_REGEN_v2: POST /supplier-pos/:id/regenerate
+  // ==========================================================================
+  // PO_SHIPTO_v1: POST /supplier-pos/:id/ship-to-update
+  // Save the per-PO ship-to override. Empty/blank => clear (use default).
+  // ==========================================================================
+  router.post('/supplier-pos/:id/ship-to-update', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const raw = (req.body.ship_to_address || '').toString().trim();
+      const val = raw.length === 0 ? null : raw;
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('addr', sql.NVarChar(sql.MAX), val)
+        .query('UPDATE supplier_pos SET ship_to_address=@addr, updated_at=GETDATE() WHERE id=@id');
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?saved=1');
+    } catch (err) {
+      console.error('Ship-To update error:', err);
+      res.redirect('/admin/supplier-pos/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
+
+  // PO_REGEN_v2: POST /supplier-pos/:id/regenerate
   // Snapshots current PO into po_versions, rebuilds from order_line_sources,
   // resets PO status to Draft so user can re-send.
   // ==========================================================================
