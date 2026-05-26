@@ -67,7 +67,7 @@ export async function generateProformaPdf(proformaId) {
   // EDIT-ME: Company header address
   doc.text('1101 Porter Ave NW', margin, y); y += 4;
   doc.text('Palm Bay, FL 32907', margin, y); y += 4;
-  doc.text('(347) 821-7412 \u00B7 DTorchia@JupiterOneUSA.com', margin, y);
+  doc.text('(347) 821-7412 \u00B7 contact@jupiteroneusa.com', margin, y);
 
   // Proforma label box (right)
   doc.setFontSize(7);
@@ -227,7 +227,7 @@ export async function generateProformaPdf(proformaId) {
   if (pf.payment_method === 'Credit Card') {
     payText = 'A signed credit card authorization form is required. A secure e-sign link has been emailed to you with this proforma. 3.5% convenience fee included in the total above.';
   } else if (pf.payment_method === 'Wire Transfer') {
-    payText = 'Wire transfer instructions will be provided separately. Contact DTorchia@JupiterOneUSA.com to request wire details.';
+    payText = 'Wire transfer instructions will be provided separately. Contact contact@jupiteroneusa.com to request wire details.';
   } else {
     payText = pf.payment_method + ': Payment terms apply. Reference Proforma ' + pf.proforma_number + ' on all correspondence.';
   }

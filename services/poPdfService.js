@@ -74,7 +74,7 @@ export async function generatePoPdf(poId) {
   y += 4;
   doc.text('Palm Bay, FL 32907', margin, y);
   y += 4;
-  doc.text('(347) 821-7412 · DTorchia@JupiterOneUSA.com', margin, y);
+  doc.text('(347) 821-7412 · contact@jupiteroneusa.com', margin, y);
 
   // PO number box (right side)
   doc.setFontSize(7);
@@ -299,7 +299,7 @@ export async function generatePoPdf(poId) {
 
   const terms = [
     '1. All parts must include applicable certifications: FAA 8130-3 (when required), Certificate of Conformance, and full traceability documentation.',
-    '2. Payment terms: ' + (po.supplier_payment_terms || 'NET 30') + '. Invoice to be sent to DTorchia@JupiterOneUSA.com.',
+    '2. Payment terms: ' + (po.supplier_payment_terms || 'NET 30') + '. Invoice to be sent to contact@jupiteroneusa.com.',
     '3. Acknowledgment of this PO is requested within 48 hours. Acknowledgment constitutes acceptance of these terms.',
     '4. Reference PO number ' + po.po_number + ' on all packing slips, invoices, and correspondence.',
     '5. Parts subject to inspection upon receipt; non-conforming product may be rejected at supplier\'s expense.'

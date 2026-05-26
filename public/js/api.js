@@ -207,7 +207,7 @@ export function getNavHTML() {
   <div class="topbar">
     <span>Aerospace and Defense Component Supply</span>
     <div class="topbar-right">
-      <a href="mailto:DTorchia@jupiteroneusa.com">DTorchia@jupiteroneusa.com</a>
+      <a href="mailto:contact@jupiteroneusa.com">contact@jupiteroneusa.com</a>
       <a href="tel:+13478217412">+1 (347) 821-7412</a>
     </div>
   </div>
@@ -267,7 +267,7 @@ export function getFooterHTML() {
       <div class="footer-col">
         <h4>Contact</h4>
         <ul>
-          <li><a href="mailto:DTorchia@jupiteroneusa.com">DTorchia@jupiteroneusa.com</a></li>
+          <li><a href="mailto:contact@jupiteroneusa.com">contact@jupiteroneusa.com</a></li>
           <li><a href="tel:+13478217412">+1 (347) 821-7412</a></li>
           <li><a href="#">400 N Tampa St, Suite 1550</a></li>
           <li><a href="#">Tampa, FL</a></li>

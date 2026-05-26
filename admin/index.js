@@ -1245,7 +1245,7 @@ export async function buildAdminRouter() {
           Claims within 7 days of receipt. Quote valid 30 days. Prices subject to availability.
         </div>
         <div style="margin-top:20px;font-size:11px;color:#888;">
-          Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412 | DTorchia@jupiteroneusa.com
+          Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412 | contact@jupiteroneusa.com
         </div>
       </body></html>`;
       const puppeteer = await import('puppeteer');

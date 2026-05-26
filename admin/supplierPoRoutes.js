@@ -796,7 +796,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         '<b>Derek Torchia</b><br/>' +
         'Key Account Manager<br/>' +
         'Jupiter One USA<br/>' +
-        '(347) 821-7412 · DTorchia@JupiterOneUSA.com</p>' +
+        '(347) 821-7412 · contact@jupiteroneusa.com</p>' +
         '</div>';
 
       // SENDGRID_LOG_V1: capture response to log/verify delivery

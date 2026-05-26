@@ -61,7 +61,7 @@ export async function generateQuotePdf({ quote, lines }) {
     doc.setTextColor(80, 80, 80);
     doc.text('1101 Porter Ave NW', margin, y); y += 4;
     doc.text('Palm Bay, FL 32907', margin, y); y += 4;
-    doc.text('(347) 821-7412 | DTorchia@JupiterOneUSA.com', margin, y);
+    doc.text('(347) 821-7412 | contact@jupiteroneusa.com', margin, y);
 
     // Quote number block (right side)
     doc.setFontSize(7);
