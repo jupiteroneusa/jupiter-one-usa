@@ -593,6 +593,15 @@ export function mountOrderRoutes(router, requireAuth, page) {
         doc.text('Aerospace & Defense Component Supplier', margin, 20);
         doc.setTextColor(255,255,255); doc.setFontSize(9); doc.text('INVOICE', pageW-margin, 12, {align:'right'});
         doc.setFontSize(8); doc.setTextColor(180,180,180); doc.text(invoiceNumber, pageW-margin, 20, {align:'right'});
+        /* INVOICE_PAID_STYLE_v4: PAID badge */
+        if (isPaidInFull) {
+          doc.setFillColor(76, 175, 80);
+          doc.roundedRect(pageW - margin - 30, 23, 30, 6, 1, 1, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'bold');
+          doc.text('PAID IN FULL', pageW - margin - 15, 27.2, { align: 'center' });
+        }
         let y = 38;
         doc.setFontSize(7); doc.setTextColor(120,120,120); doc.setFont('helvetica','bold');
         doc.text('BILL TO', margin, y); doc.text('INVOICE DETAILS', margin+98, y); y+=5;
@@ -630,7 +639,21 @@ export function mountOrderRoutes(router, requireAuth, page) {
         }
         doc.setFillColor(...gold); doc.rect(margin,y-4,contentW,7,'F');
         doc.setTextColor(...navy); doc.setFontSize(9); doc.setFont('helvetica','bold');
-        doc.text('TOTAL DUE', cols[4].x+1, y); doc.text('$'+parseFloat(o.total_amount||0).toFixed(2), cols[5].x+1, y); y+=12;
+        /* INVOICE_PAID_STYLE_v4 */ if (isPaidInFull) {
+          doc.text('AMOUNT PAID', cols[4].x+1, y);
+          doc.text('$'+parseFloat(o.total_amount||0).toFixed(2), cols[5].x+1, y);
+          y+=7;
+          doc.setFillColor(232, 245, 233);
+          doc.rect(margin, y-4, contentW, 7, 'F');
+          doc.setTextColor(46, 125, 50);
+          doc.setFontSize(8);
+          doc.setFont('helvetica', 'bold');
+          doc.text('BALANCE DUE', cols[4].x+1, y);
+          doc.text('$0.00', cols[5].x+1, y);
+          y+=12;
+        } else {
+          doc.text('TOTAL DUE', cols[4].x+1, y); doc.text('$'+parseFloat(o.total_amount||0).toFixed(2), cols[5].x+1, y); y+=12;
+        }
         if (req.body.notes) { doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100); doc.text('Notes: '+req.body.notes.substring(0,120), margin, y); y+=8; }
         doc.setFillColor(...navy); doc.rect(0,282,pageW,15,'F');
         doc.setFontSize(7); doc.setTextColor(170,170,170);
@@ -642,8 +665,8 @@ export function mountOrderRoutes(router, requireAuth, page) {
       try {
         const nodemailer = await import('nodemailer');
         const transporter = nodemailer.default.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT)||587, secure: false, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
-        const emailHtml = '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;"><div style="background:#0a1628;padding:20px;border-bottom:3px solid #c8932a;"><h2 style="color:#c8932a;margin:0;">JUPITER ONE USA LLC</h2><p style="color:#aaa;margin:4px 0 0;font-size:12px;">Aerospace &amp; Defense Component Supplier</p></div><div style="background:#fff;padding:28px;"><p>Hi '+o.first_name+',</p><p>Please find your invoice <strong>'+invoiceNumber+'</strong> for order <strong>'+o.order_number+'</strong> attached.</p><table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;"><tr><td style="color:#888;padding:4px 0;width:120px;">Invoice #</td><td><strong>'+invoiceNumber+'</strong></td></tr><tr><td style="color:#888;padding:4px 0;">Order #</td><td>'+o.order_number+'</td></tr><tr><td style="color:#888;padding:4px 0;">Total Due</td><td style="font-weight:bold;color:#c8932a;font-size:1.1rem;">$'+parseFloat(o.total_amount||0).toFixed(2)+'</td></tr><tr><td style="color:#888;padding:4px 0;">Due Date</td><td>'+dueDate.toLocaleDateString()+'</td></tr></table><p style="font-size:13px;color:#555;">Payment accepted via Credit Card or Wire Transfer (3.5% CC fee). Please contact us at contact@jupiteroneusa.com to arrange payment.</p></div><div style="background:#0a1628;padding:14px 20px;"><p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412</p></div></div>';
-        const mailOpts = { from: '"Jupiter One USA" <DTorchia@jupiteroneusa.com>', to: o.email, bcc: 'DTorchia@jupiteroneusa.com', subject: 'Invoice '+invoiceNumber+' — Jupiter One USA', html: emailHtml };
+        const emailHtml = '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;"><div style="background:#0a1628;padding:20px;border-bottom:3px solid #c8932a;"><h2 style="color:#c8932a;margin:0;">JUPITER ONE USA LLC</h2><p style="color:#aaa;margin:4px 0 0;font-size:12px;">Aerospace &amp; Defense Component Supplier</p></div><div style="background:#fff;padding:28px;"><p>Hi '+o.first_name+',</p><p>'+(isPaidInFull ? '<strong style="color:#2e7d32;">Thank you for your payment.</strong> Please find your paid invoice <strong>'+invoiceNumber+'</strong> for order <strong>'+o.order_number+'</strong> attached as your receipt.' : 'Please find your invoice <strong>'+invoiceNumber+'</strong> for order <strong>'+o.order_number+'</strong> attached.')+'</p><table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:13px;"><tr><td style="color:#888;padding:4px 0;width:120px;">Invoice #</td><td><strong>'+invoiceNumber+'</strong></td></tr><tr><td style="color:#888;padding:4px 0;">Order #</td><td>'+o.order_number+'</td></tr><tr><td style="color:#888;padding:4px 0;">'+(isPaidInFull?'Amount Paid':'Total Due')+'</td><td style="font-weight:bold;color:'+(isPaidInFull?'#2e7d32':'#c8932a')+';font-size:1.1rem;">$'+parseFloat(o.total_amount||0).toFixed(2)+(isPaidInFull?' <span style="background:#4caf50;color:#fff;padding:2px 8px;border-radius:3px;font-size:.7rem;margin-left:6px;">PAID</span>':'')+'</td></tr><tr><td style="color:#888;padding:4px 0;">Due Date</td><td>'+dueDate.toLocaleDateString()+'</td></tr></table>'+(isPaidInFull?'<p style="font-size:13px;color:#555;">This invoice has been paid in full. If you have any questions about your order or payment, reply to this email or call (347) 821-7412.</p>':'<p style="font-size:13px;color:#555;">Payment accepted via Credit Card or Wire Transfer (3.5% CC fee). Please contact us at contact@jupiteroneusa.com to arrange payment.</p>')+'</div><div style="background:#0a1628;padding:14px 20px;"><p style="color:#555;font-size:11px;margin:0;">Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412</p></div></div>';
+        const mailOpts = { from: '"Jupiter One USA" <DTorchia@jupiteroneusa.com>', to: o.email, bcc: 'DTorchia@jupiteroneusa.com', subject: (isPaidInFull ? 'PAID: Invoice ' : 'Invoice ')+invoiceNumber+' — Jupiter One USA', html: emailHtml };
         if (pdfBuffer) mailOpts.attachments = [{ filename: 'Invoice-'+invoiceNumber+'.pdf', content: pdfBuffer, contentType: 'application/pdf' }];
         await transporter.sendMail(mailOpts);
         console.log('Invoice email sent:', invoiceNumber);
