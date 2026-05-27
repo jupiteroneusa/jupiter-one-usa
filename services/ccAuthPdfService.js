@@ -1,7 +1,6 @@
 // services/ccAuthPdfService.js
-// CC_AUTH_PDF_v1
-// Generates a signed Credit Card Authorization PDF from a cc_authorizations row.
-// Pulls auth + proforma + customer info, renders with jsPDF, returns Buffer.
+// CC_AUTH_PDF_v2
+// Redesigned to match original Jupiter One CC Authorization form.
 import { jsPDF } from 'jspdf';
 import { getPool, sql } from '../db/connect.js';
 
@@ -12,7 +11,9 @@ function fmtMoney(n) {
 function fmtDate(d) {
   if (!d) return '';
   const dt = new Date(d);
-  return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  return (dt.getMonth() + 1).toString().padStart(2, '0') + '/' +
+         dt.getDate().toString().padStart(2, '0') + '/' +
+         dt.getFullYear();
 }
 function fmtDateTime(d) {
   if (!d) return '';
@@ -26,7 +27,8 @@ export async function generateCcAuthPdf(authId) {
     SELECT a.*,
            pf.proforma_number, pf.total AS proforma_total, pf.payment_method,
            pf.cc_fee_amount, pf.subtotal AS pf_subtotal, pf.shipping_cost AS pf_shipping,
-           o.order_number,
+           o.order_number, o.customer_po_number,
+           o.buyer_name, o.buyer_email, o.buyer_phone,
            c.first_name, c.last_name, c.email, c.company
     FROM cc_authorizations a
     LEFT JOIN proformas pf ON pf.id = a.proforma_id
@@ -39,219 +41,300 @@ export async function generateCcAuthPdf(authId) {
 
   const gold = [200, 147, 42];
   const navy = [10, 22, 40];
-  const midGray = [120, 120, 120];
-  const lightGray = [220, 220, 220];
+  const lineGray = [180, 180, 180];
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const pageW = 215.9;
   const pageH = 279.4;
   const margin = 14;
   const contentW = pageW - margin * 2;
-  let y = 12;
 
-  // Gold top bar
   doc.setFillColor.apply(doc, gold);
-  doc.rect(0, 0, pageW, 1.5, 'F');
+  doc.rect(0, 0, pageW, 1.2, 'F');
 
-  // Header: Company name + logo placeholder
-  doc.setFontSize(18);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor.apply(doc, navy);
-  doc.text('JUPITER ONE USA', margin, y + 5);
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor.apply(doc, midGray);
-  doc.text('400 N Tampa St, Suite 1550, Tampa FL', margin, y + 10);
-  doc.text('(347) 821-7412  ·  contact@jupiteroneusa.com', margin, y + 14);
-
-  // Right side: doc title
-  doc.setFontSize(14);
+  let y = 14;
+  doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor.apply(doc, gold);
-  doc.text('CREDIT CARD', pageW - margin, y + 5, { align: 'right' });
-  doc.text('AUTHORIZATION', pageW - margin, y + 11, { align: 'right' });
+  doc.text('JUPITER ONE USA', margin, y);
+  y += 5;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(80, 80, 80);
+  doc.text('AEROSPACE & DEFENSE PARTS SUPPLY', margin, y);
+  y += 6;
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(60, 60, 60);
+  doc.text('400 N Tampa St, Suite 1550', margin, y); y += 4;
+  doc.text('Tampa, FL 33602', margin, y); y += 4;
+  doc.text('Phone: (347) 821-7412 \u00B7 contact@jupiteroneusa.com', margin, y); y += 4;
 
-  y += 22;
+  let ry = 14;
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor.apply(doc, navy);
+  doc.text('CREDIT CARD', pageW - margin, ry, { align: 'right' });
+  ry += 6;
+  doc.text('AUTHORIZATION', pageW - margin, ry, { align: 'right' });
+  ry += 6;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor.apply(doc, gold);
+  doc.text('For Invoice ' + (a.proforma_number || '\u2014'), pageW - margin, ry, { align: 'right' });
+  ry += 5;
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(60, 60, 60);
+  doc.text('Date Signed: ' + fmtDate(a.signed_at), pageW - margin, ry, { align: 'right' });
+  ry += 4;
+  if (a.order_number) { doc.text('Order #: ' + a.order_number, pageW - margin, ry, { align: 'right' }); ry += 4; }
+  if (a.customer_po_number) { doc.text('Customer PO: ' + a.customer_po_number, pageW - margin, ry, { align: 'right' }); ry += 4; }
 
-  // Divider
+  y = Math.max(y, ry) + 3;
   doc.setDrawColor.apply(doc, gold);
-  doc.setLineWidth(0.5);
+  doc.setLineWidth(0.4);
   doc.line(margin, y, pageW - margin, y);
   y += 8;
 
-  // Reference block
-  doc.setFontSize(10);
+  const amtBoxH = 22;
+  doc.setDrawColor.apply(doc, gold);
+  doc.setLineWidth(0.7);
+  doc.rect(margin, y, contentW, amtBoxH, 'S');
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor.apply(doc, gold);
+  doc.text('AMOUNT AUTHORIZED', margin + 4, y + 6);
+  doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor.apply(doc, navy);
-  doc.text('Reference', margin, y);
-  y += 5;
-  doc.setFontSize(9);
+  doc.text(fmtMoney(a.amount_authorized || a.proforma_total || 0), margin + 4, y + 17);
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(60, 60, 60);
-  doc.text('Proforma #:', margin, y);
-  doc.setFont('helvetica', 'bold');
-  doc.text(a.proforma_number || '—', margin + 28, y);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Order #:', margin + 90, y);
-  doc.setFont('helvetica', 'bold');
-  doc.text(a.order_number || '—', margin + 110, y);
-  y += 5;
-  doc.setFont('helvetica', 'normal');
-  doc.text('Date Signed:', margin, y);
-  doc.setFont('helvetica', 'bold');
-  doc.text(fmtDateTime(a.signed_at), margin + 28, y);
-  y += 8;
-
-  // Cardholder block
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor.apply(doc, navy);
-  doc.text('Cardholder Information', margin, y);
-  y += 5;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(60, 60, 60);
-
-  function row(label, val) {
-    doc.text(label, margin, y);
-    doc.setFont('helvetica', 'bold');
-    doc.text(String(val || '—'), margin + 38, y);
-    doc.setFont('helvetica', 'normal');
-    y += 5;
+  doc.text('Invoice: ' + (a.proforma_number || '\u2014'), pageW - margin - 4, y + 6, { align: 'right' });
+  if (a.cc_fee_amount && parseFloat(a.cc_fee_amount) > 0) {
+    doc.setFontSize(7.5);
+    doc.text('Includes 3.5% credit card convenience fee', pageW - margin - 4, y + 11, { align: 'right' });
   }
-  row('Cardholder Name:', a.cardholder_name);
-  row('Company:', a.cardholder_company || a.company);
-  row('Email:', a.cardholder_email || a.email);
-  if (a.cardholder_title) row('Title:', a.cardholder_title);
-  y += 3;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(120, 120, 120);
+  doc.text('USD', pageW - margin - 4, y + 17, { align: 'right' });
+  y += amtBoxH + 8;
 
-  // Card block
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor.apply(doc, navy);
-  doc.text('Card Details', margin, y);
-  y += 5;
-  doc.setFontSize(9);
+  function sectionHeader(num, title) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor.apply(doc, navy);
+    doc.text(num + '. ' + title, margin, y);
+    doc.setDrawColor.apply(doc, gold);
+    doc.setLineWidth(0.3);
+    doc.line(margin, y + 1.5, margin + 60, y + 1.5);
+    y += 6;
+  }
+  function field(label, value, x, fieldW) {
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 120, 120);
+    doc.text(label, x, y);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 30, 30);
+    doc.text(String(value || '').substring(0, 60), x, y + 5);
+    doc.setDrawColor.apply(doc, lineGray);
+    doc.setLineWidth(0.2);
+    doc.line(x, y + 6, x + fieldW, y + 6);
+  }
+
+  sectionHeader('1', 'CARDHOLDER INFORMATION');
+  field('CARDHOLDER NAME (as shown on card)', a.cardholder_name, margin, 90);
+  field('COMPANY', a.cardholder_company || a.company || '', margin + 100, 84);
+  y += 10;
+  field('BILLING ADDRESS', a.billing_address1 || '', margin, contentW);
+  y += 10;
+  field('CITY', a.billing_city || '', margin, 60);
+  field('STATE', a.billing_state || '', margin + 70, 30);
+  field('ZIP CODE', a.billing_zip || '', margin + 110, 30);
+  y += 10;
+  field('PHONE', a.buyer_phone || '', margin, 75);
+  field('EMAIL', a.cardholder_email || a.buyer_email || a.email || '', margin + 85, 99);
+  y += 12;
+
+  sectionHeader('2', 'CARD INFORMATION');
+  doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(60, 60, 60);
-  const cardLine = (a.card_type ? a.card_type + ' ' : '') + 'ending in ' + (a.card_last4 || '••••');
-  row('Card:', cardLine);
-  const expStr = (a.exp_month && a.exp_year) ? String(a.exp_month).padStart(2, '0') + ' / ' + a.exp_year : '—';
-  row('Expiration:', expStr);
-  row('Billing Address:', a.billing_address1);
-  const cityLine = [a.billing_city, a.billing_state, a.billing_zip].filter(Boolean).join(', ');
-  row('City/State/Zip:', cityLine);
-  if (a.billing_country) row('Country:', a.billing_country);
-  y += 3;
+  doc.setTextColor(120, 120, 120);
+  doc.text('CARD TYPE (check one)', margin, y);
+  y += 5;
+  const types = ['Visa', 'MasterCard', 'American Express', 'Discover'];
+  const cardType = (a.card_type || '').toLowerCase();
+  let cx = margin;
+  for (const t of types) {
+    const isChecked = cardType.indexOf(t.toLowerCase().substring(0, 4)) !== -1;
+    doc.setDrawColor(100, 100, 100);
+    doc.setLineWidth(0.3);
+    doc.rect(cx, y - 3, 3, 3, 'S');
+    if (isChecked) {
+      doc.setLineWidth(0.6);
+      doc.line(cx + 0.5, y - 2.5, cx + 2.5, y - 0.5);
+      doc.line(cx + 2.5, y - 2.5, cx + 0.5, y - 0.5);
+    }
+    doc.setFontSize(9);
+    doc.setFont('helvetica', isChecked ? 'bold' : 'normal');
+    doc.setTextColor(isChecked ? 30 : 80, isChecked ? 30 : 80, isChecked ? 30 : 80);
+    doc.text(t, cx + 5, y);
+    cx += t === 'American Express' ? 50 : 40;
+  }
+  y += 8;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(120, 120, 120);
+  doc.text('CARD NUMBER', margin, y);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 30, 30);
+  const cardMask = a.card_last4 ? ('**** **** **** ' + a.card_last4) : '';
+  doc.text(cardMask, margin, y + 5);
+  doc.setDrawColor.apply(doc, lineGray);
+  doc.setLineWidth(0.2);
+  doc.line(margin, y + 6, pageW - margin, y + 6);
+  y += 10;
+  const expStr = (a.exp_month && a.exp_year)
+    ? String(a.exp_month).padStart(2, '0') + ' / ' + a.exp_year : '';
+  field('EXPIRATION DATE (MM/YY)', expStr, margin, 55);
+  field('SECURITY CODE (CVV)', '', margin + 65, 55);
+  field('BILLING ZIP (for verification)', a.billing_zip || '', margin + 130, 50);
+  y += 12;
 
-  // Amount authorized block
-  doc.setFillColor.apply(doc, gold);
-  doc.rect(margin, y, contentW, 14, 'F');
-  doc.setTextColor.apply(doc, navy);
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.text('AMOUNT AUTHORIZED:', margin + 4, y + 9);
-  doc.setFontSize(13);
-  doc.text(fmtMoney(a.amount_authorized || a.proforma_total || 0), pageW - margin - 4, y + 9, { align: 'right' });
-  y += 18;
+  if (y > pageH - 80) { doc.addPage(); y = 20; }
+  sectionHeader('3', 'AUTHORIZATION');
 
-  // Authorization statement
+  const authText = 'By signing below, I (the cardholder) authorize Jupiter One USA, LLC to charge the credit card listed above for the amount of ' +
+    fmtMoney(a.amount_authorized || a.proforma_total || 0) +
+    ' in payment of Invoice ' + (a.proforma_number || '\u2014') +
+    (a.customer_po_number ? ' (Customer PO ' + a.customer_po_number + ')' : '') + '.';
+  const authText2 = 'I certify that I am the authorized cardholder and have the authority to make this purchase on behalf of the company listed above. I acknowledge this charge is for goods or services received and I waive my right to chargeback for non-receipt unless reported in writing to Jupiter One USA LLC within ten (10) days of delivery. I have reviewed the referenced invoice and approve the total amount being charged, which includes the disclosed 3.5% credit card convenience fee.';
+
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(60, 60, 60);
-  const statement = 'I, ' + (a.cardholder_name || 'the undersigned') + ', authorize Jupiter One USA, LLC to charge the credit card listed above for the amount shown for proforma invoice ' + (a.proforma_number || '—') + '. I confirm that I am the authorized cardholder and that the information provided is accurate. This authorization will remain in effect for this transaction only.';
-  const stmtLines = doc.splitTextToSize(statement, contentW);
-  doc.text(stmtLines, margin, y);
-  y += stmtLines.length * 4 + 4;
+  doc.setTextColor(40, 40, 40);
+  const lines1 = doc.splitTextToSize(authText, contentW - 8);
+  const lines2 = doc.splitTextToSize(authText2, contentW - 8);
+  const totalLines = lines1.length + 1 + lines2.length;
+  const boxH = totalLines * 4 + 6;
 
-  // Signature block
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor.apply(doc, navy);
-  doc.text('Signature', margin, y);
-  y += 6;
+  doc.setFillColor(248, 248, 248);
+  doc.rect(margin, y - 4, contentW, boxH, 'F');
+  doc.setDrawColor(220, 220, 220);
+  doc.setLineWidth(0.2);
+  doc.rect(margin, y - 4, contentW, boxH, 'S');
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(40, 40, 40);
+  doc.text(lines1, margin + 3, y);
+  y += lines1.length * 4 + 3;
+  doc.text(lines2, margin + 3, y);
+  y += lines2.length * 4 + 4;
 
-  // Render signature: either image or typed
-  if (a.signature_image && a.signature_image.indexOf('data:image') === 0) {
-    try {
-      // signature_image is data URL e.g. data:image/png;base64,...
-      const sigW = 80;
-      const sigH = 25;
-      // jsPDF accepts data URLs in addImage
-      doc.addImage(a.signature_image, 'PNG', margin, y, sigW, sigH);
-      y += sigH + 2;
-    } catch (e) {
-      // Fallback to typed if image fails
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'italic');
-      doc.setTextColor.apply(doc, navy);
-      doc.text(a.signature_typed || a.cardholder_name || '', margin + 2, y + 8);
-      y += 14;
-    }
-  } else if (a.signature_typed) {
-    // Typed signature, render in script-style italic
+  y += 4;
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(120, 120, 120);
+  doc.text('CARDHOLDER SIGNATURE', margin, y);
+  doc.text('DATE', margin + 130, y);
+  y += 4;
+
+  let sigDrawn = false;
+  if (a.signature_image && typeof a.signature_image === 'string' && a.signature_image.indexOf('data:image') === 0) {
+    try { doc.addImage(a.signature_image, 'PNG', margin, y, 80, 16); sigDrawn = true; } catch (e) {}
+  }
+  if (!sigDrawn && a.signature_typed) {
     doc.setFontSize(16);
     doc.setFont('helvetica', 'italic');
     doc.setTextColor.apply(doc, navy);
-    doc.text(a.signature_typed, margin + 2, y + 8);
-    y += 14;
-  } else {
-    // Neither typed nor image — show a placeholder
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'italic');
-    doc.setTextColor.apply(doc, midGray);
-    doc.text('(no signature recorded)', margin, y + 6);
-    y += 10;
+    doc.text(String(a.signature_typed), margin + 2, y + 10);
   }
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 30, 30);
+  doc.text(fmtDate(a.signed_at), margin + 130, y + 10);
 
-  // Signature line + audit info
-  doc.setDrawColor.apply(doc, lightGray);
-  doc.setLineWidth(0.2);
-  doc.line(margin, y, margin + 90, y);
-  y += 4;
+  y += 16;
+  doc.setDrawColor.apply(doc, lineGray);
+  doc.setLineWidth(0.3);
+  doc.line(margin, y, margin + 100, y);
+  doc.line(margin + 130, y, pageW - margin, y);
+  y += 6;
+
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor.apply(doc, midGray);
-  doc.text('Signed: ' + fmtDateTime(a.signed_at), margin, y);
-  if (a.signer_ip) {
-    doc.text('IP: ' + a.signer_ip, margin + 90, y);
-  }
+  doc.setTextColor(120, 120, 120);
+  doc.text('PRINT NAME', margin, y);
+  doc.text('TITLE', margin + 130, y);
   y += 4;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(30, 30, 30);
+  doc.text(String(a.cardholder_name || ''), margin, y + 4);
+  if (a.cardholder_title) doc.text(String(a.cardholder_title), margin + 130, y + 4);
+  y += 8;
+  doc.setDrawColor.apply(doc, lineGray);
+  doc.line(margin, y, margin + 100, y);
+  doc.line(margin + 130, y, pageW - margin, y);
+  y += 8;
+
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(140, 140, 140);
+  let auditLine = 'Signed: ' + fmtDateTime(a.signed_at);
+  if (a.signer_ip) auditLine += '   \u00B7   IP: ' + a.signer_ip;
+  doc.text(auditLine, margin, y);
+  y += 3.5;
   if (a.signer_user_agent) {
-    const uaLine = 'User-Agent: ' + a.signer_user_agent.substring(0, 100);
-    doc.text(uaLine, margin, y);
-    y += 4;
+    const ua = 'User-Agent: ' + String(a.signer_user_agent).substring(0, 120);
+    doc.text(ua, margin, y);
+    y += 3.5;
   }
 
-  // Captured block (if charged)
   if (a.captured_at) {
     y += 4;
-    doc.setFillColor(240, 248, 240);
-    doc.rect(margin, y, contentW, 16, 'F');
+    doc.setFillColor(232, 245, 233);
+    doc.rect(margin, y - 3, contentW, 12, 'F');
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(76, 175, 80);
-    doc.text('✓ CHARGED', margin + 4, y + 6);
+    doc.setTextColor(46, 125, 50);
+    doc.text('\u2713 CHARGED', margin + 4, y + 3);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(60, 60, 60);
-    doc.text('Date: ' + fmtDate(a.captured_at), margin + 4, y + 11);
-    if (a.captured_amount) doc.text('Amount: ' + fmtMoney(a.captured_amount), margin + 50, y + 11);
-    if (a.captured_reference) doc.text('Ref: ' + a.captured_reference, margin + 100, y + 11);
-    y += 20;
+    let charged = 'Date: ' + fmtDate(a.captured_at);
+    if (a.captured_amount) charged += '   \u00B7   Amount: ' + fmtMoney(a.captured_amount);
+    if (a.captured_reference) charged += '   \u00B7   Ref: ' + a.captured_reference;
+    doc.text(charged, margin + 4, y + 8);
+    y += 14;
   }
 
-  // Footer
+  const retY = pageH - 28;
+  doc.setDrawColor.apply(doc, gold);
+  doc.setLineWidth(0.5);
+  doc.rect(margin, retY, contentW, 16, 'S');
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor.apply(doc, gold);
+  doc.text('RETURN COMPLETED FORM', margin + 3, retY + 5);
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(60, 60, 60);
+  doc.text('Email completed and signed form to:', margin + 3, retY + 10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor.apply(doc, navy);
+  doc.text('contact@jupiteroneusa.com', margin + 60, retY + 10);
+  doc.setFont('helvetica', 'italic');
   doc.setFontSize(7);
-  doc.setTextColor.apply(doc, midGray);
-  doc.text(
-    'This document was generated by Jupiter One USA admin system. For inquiries: contact@jupiteroneusa.com',
-    pageW / 2,
-    pageH - 8,
-    { align: 'center' }
-  );
+  doc.setTextColor(120, 120, 120);
+  doc.text('This form contains sensitive payment information. Please send via secure email or call (347) 821-7412 to provide details directly.', margin + 3, retY + 14);
 
-  // Convert to Buffer
   const arr = doc.output('arraybuffer');
   return Buffer.from(arr);
 }

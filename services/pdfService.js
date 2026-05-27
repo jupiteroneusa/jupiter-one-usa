@@ -278,13 +278,15 @@ const __descExtraY = Math.max(0, (__descLines.length - 1) * 3.2);
     doc.setTextColor(80, 80, 80);
 
     const validUntilStr = q.valid_until ? fmtDate(q.valid_until) : '30 days from issue';
-    const terms = [
-      '1. Quote valid until ' + validUntilStr + '. Pricing subject to change after this date.',
-      '2. Payment terms: ' + (q.payment_terms || 'Credit Card or Wire Transfer') + '.',
-      '3. Lead times are estimates and subject to supplier confirmation upon order placement.',
-      '4. Reference quote number ' + (q.quote_number || '') + ' on all correspondence and purchase orders.',
-      '5. All certifications (8130-3, CoC, traceability) provided when applicable per item.'
-    ];
+    const terms = [ /* QUOTE_TERMS_v2: protective T&Cs restored */
+    '1. Payment is due upon receipt. Past due invoices may be subject to interest at 1.5% per month.',
+    '2. All sales are final. Returns require prior written authorization (RMA) within 10 days of receipt.',
+    '3. Buyer is responsible for compliance with all applicable U.S. export control laws (ITAR, EAR). Re-export of these items may require U.S. Government authorization.',
+    '4. Jupiter One USA LLC is not liable for delays caused by force majeure, supplier shortages, or customs clearance.',
+    '5. Reference invoice number and customer PO number on all correspondence and payments.',
+    '6. Lead times are estimates and subject to supplier confirmation upon order placement.',
+    '7. All certifications (8130-3, CoC, traceability) provided when applicable per item.'
+  ];
 
     terms.forEach(function(t) {
       const wrap = doc.splitTextToSize(t, contentW);

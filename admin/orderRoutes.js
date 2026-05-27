@@ -7,7 +7,8 @@ import { renderOverviewTab } from './orderOverviewBlock.js';
 import { renderShippingTab } from './orderShippingBlock.js';
 import { renderProformaTab } from './orderProformaBlock.js';
 import { generateProformaPdf } from '../services/proformaPdfService.js';
-import { generateCcAuthPdf } from '../services/ccAuthPdfService.js'; // CC_AUTH_PDF_v1
+import { generateCcAuthPdf } from '../services/ccAuthPdfService.js';
+import { generateInvoicePdf } from '../services/invoicePdfService.js'; // INVOICE_REDESIGN_v1 // CC_AUTH_PDF_v1
 import crypto from 'crypto';
 // PROFORMA_ROUTES_V1
 import { renderPaymentTab } from './orderPaymentBlock.js';
@@ -582,85 +583,8 @@ export function mountOrderRoutes(router, requireAuth, page) {
       }
       let pdfBuffer = null;
       try {
-        const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-        const gold = [200,147,42]; const navy = [10,22,40]; const pageW = 210; const margin = 14; const contentW = pageW - margin*2;
-        doc.setFillColor(...navy); doc.rect(0,0,pageW,28,'F');
-        doc.setFillColor(...gold); doc.rect(0,28,pageW,1.5,'F');
-        doc.setTextColor(...gold); doc.setFontSize(15); doc.setFont('helvetica','bold');
-        doc.text('JUPITER ONE USA LLC', margin, 12);
-        doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
-        doc.text('Aerospace & Defense Component Supplier', margin, 20);
-        doc.setTextColor(255,255,255); doc.setFontSize(9); doc.text('INVOICE', pageW-margin, 12, {align:'right'});
-        doc.setFontSize(8); doc.setTextColor(180,180,180); doc.text(invoiceNumber, pageW-margin, 20, {align:'right'});
-        /* INVOICE_PAID_STYLE_v4: PAID badge */
-        if (isPaidInFull) {
-          doc.setFillColor(76, 175, 80);
-          doc.roundedRect(pageW - margin - 30, 23, 30, 6, 1, 1, 'F');
-          doc.setTextColor(255, 255, 255);
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'bold');
-          doc.text('PAID IN FULL', pageW - margin - 15, 27.2, { align: 'center' });
-        }
-        let y = 38;
-        doc.setFontSize(7); doc.setTextColor(120,120,120); doc.setFont('helvetica','bold');
-        doc.text('BILL TO', margin, y); doc.text('INVOICE DETAILS', margin+98, y); y+=5;
-        doc.setFont('helvetica','normal'); doc.setTextColor(30,30,30); doc.setFontSize(9);
-        doc.text(o.first_name+' '+o.last_name, margin, y);
-        if (o.company) { doc.setFontSize(8); doc.setTextColor(80,80,80); doc.text(o.company, margin, y+5); }
-        const dets = [['Invoice #:',invoiceNumber],['Order #:',o.order_number],['Issue Date:',issueDate.toLocaleDateString()],['Due Date:',dueDate.toLocaleDateString()],['Payment:','Credit Card or Wire Transfer']];
-        let ry = y;
-        dets.forEach(function(d) { doc.setFontSize(8); doc.setTextColor(120,120,120); doc.text(d[0], margin+98, ry); doc.setTextColor(30,30,30); doc.text(d[1], margin+126, ry); ry+=5; });
-        y = Math.max(ry, y+22)+4;
-        doc.setDrawColor(...gold); doc.setLineWidth(0.5); doc.line(margin, y, pageW-margin, y); y+=6;
-        const cols = [{x:margin},{x:margin+35},{x:margin+85},{x:margin+99},{x:margin+117},{x:margin+141}];
-        const hdrs = ['NSN/Part#','Description','Qty','Condition','Unit Price','Total'];
-        doc.setFillColor(...navy); doc.rect(margin,y-4,contentW,7,'F');
-        doc.setTextColor(255,255,255); doc.setFontSize(7); doc.setFont('helvetica','bold');
-        hdrs.forEach(function(h,i) { doc.text(h, cols[i].x+1, y); }); y+=5;
-        doc.setFont('helvetica','normal'); let alt = false;
-        oLines.recordset.forEach(function(l) {
-          if (y>255) { doc.addPage(); y=20; }
-          if (alt) { doc.setFillColor(248,248,248); doc.rect(margin,y-3.5,contentW,6.5,'F'); }
-          alt = !alt; doc.setTextColor(30,30,30); doc.setFontSize(7.5);
-          doc.text(String(l.nsn||l.part_number||'-').substring(0,16), cols[0].x+1, y);
-          doc.text(String(l.item_name||'-').substring(0,28), cols[1].x+1, y);
-          doc.text(String(l.quantity_ordered), cols[2].x+1, y);
-          doc.text(String(l.condition_code||'NE'), cols[3].x+1, y);
-          doc.text('$'+parseFloat(l.unit_price||0).toFixed(2), cols[4].x+1, y);
-          doc.text('$'+parseFloat(l.line_total||0).toFixed(2), cols[5].x+1, y);
-          doc.setDrawColor(220,220,220); doc.setLineWidth(0.2); doc.line(margin,y+2.5,pageW-margin,y+2.5); y+=7;
-        });
-        y+=2;
-        if (o.shipping_cost) {
-          doc.setFillColor(240,240,240); doc.rect(margin,y-4,contentW,7,'F');
-          doc.setTextColor(80,80,80); doc.setFontSize(8);
-          doc.text('Shipping:', cols[4].x+1, y); doc.text('$'+parseFloat(o.shipping_cost).toFixed(2), cols[5].x+1, y); y+=8;
-        }
-        doc.setFillColor(...gold); doc.rect(margin,y-4,contentW,7,'F');
-        doc.setTextColor(...navy); doc.setFontSize(9); doc.setFont('helvetica','bold');
-        /* INVOICE_PAID_STYLE_v4 */ if (isPaidInFull) {
-          doc.text('AMOUNT PAID', cols[4].x+1, y);
-          doc.text('$'+parseFloat(o.total_amount||0).toFixed(2), cols[5].x+1, y);
-          y+=7;
-          doc.setFillColor(232, 245, 233);
-          doc.rect(margin, y-4, contentW, 7, 'F');
-          doc.setTextColor(46, 125, 50);
-          doc.setFontSize(8);
-          doc.setFont('helvetica', 'bold');
-          doc.text('BALANCE DUE', cols[4].x+1, y);
-          doc.text('$0.00', cols[5].x+1, y);
-          y+=12;
-        } else {
-          doc.text('TOTAL DUE', cols[4].x+1, y); doc.text('$'+parseFloat(o.total_amount||0).toFixed(2), cols[5].x+1, y); y+=12;
-        }
-        if (req.body.notes) { doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100); doc.text('Notes: '+req.body.notes.substring(0,120), margin, y); y+=8; }
-        doc.setFillColor(...navy); doc.rect(0,282,pageW,15,'F');
-        doc.setFontSize(7); doc.setTextColor(170,170,170);
-        doc.text('Jupiter One USA LLC  |  400 N Tampa St, Suite 1550, Tampa FL  |  +1 (347) 821-7412  |  contact@jupiteroneusa.com', pageW/2, 288, {align:'center'});
-        doc.setTextColor(130,130,130);
-        doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All sales non-cancellable. Thank you for your business.', pageW/2, 293, {align:'center'});
-        pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+        /* INVOICE_REDESIGN_v1: invoice PDF now built by services/invoicePdfService.js */
+        pdfBuffer = await generateInvoicePdf(invoiceId, { notes: req.body.notes });
       } catch(pdfErr) { console.error('Invoice PDF error:', pdfErr.message); }
       try {
         const nodemailer = await import('nodemailer');
