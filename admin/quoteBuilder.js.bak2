@@ -115,23 +115,6 @@ export function mountQuoteBuilder(router, requireAuth, page) {
     }
   });
 
-
-  // ==========================================================================
-  // INITIATE_ORDER_v1: POST /rfqs/:id/initiate-order
-  // Save the quote, then create an order from it (lines + selected sourcing).
-  // ==========================================================================
-  router.post('/rfqs/:id/initiate-order', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const saved = await saveQuoteDraftFull(req.params.id, req.body);
-      const result = await createOrderFromQuote(saved.quote_id, req.adminId);
-      res.json({ ok: true, order_id: result.order_id, order_number: result.order_number });
-    } catch (err) {
-      console.error('initiate-order error:', err);
-      res.json({ ok: false, error: err.message });
-    }
-  });
-
 }
 
 // ============================================================================
@@ -292,7 +275,6 @@ function renderForm(ctx, submitted) {
   html += '<div style="display:flex;gap:10px;">';
   html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
   html += '<button type="button" id="save-draft-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" onclick="saveDraftFull()">Save</button>';
-  html += '<button type="button" id="initiate-order-btn" class="btn" style="padding:12px 22px;background:#1d9e75;color:#fff;border:none;" onclick="initiateOrder()">Initiate Sales Order &rarr;</button>';
   html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Cancel</a>';
   html += '</div>';
   html += '</form>';
@@ -302,8 +284,7 @@ function renderForm(ctx, submitted) {
 
   // Client-side scripts: add/remove sources, recalc margins, validate sums on submit
   html += renderClientScript(rfqLines.length);
-  html += '<script>(function(){window.initiateOrder=function(){if(!confirm("Create a sales order from this quote? You can change suppliers and details on the order afterward."))return;var f=document.getElementById("quote-send-form");if(!f)return;var b=document.getElementById("initiate-order-btn");if(b){b.textContent="Creating order...";b.disabled=true;}var fd=new URLSearchParams(new FormData(f));fetch("/admin/rfqs/' + rfq.id + '/initiate-order",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){if(j.ok&&j.order_id){window.__skipUnload=true;window.location="/admin/orders/"+j.order_id;}else{alert(j.error||"Failed to create order");if(b){b.textContent="Initiate Sales Order \u2192";b.disabled=false;}}}).catch(function(){alert("Network error creating order");if(b){b.textContent="Initiate Sales Order \u2192";b.disabled=false;}});};})();</scr'+'ipt>';
-  html += '<script>(function(){var d=false;document.querySelectorAll("#quote-send-form input,#quote-send-form select,#quote-send-form textarea").forEach(function(el){el.addEventListener("input",function(){d=true;});el.addEventListener("change",function(){d=true;});});window.saveDraftFull=function(){var f=document.getElementById("quote-send-form");if(!f)return;var fd=new URLSearchParams(new FormData(f));var b=document.getElementById("save-draft-btn");if(b){b.textContent="Saving...";}fetch("/admin/rfqs/' + rfq.id + '/quote-draft-full",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){d=false;if(b){b.textContent=j.ok?"Draft Saved \u2713":"Save Failed";b.style.color=j.ok?"#4caf50":"#e05050";setTimeout(function(){b.textContent="Save Draft";b.style.color="#4caf50";},2500);}}).catch(function(){if(b){b.textContent="Save Failed";b.style.color="#e05050";}});};var ff=document.getElementById("quote-send-form");if(ff){ff.addEventListener("submit",function(){d=false;});}window.addEventListener("beforeunload",function(e){if(d&&!window.__skipUnload){e.preventDefault();e.returnValue="";}});})();</scr'+'ipt>';
+  html += '<script>(function(){var d=false;document.querySelectorAll("#quote-send-form input,#quote-send-form select,#quote-send-form textarea").forEach(function(el){el.addEventListener("input",function(){d=true;});el.addEventListener("change",function(){d=true;});});window.saveDraftFull=function(){var f=document.getElementById("quote-send-form");if(!f)return;var fd=new URLSearchParams(new FormData(f));var b=document.getElementById("save-draft-btn");if(b){b.textContent="Saving...";}fetch("/admin/rfqs/' + rfq.id + '/quote-draft-full",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){d=false;if(b){b.textContent=j.ok?"Draft Saved \u2713":"Save Failed";b.style.color=j.ok?"#4caf50":"#e05050";setTimeout(function(){b.textContent="Save Draft";b.style.color="#4caf50";},2500);}}).catch(function(){if(b){b.textContent="Save Failed";b.style.color="#e05050";}});};var ff=document.getElementById("quote-send-form");if(ff){ff.addEventListener("submit",function(){d=false;});}window.addEventListener("beforeunload",function(e){if(d){e.preventDefault();e.returnValue="";}});})();</scr'+'ipt>';
 
   return html;
 }
@@ -870,78 +851,6 @@ async function loadDraftAsSubmitted(rfqId, ctx) {
   });
 
   return submitted;
-}
-
-async function createOrderFromQuote(quoteId, adminId) {
-  const pool = await getPool();
-  const qR = await pool.request().input('id', sql.BigInt, quoteId)
-    .query('SELECT * FROM quotes WHERE id=@id');
-  if (!qR.recordset.length) throw new Error('Quote not found');
-  const quote = qR.recordset[0];
-
-  const orderNumber = await generateNumber('ORD');
-  const oR = await pool.request()
-    .input('quoteId',     sql.BigInt,        quoteId)
-    .input('rfqId',       sql.BigInt,        quote.rfq_id)
-    .input('customerId',  sql.BigInt,        quote.customer_id)
-    .input('orderNumber', sql.NVarChar(20),  orderNumber)
-    .input('customerPo',  sql.NVarChar(100), null)
-    .input('subtotal',    sql.Decimal(12,2), quote.subtotal || 0)
-    .input('taxAmount',   sql.Decimal(12,2), quote.tax_amount || 0)
-    .input('totalAmount', sql.Decimal(12,2), quote.total_amount || 0)
-    .input('paymentTerms',sql.NVarChar(100), quote.payment_terms || null)
-    .input('addr1',       sql.NVarChar(150), null)
-    .input('city',        sql.NVarChar(100), null)
-    .input('state',       sql.NVarChar(50),  null)
-    .input('zip',         sql.NVarChar(20),  null)
-    .input('country',     sql.NVarChar(50),  'USA')
-    .input('notes',       sql.NVarChar(sql.MAX), null)
-    .input('createdBy',   sql.BigInt,        adminId || null)
-    .query("INSERT INTO orders (quote_id, rfq_id, customer_id, order_number, customer_po, subtotal, tax_amount, total_amount, payment_terms, ship_to_address1, ship_to_city, ship_to_state, ship_to_zip, ship_to_country, notes, created_by) OUTPUT INSERTED.id VALUES (@quoteId, @rfqId, @customerId, @orderNumber, @customerPo, @subtotal, @taxAmount, @totalAmount, @paymentTerms, @addr1, @city, @state, @zip, @country, @notes, @createdBy)");
-  const orderId = oR.recordset[0].id;
-
-  const qlR = await pool.request().input('qid', sql.BigInt, quoteId)
-    .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
-  for (const ql of qlR.recordset) {
-    const olR = await pool.request()
-      .input('orderId', sql.BigInt,        orderId)
-      .input('qlId',    sql.BigInt,        ql.id)
-      .input('lineNum', sql.Int,           ql.line_number)
-      .input('nsn',     sql.NVarChar(20),  ql.nsn)
-      .input('pn',      sql.NVarChar(100), ql.part_number)
-      .input('name',    sql.NVarChar(255), ql.item_name)
-      .input('cond',    sql.NVarChar(5),   ql.condition_code || 'NE')
-      .input('qty',     sql.Int,           ql.quantity)
-      .input('price',   sql.Decimal(10,2), ql.unit_price || 0)
-      .input('total',   sql.Decimal(12,2), ql.line_total || 0)
-      .query("INSERT INTO order_lines (order_id, quote_line_id, line_number, nsn, part_number, item_name, condition_code, quantity_ordered, unit_price, line_total) OUTPUT INSERTED.id VALUES (@orderId, @qlId, @lineNum, @nsn, @pn, @name, @cond, @qty, @price, @total)");
-    const orderLineId = olR.recordset[0].id;
-
-    const srcR = await pool.request().input('qlid', sql.BigInt, ql.id)
-      .query('SELECT * FROM quote_line_sources WHERE quote_line_id=@qlid AND is_selected=1 ORDER BY sort_order');
-    let so = 1;
-    for (const s of srcR.recordset) {
-      await pool.request()
-        .input('olId',  sql.BigInt,        orderLineId)
-        .input('sup',   sql.BigInt,        s.supplier_id)
-        .input('aq',    sql.Int,           s.allocated_qty || 0)
-        .input('uc',    sql.Decimal(10,2), s.unit_cost || 0)
-        .input('lead',  sql.NVarChar(255), s.lead_time_text || null)
-        .input('h8',    sql.Bit,           s.has_8130 ? 1 : 0)
-        .input('hc',    sql.Bit,           s.has_coc ? 1 : 0)
-        .input('ht',    sql.Bit,           s.has_trace ? 1 : 0)
-        .input('so',    sql.Int,           so++)
-        .query("INSERT INTO order_line_sources (order_line_id, supplier_id, allocated_qty, received_qty, unit_cost, lead_time_text, has_8130_required, has_8130_received, has_coc_required, has_coc_received, has_trace_required, has_trace_received, sort_order, created_at, updated_at) VALUES (@olId, @sup, @aq, 0, @uc, @lead, @h8, 0, @hc, 0, @ht, 0, @so, GETDATE(), GETDATE())");
-    }
-  }
-
-  await pool.request().input('orderId', sql.BigInt, orderId)
-    .query("INSERT INTO order_status_log (order_id, new_status, note) VALUES (@orderId, 'Confirmed', 'Sales order initiated from quote')");
-
-  await pool.request().input('qid', sql.BigInt, quoteId)
-    .query("UPDATE quotes SET status='Accepted', updated_at=GETDATE() WHERE id=@qid");
-
-  return { order_id: orderId, order_number: orderNumber };
 }
 
 function escHtml(s) {
