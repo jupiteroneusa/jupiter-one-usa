@@ -928,7 +928,7 @@ export async function buildAdminRouter() {
           <div class="card-body" style="padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             <a href="/admin/rfqs/${rfq.id}/sourcing" class="btn btn-outline" style="padding:10px 18px;">\u{1F50D} Source Suppliers</a>
             <a href="/admin/rfqs/${rfq.id}/quote-review" class="btn btn-gold" style="padding:10px 22px;">Build Quote &rarr;</a>
-            ${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft" class="btn btn-outline" style="border-color:#4caf50;color:#4caf50;padding:10px 18px;">Resume Draft</a>` : ''}
+            ${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft-full" class="btn btn-outline" style="border-color:#4caf50;color:#4caf50;padding:10px 18px;">Resume Draft</a>` : ''}
             <div style="flex:1;min-width:200px;font-size:.75rem;color:#7a8a9a;text-align:right;">Record supplier responses on the Sourcing page first, then build the quote with internal cost/source data.</div>
           </div>
         </div>

@@ -1,6 +1,16 @@
+// COMBO_JS_FIX_V1
+// SUPPLIER_COMBO_V1
+// SUPPLIER_SEARCH_V1
+// SUPPLIER_DROPDOWN_V1
+// SUPERSEDED_EDIT_V1
+// EDIT_RESEND_V1
 // admin/index.js
 import { Router } from 'express';
 import { mountOrderRoutes } from './orderRoutes.js';
+import { mountSupplierRoutes } from './supplierRoutes.js';
+import { mountSupplierPoRoutes } from './supplierPoRoutes.js';
+import { mountAdminDocRoutes } from './adminDocRoutes.js';
+import { mountQuoteBuilder } from './quoteBuilder.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
 
@@ -84,6 +94,7 @@ function adminNav(active) {
     <a href="/admin/quotes" class="${active==='quotes'?'active':''}">💰 Quotes</a>
     <a href="/admin/orders" class="${active==='orders'?'active':''}">📦 Orders</a>
     <a href="/admin/suppliers" class="${active==='suppliers'?'active':''}">🏭 Suppliers</a>
+    <a href="/admin/supplier-pos" class="${active==='supplier-pos'?'active':''}">📝 Supplier POs</a>
     <a href="/admin/invoices" class="${active==='invoices'?'active':''}">🧾 Invoices</a>
     <a href="/admin/messages" class="${active==='messages'?'active':''}">✉️ Messages</a>
   </div>`;
@@ -241,7 +252,38 @@ export async function buildAdminRouter() {
             <th></th>
           </tr></thead>
           <tbody>${rows}</tbody></table>
-        </div>`));
+        </div>
+        <script>
+          (function(){
+            document.querySelectorAll('tr[data-supplier-row]').forEach(function(tr){
+              tr.addEventListener('click', function(e){
+                if (e.target.tagName === 'A' || e.target.closest('a')) return;
+                window.location = tr.getAttribute('data-href');
+              });
+              tr.addEventListener('mouseenter', function(){ tr.style.background='rgba(200,147,42,0.08)'; });
+              tr.addEventListener('mouseleave', function(){ tr.style.background=''; });
+            });
+            var t = document.getElementById('suppliersTable');
+            if (!t) return;
+            var dirs = {};
+            t.querySelectorAll('th[data-sort]').forEach(function(h){
+              h.addEventListener('click', function(){
+                var col = parseInt(h.getAttribute('data-sort'));
+                var dir = dirs[col] = (dirs[col] === 'asc' ? 'desc' : 'asc');
+                var tbody = t.querySelector('tbody');
+                var rows = Array.from(tbody.querySelectorAll('tr[data-supplier-row]'));
+                rows.sort(function(a,b){
+                  var av = (a.children[col].textContent || '').trim().toLowerCase();
+                  var bv = (b.children[col].textContent || '').trim().toLowerCase();
+                  if (av < bv) return dir==='asc'?-1:1;
+                  if (av > bv) return dir==='asc'?1:-1;
+                  return 0;
+                });
+                rows.forEach(function(r){ tbody.appendChild(r); });
+              });
+            });
+          })();
+        </script>`));
     } catch(err) {
       res.send(page('Dashboard','dashboard',`<div class="alert alert-error">${err.message}</div>`));
     }
@@ -881,35 +923,13 @@ export async function buildAdminRouter() {
           <tbody>${lineRows}</tbody></table>
         </div>
 
-        <div class="card">
-          <div class="card-header">
-            Create & Send Quote
-            <button class="btn btn-gold btn-sm" onclick="var f=document.getElementById('quote-form');f.style.display=f.style.display==='none'?'block':'none';">+ New Quote</button>${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft" class="btn btn-outline btn-sm" style="border-color:#4caf50;color:#4caf50;margin-left:8px;">Resume Draft</a>` : ''}
-          </div>
-          <div id="quote-form" style="display:none;padding:18px;">
-            <form method="POST" action="/admin/rfqs/${rfq.id}/quote-review">
-              <div style="overflow-x:auto;">
-                <table style="width:100%;margin-bottom:16px;">
-                  <thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Unit Cost ($)</th><th>Unit Price ($)</th><th>Lead Time</th></tr></thead>
-                  <tbody>${quoteLineInputs}</tbody>
-                </table>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
-                <div>
-                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div>
-                  <input type="text" name="payment_terms" value="Credit Card or Wire Transfer" style="width:100%;"/>
-                </div>
-                <div>
-                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div>
-                  <input type="number" name="valid_days" value="30" style="width:100%;"/>
-                </div>
-              </div>
-              <div style="margin-bottom:16px;">
-                <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Notes / Terms</div>
-                <textarea name="notes" rows="3" style="width:100%;" placeholder="Quote terms, lead times, conditions..."></textarea>
-              </div>
-              <button type="submit" class="btn btn-gold">Preview Quote &rarr;</button>
-            </form>
+        <div class="card"><!-- [Rewire 6] -->
+          <div class="card-header">Sourcing &amp; Quoting</div>
+          <div class="card-body" style="padding:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <a href="/admin/rfqs/${rfq.id}/sourcing" class="btn btn-outline" style="padding:10px 18px;">\u{1F50D} Source Suppliers</a>
+            <a href="/admin/rfqs/${rfq.id}/quote-review" class="btn btn-gold" style="padding:10px 22px;">Build Quote &rarr;</a>
+            ${existingDraft ? `<a href="/admin/rfqs/${rfq.id}/quote-review-draft" class="btn btn-outline" style="border-color:#4caf50;color:#4caf50;padding:10px 18px;">Resume Draft</a>` : ''}
+            <div style="flex:1;min-width:200px;font-size:.75rem;color:#7a8a9a;text-align:right;">Record supplier responses on the Sourcing page first, then build the quote with internal cost/source data.</div>
           </div>
         </div>
 
@@ -1149,156 +1169,9 @@ export async function buildAdminRouter() {
   });
 
     // Quote Review — GET (load blank form for new quote or requote)
-  router.get('/rfqs/:id/quote-review', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const h = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query('SELECT h.*, c.id AS customer_id, c.first_name+\' \'+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
-      if (!h.recordset.length) return res.redirect('/admin/rfqs');
-      const rfq = h.recordset[0];
-      const dbLines = await pool.request().input('id2', sql.BigInt, req.params.id)
-        .query('SELECT * FROM rfq_lines WHERE rfq_id=@id2 ORDER BY line_number');
-      const nextLine = dbLines.recordset.length + 1;
-      let lineHtml = '';
-      dbLines.recordset.forEach(function(l) {
-        const n = l.line_number - 1;
-        const part = (l.nsn || l.part_number || '').toUpperCase();
-        lineHtml += '<tr>';
-        lineHtml += '<td style="color:#7a8a9a;">' + l.line_number + '</td>';
-        lineHtml += '<td><div style="font-size:.65rem;color:#7a8a9a;">Req: ' + (l.nsn||l.part_number||'—') + '</div>';
-        lineHtml += '<input type="text" name="lines[' + n + '][fulfillment_part]" value="' + part + '" style="width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][rfq_line_id]" value="' + l.id + '"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][original_nsn]" value="' + (l.nsn||'') + '"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][original_part]" value="' + (l.part_number||'') + '"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][condition_code]" value="' + (l.condition_code||'NE') + '"/></td>';
-        lineHtml += '<td><input type="text" name="lines[' + n + '][item_name]" value="' + (l.item_name||'') + '" style="width:150px;"/></td>';
-        lineHtml += '<td><input type="number" min="1" name="lines[' + n + '][quantity]" value="' + l.quantity + '" style="width:60px;" required/></td>';
-        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_cost]" placeholder="0.00" style="width:80px;" required/></td>';
-        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_price]" placeholder="0.00" style="width:80px;" required/></td>';
-        lineHtml += '<td><input type="text" name="lines[' + n + '][lead_time_days]" placeholder="7-10 days" style="width:100px;"/></td>';
-        lineHtml += '<td><button type="button" onclick="removeQRow(' + l.line_number + ')" class="btn btn-outline btn-sm" style="color:#e05050;">X</button></td>';
-        lineHtml += '</tr>';
-      });
-      const draftScript = 'let isDirty=false;document.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",function(){isDirty=true;});});window.addEventListener("beforeunload",function(e){if(isDirty){e.preventDefault();e.returnValue="";}});function saveDraft(){isDirty=false;const form=document.querySelector("form");const fd=new URLSearchParams(new FormData(form));fetch("/admin/rfqs/' + rfq.id + '/quote-draft",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(d){const btn=document.getElementById("save-draft-btn");if(btn){btn.textContent=d.ok?"Draft Saved \u2713":"Save Failed";btn.style.color=d.ok?"#4caf50":"#e05050";}setTimeout(function(){if(btn&&d.ok){btn.textContent="Save Draft";btn.style.color="";}},3000);}).catch(function(){isDirty=true;});}';
-      const addRowScript = 'let qc=' + nextLine + ';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\'tr\');r.id=\'qrow-\'+n;r.innerHTML=\'<td>\'+n+\'</td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][fulfillment_part]\\\' style=\\\'width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;\\\' oninput=\\\'this.value=this.value.toUpperCase()\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][rfq_line_id]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_nsn]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_part]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][condition_code]\\\' value=\\\'NE\\\'/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][item_name]\\\' style=\\\'width:150px;\\\'/></td><td><input type=\\\'number\\\' min=\\\'1\\\' name=\\\'lines[\'+i+\'][quantity]\\\' value=\\\'1\\\' style=\\\'width:60px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_cost]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_price]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][lead_time_days]\\\' style=\\\'width:100px;\\\'/></td><td><button type=\\\'button\\\' onclick=\\\'removeQRow(\'+n+\')\\\' class=\\\'btn btn-outline btn-sm\\\' style=\\\'color:#e05050;\\\'>X</button></td>\';document.getElementById(\'qlines-tbody\').appendChild(r);}function removeQRow(n){const r=document.getElementById(\'qrow-\'+n);if(r&&document.getElementById(\'qlines-tbody\').children.length>1)r.remove();}';
-      let html = SORT_SCRIPT;
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
-      html += '<div class="page-title">New Quote — ' + rfq.rfq_number + '</div>';
-      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline btn-sm">&larr; Back to RFQ</a></div>';
-      html += '<div class="page-sub">Fill in pricing and send quote to customer</div>';
-      html += '<div class="detail-grid" style="margin-bottom:20px;">';
-      html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + rfq.customer_id + '" style="color:#c8932a;">' + rfq.customer_name + '</a></div></div>';
-      html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">' + (rfq.company||'—') + '</div></div>';
-      html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + rfq.email + '" style="color:#c8932a;">' + rfq.email + '</a></div></div>';
-      html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div>';
-      html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">' + rfq.customer_ref + '</div></div>' : '';
-      html += '</div>';
-      html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
-      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
-      html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
-      html += '<tbody id="qlines-tbody">' + lineHtml + '</tbody></table></div></div>';
-      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="Credit Card or Wire Transfer" style="width:100%;"/></div>';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="30" style="width:100%;"/></div></div>';
-      html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;"></textarea></div>';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional — shown at top of email)</span></div>';
-      html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
-      html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(optional)</span></div><input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
-      html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
-      html += '</div></div>';
-      html += '<div style="display:flex;gap:10px;">';
-      html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Send Quote to Customer &rarr;</button>';
-      html += '<button type="button" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>';
-      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Back to RFQ</a></div>';
-      html += '<script>' + draftScript + addRowScript + '</script>';
-      res.send(page('New Quote — ' + rfq.rfq_number, 'rfqs', html));
-    } catch(err) {
-      res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
-    }
-  });
+  /* MOVED to admin/quoteBuilder.js: router.get('/rfqs/:id/quote-review', */
 
-  router.post('/rfqs/:id/quote-review', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const h = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query('SELECT h.*, c.id AS customer_id, c.first_name+\' \'+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
-      if (!h.recordset.length) return res.redirect('/admin/rfqs');
-      const rfq = h.recordset[0];
-      const dbLines = await pool.request().input('id2', sql.BigInt, req.params.id)
-        .query('SELECT * FROM rfq_lines WHERE rfq_id=@id2 ORDER BY line_number');
-      const pt = req.body.payment_terms || 'Credit Card or Wire Transfer';
-      const vd = req.body.valid_days || 30;
-      const nt = req.body.notes || '';
-      const sub = Object.values(req.body.lines || {});
-      let lineHtml = '';
-      dbLines.recordset.forEach(function(l, i) {
-        const s = sub[i] || {};
-        const n = l.line_number - 1;
-        const part = (s.fulfillment_part || l.nsn || l.part_number || '').toUpperCase();
-        const desc = s.item_name || l.item_name || '';
-        const qty = s.quantity || l.quantity || 1;
-        const cost = s.unit_cost || '';
-        const price = s.unit_price || '';
-        const lead = s.lead_time_days || '';
-        lineHtml += '<tr>';
-        lineHtml += '<td style="color:#7a8a9a;">' + l.line_number + '</td>';
-        lineHtml += '<td><div style="font-size:.65rem;color:#7a8a9a;">Req: ' + (l.nsn||l.part_number||'—') + '</div>';
-        lineHtml += '<input type="text" name="lines[' + n + '][fulfillment_part]" value="' + part + '" style="width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;" oninput="this.value=this.value.toUpperCase()"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][rfq_line_id]" value="' + l.id + '"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][original_nsn]" value="' + (l.nsn||'') + '"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][original_part]" value="' + (l.part_number||'') + '"/>';
-        lineHtml += '<input type="hidden" name="lines[' + n + '][condition_code]" value="' + (l.condition_code||'NE') + '"/></td>';
-        lineHtml += '<td><input type="text" name="lines[' + n + '][item_name]" value="' + desc + '" style="width:150px;"/></td>';
-        lineHtml += '<td><input type="number" min="1" name="lines[' + n + '][quantity]" value="' + qty + '" style="width:60px;" required/></td>';
-        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_cost]" value="' + cost + '" placeholder="0.00" style="width:80px;" required/></td>';
-        lineHtml += '<td><input type="number" step="0.01" min="0" name="lines[' + n + '][unit_price]" value="' + price + '" placeholder="0.00" style="width:80px;" required/></td>';
-        lineHtml += '<td><input type="text" name="lines[' + n + '][lead_time_days]" value="' + lead + '" placeholder="7-10 days" style="width:100px;"/></td>';
-        lineHtml += '<td><button type="button" onclick="removeQRow(' + l.line_number + ')" class="btn btn-outline btn-sm" style="color:#e05050;">X</button></td>';
-        lineHtml += '</tr>';
-      });
-      const nextLine = dbLines.recordset.length + 1;
-      const draftScript = 'let isDirty=false;document.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",function(){isDirty=true;});});window.addEventListener("beforeunload",function(e){if(isDirty){e.preventDefault();e.returnValue="";}});function saveDraft(){isDirty=false;const form=document.querySelector("form");const fd=new URLSearchParams(new FormData(form));fetch("/admin/rfqs/'+rfq.id+'/quote-draft",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(d){const btn=document.getElementById("save-draft-btn");if(btn){btn.textContent=d.ok?"Draft Saved \u2713":"Save Failed";btn.style.color=d.ok?"#4caf50":"#e05050";}setTimeout(function(){if(btn&&d.ok){btn.textContent="Save Draft";btn.style.color="";}},3000);}).catch(function(){isDirty=true;});}';
-      const addRowScript = 'let qc=' + nextLine + ';function addQRow(){const i=qc-1;const n=qc;qc++;const r=document.createElement(\'tr\');r.id=\'qrow-\'+n;r.innerHTML=\'<td>\'+n+\'</td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][fulfillment_part]\\\'  style=\\\'width:130px;font-family:monospace;color:#c8932a;text-transform:uppercase;\\\' oninput=\\\'this.value=this.value.toUpperCase()\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][rfq_line_id]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_nsn]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][original_part]\\\' value=\\\'\\\'/><input type=\\\'hidden\\\' name=\\\'lines[\'+i+\'][condition_code]\\\' value=\\\'NE\\\'/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][item_name]\\\' style=\\\'width:150px;\\\'/></td><td><input type=\\\'number\\\' min=\\\'1\\\' name=\\\'lines[\'+i+\'][quantity]\\\' value=\\\'1\\\' style=\\\'width:60px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_cost]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'number\\\' step=\\\'0.01\\\' name=\\\'lines[\'+i+\'][unit_price]\\\' placeholder=\\\'0.00\\\' style=\\\'width:80px;\\\' required/></td><td><input type=\\\'text\\\' name=\\\'lines[\'+i+\'][lead_time_days]\\\' style=\\\'width:100px;\\\'/></td><td><button type=\\\'button\\\' onclick=\\\'removeQRow(\'+n+\')\\\'  class=\\\'btn btn-outline btn-sm\\\' style=\\\'color:#e05050;\\\'>X</button></td>\';document.getElementById(\'qlines-tbody\').appendChild(r);}function removeQRow(n){const r=document.getElementById(\'qrow-\'+n);if(r&&document.getElementById(\'qlines-tbody\').children.length>1)r.remove();}';
-      let html = SORT_SCRIPT;
-      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
-      html += '<div class="page-title">Quote Review — ' + rfq.rfq_number + '</div>';
-      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline btn-sm">&larr; Back to RFQ</a></div>';
-      html += '<div class="page-sub">Review and edit before sending to customer</div>';
-      html += '<div class="detail-grid" style="margin-bottom:20px;">';
-      html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + rfq.customer_id + '" style="color:#c8932a;">' + rfq.customer_name + '</a></div></div>';
-      html += '<div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">' + (rfq.company||'—') + '</div></div>';
-      html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + rfq.email + '" style="color:#c8932a;">' + rfq.email + '</a></div></div>';
-      html += '<div class="detail-item"><div class="detail-label">RFQ #</div><div class="detail-value">' + rfq.rfq_number + '</div></div>';
-      html += rfq.customer_ref ? '<div class="detail-item"><div class="detail-label">Customer Ref</div><div class="detail-value" style="color:#c8932a;font-family:monospace;">' + rfq.customer_ref + '</div></div>' : '';
-      html += '</div>';
-      html += '<form id="quote-send-form" method="POST" action="/admin/rfqs/' + rfq.id + '/quote">';
-      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addQRow()">+ Add Line</button></div>';
-      html += '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Unit Cost($)</th><th>Unit Price($)</th><th>Lead Time</th><th></th></tr></thead>';
-      html += '<tbody id="qlines-tbody">' + lineHtml + '</tbody></table></div></div>';
-      html += '<div class="card" style="margin-bottom:20px;"><div class="card-header">Quote Details</div><div class="card-body">';
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Payment Terms</div><input type="text" name="payment_terms" value="' + pt + '" style="width:100%;"/></div>';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Valid Days</div><input type="number" name="valid_days" value="' + vd + '" style="width:100%;"/></div></div>';
-      html += '<div style="margin-bottom:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Terms / Notes</div><textarea name="notes" rows="3" style="width:100%;">' + nt + '</textarea></div>';
-      html += '<div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Personal Message <span style="color:#555;">(optional — shown at top of email)</span></div>';
-      html += '<textarea name="personal_message" rows="3" style="width:100%;border-color:#c8932a;" placeholder="Hi, great speaking with you..."></textarea></div>';
-      html += '<div style="margin-top:12px;"><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(optional)</span></div><input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;"/></div>';
-      html += '<div style="margin-top:12px;display:flex;align-items:center;gap:8px;"><input type="checkbox" name="attach_pdf" id="attach_pdf" value="1" style="width:auto;accent-color:#c8932a;"/><label for="attach_pdf" style="font-size:.85rem;cursor:pointer;">Attach quote as PDF</label></div>';
-      html += '</div></div>';
-      html += '<div style="display:flex;gap:10px;">';
-      html += '<div style="display:flex;gap:10px;">';
-      html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Send Quote to Customer &rarr;</button>';
-      html += '<button type="button" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>';
-      html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Back to RFQ</a></div>';
-      html += '<script>' + draftScript + addRowScript + '</script>';
-      res.send(page('Quote Review — ' + rfq.rfq_number, 'rfqs', html));
-    } catch(err) {
-      res.send(page('Quote Review', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
-    }
-  });
+  /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote-review', */
 
   // Generate quote PDF
   router.get('/rfqs/:id/quote-pdf/:quoteId', async (req, res) => {
@@ -1372,7 +1245,7 @@ export async function buildAdminRouter() {
           Claims within 7 days of receipt. Quote valid 30 days. Prices subject to availability.
         </div>
         <div style="margin-top:20px;font-size:11px;color:#888;">
-          Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412 | DTorchia@jupiteroneusa.com
+          Jupiter One USA LLC | 400 N Tampa St, Suite 1550, Tampa FL | +1 (347) 821-7412 | contact@jupiteroneusa.com
         </div>
       </body></html>`;
       const puppeteer = await import('puppeteer');
@@ -1393,352 +1266,7 @@ export async function buildAdminRouter() {
     }
   });
 
-    router.post('/rfqs/:id/quote', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const rfqResult = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query(`SELECT h.*, c.first_name, c.last_name, c.email, c.company FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id`);
-      if (!rfqResult.recordset.length) return res.redirect('/admin/rfqs');
-      const rfq = rfqResult.recordset[0];
-      const { valid_days = 30, payment_terms, notes } = req.body;
-      const linesRaw = req.body.lines || {};
-      const linesArr = Object.values(linesRaw);
-      let subtotal = 0;
-      const processedLines = linesArr.map((l, i) => {
-        const unitPrice = parseFloat(l.unit_price) || 0;
-        const unitCost = parseFloat(l.unit_cost) || 0;
-        const qty = parseInt(l.quantity) || 1; // qty now editable in form
-        const lineTotal = unitPrice * qty;
-        const lineCost = unitCost * qty;
-        subtotal += lineTotal;
-        // Use fulfillment_part if provided (admin may substitute a different part)
-        const fulfillPart = (l.fulfillment_part || '').trim();
-        const isNSN = /^\d{4}-\d{2}-\d{3}-\d{4}$/.test(fulfillPart);
-        const resolvedNsn = isNSN ? fulfillPart : (l.original_nsn || l.nsn || null);
-        const resolvedPart = !isNSN && fulfillPart ? fulfillPart : (l.original_part || l.part_number || null);
-        return {
-          ...l,
-          line_number: i + 1,
-          nsn: resolvedNsn,
-          part_number: resolvedPart,
-          item_name: l.item_name || null,
-          lead_time_text: l.lead_time_days?.toString().trim() || null,
-          unit_price: unitPrice,
-          unit_cost: unitCost,
-          quantity: qty,
-          line_total: lineTotal,
-          line_cost: lineCost,
-          line_margin: lineTotal - lineCost,
-          markup_pct: unitCost > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((unitPrice - unitCost) / unitCost) * 100).toFixed(2)))) : 0,
-          margin_pct: lineTotal > 0 ? Math.min(999.99, Math.max(-999.99, parseFloat((((lineTotal - lineCost) / lineTotal) * 100).toFixed(2)))) : 0,
-        };
-      });
-      // Use same sequence number as RFQ for matching (RFQ-2026-00001 -> QT-2026-00001)
-      // Version-aware quote number: QT-2026-00001-v1, v2, v3...
-      const baseQtNum = rfq.rfq_number.replace(/^RFQ-/, 'QT-');
-      const existingVersions = await pool.request().input('rfqIdV', sql.BigInt, rfq.id)
-        .query("SELECT quote_number FROM quotes WHERE rfq_id=@rfqIdV AND quote_number NOT LIKE '%-D' ORDER BY created_at ASC");
-      const versionCount = existingVersions.recordset.length;
-      const quoteNumber = versionCount === 0 ? baseQtNum + '-v1' : baseQtNum + '-v' + (versionCount + 1);
-      const validUntil = new Date(Date.now() + parseInt(valid_days) * 24 * 60 * 60 * 1000);
-      const totalCost = processedLines.reduce((s, l) => s + l.line_cost, 0);
-      // Check if quote already exists for this RFQ - if so, update it (revision)
-      const existingQuote = await pool.request()
-        .input('rfqId2', sql.BigInt, rfq.id)
-        .query("SELECT id, quote_number FROM quotes WHERE rfq_id=@rfqId2 AND status<>'Draft' AND quote_number NOT LIKE '%-D' AND 1=0");
-
-      let quote;
-      if (existingQuote.recordset.length) {
-        const existingQ = existingQuote.recordset[0];
-        // Update existing quote
-        const qr = await pool.request()
-          .input('rfqId', sql.BigInt, rfq.id)
-          .input('existingId', sql.BigInt, existingQ.id)
-          .input('subtotal', sql.Decimal(12,2), subtotal)
-          .input('totalAmount', sql.Decimal(12,2), subtotal)
-          .input('totalCost', sql.Decimal(12,2), totalCost)
-          .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
-          .input('validUntil', sql.Date, validUntil)
-          .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
-          .input('notes', sql.NVarChar(sql.MAX), notes || null)
-          .query(`
-            UPDATE quotes SET
-              subtotal=@subtotal, total_amount=@totalAmount, total_cost=@totalCost,
-              total_margin=@totalMargin, valid_until=@validUntil, payment_terms=@paymentTerms,
-              notes=@notes, status='Sent', updated_at=GETDATE()
-            OUTPUT INSERTED.id, INSERTED.quote_number
-            WHERE id=@existingId
-          `);
-        quote = { id: existingQ.id, quote_number: existingQ.quote_number };
-        // Delete old lines and reinsert
-        await pool.request().input('qid', sql.BigInt, quote.id)
-          .query('DELETE FROM quote_lines WHERE quote_id=@qid');
-        console.log('Quote revised:', quote.quote_number);
-        // Delete draft if exists
-        try {
-          await pool.request().input('rfqIdDel', sql.BigInt, rfq.id)
-            .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel AND quote_number LIKE '%-D')");
-          await pool.request().input('rfqIdDel2', sql.BigInt, rfq.id)
-            .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel2 AND quote_number LIKE '%-D'");
-        } catch(e) { console.log('Draft cleanup skipped:', e.message); }
-      } else {
-        // Insert new quote
-        const qr = await pool.request()
-          .input('rfqId', sql.BigInt, rfq.id)
-          .input('customerId', sql.BigInt, rfq.customer_id)
-          .input('quoteNumber', sql.NVarChar(20), quoteNumber)
-          .input('subtotal', sql.Decimal(12,2), subtotal)
-          .input('totalAmount', sql.Decimal(12,2), subtotal)
-          .input('totalCost', sql.Decimal(12,2), totalCost)
-          .input('totalMargin', sql.Decimal(12,2), subtotal - totalCost)
-          .input('validUntil', sql.Date, validUntil)
-          .input('paymentTerms', sql.NVarChar(100), payment_terms || 'Credit Card or Wire Transfer')
-          .input('notes', sql.NVarChar(sql.MAX), notes || null)
-          .query(`
-            INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, status)
-            OUTPUT INSERTED.id, INSERTED.quote_number
-            VALUES (@rfqId, @customerId, @quoteNumber, @subtotal, @totalAmount, @totalCost, @totalMargin, @validUntil, @paymentTerms, @notes, 'Sent')
-          `);
-        quote = qr.recordset[0];
-        if (!quote) {
-          const fb = await pool.request().input('qnFb', sql.NVarChar(20), quoteNumber)
-            .query('SELECT id, quote_number FROM quotes WHERE quote_number=@qnFb');
-          quote = fb.recordset[0];
-        }
-        // Delete draft if exists
-        try {
-          await pool.request().input('rfqIdDel3', sql.BigInt, rfq.id)
-            .query("DELETE FROM quote_lines WHERE quote_id IN (SELECT id FROM quotes WHERE rfq_id=@rfqIdDel3 AND quote_number LIKE '%-D')");
-          await pool.request().input('rfqIdDel4', sql.BigInt, rfq.id)
-            .query("DELETE FROM quotes WHERE rfq_id=@rfqIdDel4 AND quote_number LIKE '%-D'");
-        } catch(e) { console.log('Draft cleanup skipped:', e.message); }
-      }
-      for (const l of processedLines) {
-        await pool.request()
-          .input('quoteId', sql.BigInt, quote.id)
-          .input('rfqLineId', sql.BigInt, parseInt(l.rfq_line_id) || null)
-          .input('lineNum', sql.Int, l.line_number)
-          .input('nsn', sql.NVarChar(20), l.nsn || null)
-          .input('partNum', sql.NVarChar(100), l.part_number || null)
-          .input('itemName', sql.NVarChar(255), l.item_name || null)
-          .input('condition', sql.NVarChar(5), l.condition_code || 'NE')
-          .input('qty', sql.Int, l.quantity)
-          .input('unitCost', sql.Decimal(10,2), l.unit_cost)
-          .input('unitPrice', sql.Decimal(10,2), l.unit_price)
-          .input('lineTotal', sql.Decimal(12,2), l.line_total)
-          .input('lineCost', sql.Decimal(12,2), l.line_cost)
-          .input('lineMargin', sql.Decimal(12,2), l.line_margin)
-          .input('markupPct', sql.Decimal(5,2), l.markup_pct)
-          .input('marginPct', sql.Decimal(5,2), l.margin_pct)
-          .input('leadTime', sql.Int, parseInt((l.lead_time_days||'').toString().replace(/[^0-9]/,'')) || null)
-          .input('leadTimeText', sql.NVarChar(100), (l.lead_time_days||l.lead_time_text||'').toString() || null)
-          .query(`
-            INSERT INTO quote_lines
-              (quote_id, rfq_line_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, markup_pct, margin_pct, lead_time_days, lead_time_text)
-            VALUES
-              (@quoteId, @rfqLineId, @lineNum, @nsn, @partNum, @itemName, @condition, @qty, @unitCost, @unitPrice, @lineTotal, @lineCost, @lineMargin, @markupPct, @marginPct, @leadTime, @leadTimeText)
-          `);
-      }
-      await pool.request()
-        .input('rfqId', sql.BigInt, rfq.id)
-        .query(`UPDATE rfq_headers SET status='Quoted', updated_at=GETDATE() WHERE id=@rfqId`);
-      await pool.request()
-        .input('rfqId', sql.BigInt, rfq.id)
-        .input('note', sql.NVarChar(500), `Quote ${quoteNumber} created and sent`)
-        .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, 'Submitted', 'Quoted', @note)`);
-      const { sendQuoteToCustomer } = await import('../services/mailer.js');
-      const customer = { first_name: rfq.first_name, last_name: rfq.last_name, email: rfq.email };
-      const { personal_message, cc_emails, attach_pdf } = req.body;
-      // Generate PDF if requested
-      let pdfBuffer = null;
-      if (attach_pdf === '1' && quote && quote.id) {
-        try {
-          // Use jsPDF via require for server-side PDF generation
-          const { jsPDF } = await import('jspdf');
-          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-          const gold = [200, 147, 42];
-          const navy = [10, 22, 40];
-          const pageW = 210;
-          const margin = 14;
-          const contentW = pageW - margin * 2;
-
-          // Header bar
-          doc.setFillColor(...navy);
-          doc.rect(0, 0, pageW, 28, 'F');
-          doc.setFillColor(...gold);
-          doc.rect(0, 28, pageW, 1.5, 'F');
-          doc.setTextColor(...gold);
-          doc.setFontSize(15);
-          doc.setFont('helvetica', 'bold');
-          doc.text('JUPITER ONE USA LLC', margin, 12);
-          doc.setFontSize(8);
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(180, 180, 180);
-          doc.text('Aerospace & Defense Component Supplier', margin, 20);
-          doc.setTextColor(255, 255, 255);
-          doc.setFontSize(9);
-          doc.text('QUOTATION', pageW - margin, 12, { align: 'right' });
-          doc.setFontSize(8);
-          doc.setTextColor(180, 180, 180);
-          doc.text(quoteNumber, pageW - margin, 20, { align: 'right' });
-
-          // Two-column info block
-          let y = 38;
-          doc.setFontSize(7);
-          doc.setTextColor(120, 120, 120);
-          doc.setFont('helvetica', 'bold');
-          doc.text('BILL TO', margin, y);
-          doc.text('QUOTE DETAILS', margin + contentW/2, y);
-          y += 5;
-          doc.setFont('helvetica', 'normal');
-          doc.setTextColor(30, 30, 30);
-          doc.setFontSize(9);
-          doc.text(rfq.first_name + ' ' + rfq.last_name, margin, y);
-          doc.setFontSize(8);
-          doc.setTextColor(120, 120, 120);
-          const detailX = margin + contentW/2;
-          const valX = detailX + 28;
-          let ry = y;
-          const pdfDetails = [
-            ['Quote #:', quoteNumber],
-            ['RFQ #:', rfq.rfq_number],
-            ['Issued:', new Date().toLocaleDateString()],
-            ['Valid Until:', new Date(validUntil).toLocaleDateString()],
-            ['Sales Rep:', 'Derek Torchia'],
-          ];
-          for (const [lbl, val] of pdfDetails) {
-            doc.setTextColor(120,120,120); doc.text(lbl, detailX, ry);
-            doc.setTextColor(30,30,30); doc.text(String(val||''), valX, ry);
-            ry += 5;
-          }
-
-          // Divider
-          y = Math.max(ry, y + 18) + 4;
-          doc.setDrawColor(...gold);
-          doc.setLineWidth(0.5);
-          doc.line(margin, y, pageW - margin, y);
-          y += 6;
-
-          // Table columns
-          const pdfCols = [
-            { label: 'NSN / Part #', x: margin,     w: 32 },
-            { label: 'Description',  x: margin+32,  w: 50 },
-            { label: 'Qty',          x: margin+82,  w: 12 },
-            { label: 'Cond',         x: margin+94,  w: 14 },
-            { label: 'Unit Price',   x: margin+108, w: 24 },
-            { label: 'Total',        x: margin+132, w: 24 },
-            { label: 'Lead Time',    x: margin+156, w: 26 },
-          ];
-
-          // Table header row
-          doc.setFillColor(...navy);
-          doc.rect(margin, y-4, contentW, 7, 'F');
-          doc.setTextColor(255, 255, 255);
-          doc.setFontSize(7);
-          doc.setFont('helvetica', 'bold');
-          for (const col of pdfCols) doc.text(col.label, col.x+1, y);
-          y += 5;
-
-          // Data rows
-          doc.setFont('helvetica', 'normal');
-          let rowAlt = false;
-          for (const l of processedLines) {
-            if (y > 255) {
-              doc.addPage();
-              y = 20;
-              doc.setFillColor(...navy);
-              doc.rect(margin, y-4, contentW, 7, 'F');
-              doc.setTextColor(255,255,255);
-              doc.setFont('helvetica','bold');
-              for (const col of pdfCols) doc.text(col.label, col.x+1, y);
-              y += 5;
-              doc.setFont('helvetica','normal');
-            }
-            if (rowAlt) { doc.setFillColor(248,248,248); doc.rect(margin, y-3.5, contentW, 6.5, 'F'); }
-            rowAlt = !rowAlt;
-            doc.setTextColor(30, 30, 30);
-            doc.setFontSize(7.5);
-            doc.text(String(l.nsn||l.part_number||'—').substring(0,16), pdfCols[0].x+1, y);
-            doc.text(String(l.item_name||'—').substring(0,28), pdfCols[1].x+1, y);
-            doc.text(String(l.quantity||''), pdfCols[2].x+1, y);
-            doc.text(String(l.condition_code||'NE'), pdfCols[3].x+1, y);
-            doc.text('$'+parseFloat(l.unit_price||0).toFixed(2), pdfCols[4].x+1, y);
-            doc.text('$'+parseFloat(l.line_total||0).toFixed(2), pdfCols[5].x+1, y);
-            doc.text(String(l.lead_time_text||l.lead_time_days||'—').substring(0,14), pdfCols[6].x+1, y);
-            doc.setDrawColor(220,220,220); doc.setLineWidth(0.2);
-            doc.line(margin, y+2.5, pageW-margin, y+2.5);
-            y += 7;
-          }
-
-          // Total row
-          y += 2;
-          doc.setFillColor(...gold);
-          doc.rect(margin, y-4, contentW, 7, 'F');
-          doc.setTextColor(...navy);
-          doc.setFontSize(9);
-          doc.setFont('helvetica', 'bold');
-          doc.text('TOTAL', pdfCols[4].x+1, y);
-          doc.text('$' + Number(subtotal).toFixed(2), pdfCols[5].x+1, y);
-          y += 10;
-
-          // Notes
-          if (notes) {
-            doc.setFontSize(8); doc.setFont('helvetica','normal');
-            doc.setTextColor(100,100,100);
-            doc.text('Notes: ' + notes.substring(0,120), margin, y);
-            y += 8;
-          }
-
-          // T&C section
-          if (y < 255) {
-            y += 4;
-            doc.setDrawColor(200,147,42); doc.setLineWidth(0.3);
-            doc.line(margin, y, pageW-margin, y); y += 5;
-            doc.setFontSize(7); doc.setFont('helvetica','bold'); doc.setTextColor(30,30,30);
-            doc.text('TERMS & CONDITIONS', margin, y); y += 4;
-            doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100);
-            const tcLines = [
-              'Payment: Credit Card or Wire Transfer. CC payments subject to 3.5% processing fee.',
-              'Cancellation: All orders are non-cancellable and non-returnable once confirmed.',
-              'Delivery: Times are estimated and not guaranteed. Claims within 7 days of receipt.',
-              'Validity: Quote valid 30 days. Prices subject to availability at time of confirmation.',
-              'Export: All sales subject to US export control laws including EAR and ITAR.',
-              'Condition Codes: NE=New, NS=New Surplus, OH=Overhaul, AR=As Removed, SV=Serviceable.',
-            ];
-            for (const line of tcLines) { if (y > 272) break; doc.text('- ' + line, margin+2, y); y += 4.5; }
-          }
-
-          // Footer
-          doc.setFillColor(...navy);
-          doc.rect(0, 282, pageW, 15, 'F');
-          doc.setFontSize(7); doc.setTextColor(170,170,170);
-          doc.text('Jupiter One USA LLC  |  400 N Tampa St, Suite 1550, Tampa FL  |  +1 (347) 821-7412  |  DTorchia@jupiteroneusa.com', pageW/2, 288, { align: 'center' });
-          doc.setTextColor(130,130,130);
-          doc.text('Payment: Credit Card or Wire Transfer (3.5% CC fee). All orders non-cancellable. Quote valid 30 days.', pageW/2, 293, { align: 'center' });
-
-          pdfBuffer = Buffer.from(doc.output('arraybuffer'));
-          console.log('PDF generated with jsPDF, size:', pdfBuffer.length);
-        } catch(pdfErr) { console.error('PDF gen error:', pdfErr.message); }
-      }
-      try {
-      await sendQuoteToCustomer({
-        customer,
-        quote: { ...quote, total_amount: subtotal, valid_until: validUntil, payment_terms, notes, personal_message },
-        lines: processedLines,
-        rfq: { rfq_number: rfq.rfq_number, customer_ref: rfq.customer_ref, priority: rfq.priority },
-        pdfUrl: null,
-        pdfBuffer,
-        ccEmails: cc_emails || null,
-        attachPdf: attach_pdf === '1',
-      });
-      } catch(emailErr) { console.error('Email send error:', emailErr.message); }
-      res.redirect(`/admin/rfqs/${req.params.id}?quoted=1`);
-    } catch(err) {
-      console.error('Admin quote error:', err);
-      res.redirect(`/admin/rfqs/${req.params.id}?error=1`);
-    }
-  });
+    /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote', */
 
   // RFQ Status Update
   router.post('/rfqs/:id/status', async (req, res) => {
@@ -1814,7 +1342,7 @@ export async function buildAdminRouter() {
 
       // Quote history
       const quotes = await pool.request().input('id', sql.BigInt, req.params.id)
-        .query("SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at, h.rfq_number FROM quotes q JOIN rfq_headers h ON h.id=q.rfq_id WHERE q.customer_id=@id AND q.quote_number NOT LIKE '%-D' ORDER BY q.created_at DESC");
+        .query("SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at, q.rejected_at, q.rejection_reason, q.expired_at, q.parent_quote_id, q.reissued_count, h.rfq_number FROM quotes q JOIN rfq_headers h ON h.id=q.rfq_id WHERE q.customer_id=@id AND q.quote_number NOT LIKE '%-D' ORDER BY q.created_at DESC");
 
       const activeTab = req.query.tab || 'overview';
       const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">✔ Customer updated successfully.</div>' :
@@ -1999,36 +1527,54 @@ export async function buildAdminRouter() {
     try {
       const pool = await getPool();
       const b = req.body;
+      /* CUSTOMER_UPDATE_MERGE_v1: fetch existing customer and preserve fields not submitted */
+      const _existR = await pool.request().input('cid', sql.BigInt, req.params.id)
+        .query('SELECT * FROM customers WHERE id=@cid');
+      if (!_existR.recordset.length) {
+        return res.redirect('/admin/customers?error=Customer+not+found');
+      }
+      const _exist = _existR.recordset[0];
+      // pick: if submitted key is missing entirely, keep existing; if submitted empty string, clear to null (allow user to blank fields)
+      const _pick = function(submittedKey, existingKey) {
+        if (b[submittedKey] === undefined) return _exist[existingKey] === undefined ? null : _exist[existingKey];
+        return b[submittedKey] === '' ? null : b[submittedKey];
+      };
+      // pickRequired: never allow null; if missing/blank, fall back to existing
+      const _pickRequired = function(submittedKey, existingKey) {
+        const v = b[submittedKey];
+        if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) return _exist[existingKey];
+        return v;
+      };
       await pool.request()
         .input('id', sql.BigInt, req.params.id)
-        .input('firstName', sql.NVarChar(100), b.first_name||null)
-        .input('lastName', sql.NVarChar(100), b.last_name||null)
-        .input('email', sql.NVarChar(150), b.email||null)
-        .input('phone', sql.NVarChar(30), b.phone||null)
-        .input('country', sql.NVarChar(100), b.country||null)
-        .input('company', sql.NVarChar(150), b.company||null)
-        .input('jobTitle', sql.NVarChar(100), b.job_title||null)
-        .input('website', sql.NVarChar(150), b.website||null)
-        .input('cageCode', sql.NVarChar(10), b.cage_code||null)
-        .input('dunsNumber', sql.NVarChar(20), b.duns_number||null)
-        .input('accountManager', sql.NVarChar(100), b.account_manager||null)
-        .input('billingAddress1', sql.NVarChar(150), b.billing_address1||null)
-        .input('billingAddress2', sql.NVarChar(150), b.billing_address2||null)
-        .input('billingCity', sql.NVarChar(100), b.billing_city||null)
-        .input('billingState', sql.NVarChar(50), b.billing_state||null)
-        .input('billingZip', sql.NVarChar(20), b.billing_zip||null)
-        .input('billingCountry', sql.NVarChar(50), b.billing_country||null)
-        .input('shippingAddress1', sql.NVarChar(150), b.shipping_address1||null)
-        .input('shippingAddress2', sql.NVarChar(150), b.shipping_address2||null)
-        .input('shippingCity', sql.NVarChar(100), b.shipping_city||null)
-        .input('shippingState', sql.NVarChar(50), b.shipping_state||null)
-        .input('shippingZip', sql.NVarChar(20), b.shipping_zip||null)
-        .input('shippingCountry', sql.NVarChar(50), b.shipping_country||null)
-        .input('paymentTerms', sql.NVarChar(50), b.payment_terms||null)
-        .input('creditLimit', sql.Decimal(12,2), parseFloat(b.credit_limit)||null)
-        .input('taxExempt', sql.Bit, b.tax_exempt==='1'?1:0)
-        .input('taxExemptNumber', sql.NVarChar(50), b.tax_exempt_number||null)
-        .input('internalNotes', sql.NVarChar(sql.MAX), b.internal_notes||null)
+        .input('firstName', sql.NVarChar(100), _pickRequired('first_name', 'first_name'))
+        .input('lastName', sql.NVarChar(100), _pickRequired('last_name', 'last_name'))
+        .input('email', sql.NVarChar(150), _pickRequired('email', 'email'))
+        .input('phone', sql.NVarChar(30), _pick('phone', 'phone'))
+        .input('country', sql.NVarChar(100), _pick('country', 'country'))
+        .input('company', sql.NVarChar(150), _pick('company', 'company'))
+        .input('jobTitle', sql.NVarChar(100), _pick('job_title', 'job_title'))
+        .input('website', sql.NVarChar(150), _pick('website', 'website'))
+        .input('cageCode', sql.NVarChar(10), _pick('cage_code', 'cage_code'))
+        .input('dunsNumber', sql.NVarChar(20), _pick('duns_number', 'duns_number'))
+        .input('accountManager', sql.NVarChar(100), _pick('account_manager', 'account_manager'))
+        .input('billingAddress1', sql.NVarChar(150), _pick('billing_address1', 'billing_address1'))
+        .input('billingAddress2', sql.NVarChar(150), _pick('billing_address2', 'billing_address2'))
+        .input('billingCity', sql.NVarChar(100), _pick('billing_city', 'billing_city'))
+        .input('billingState', sql.NVarChar(50), _pick('billing_state', 'billing_state'))
+        .input('billingZip', sql.NVarChar(20), _pick('billing_zip', 'billing_zip'))
+        .input('billingCountry', sql.NVarChar(50), _pick('billing_country', 'billing_country'))
+        .input('shippingAddress1', sql.NVarChar(150), _pick('shipping_address1', 'shipping_address1'))
+        .input('shippingAddress2', sql.NVarChar(150), _pick('shipping_address2', 'shipping_address2'))
+        .input('shippingCity', sql.NVarChar(100), _pick('shipping_city', 'shipping_city'))
+        .input('shippingState', sql.NVarChar(50), _pick('shipping_state', 'shipping_state'))
+        .input('shippingZip', sql.NVarChar(20), _pick('shipping_zip', 'shipping_zip'))
+        .input('shippingCountry', sql.NVarChar(50), _pick('shipping_country', 'shipping_country'))
+        .input('paymentTerms', sql.NVarChar(50), _pick('payment_terms', 'payment_terms'))
+        .input('creditLimit', sql.Decimal(12,2), (b.credit_limit !== undefined ? (parseFloat(b.credit_limit) || null) : _exist.credit_limit))
+        .input('taxExempt', sql.Bit, (b.tax_exempt !== undefined ? (b.tax_exempt==='1'?1:0) : (_exist.tax_exempt ? 1 : 0)))
+        .input('taxExemptNumber', sql.NVarChar(50), _pick('tax_exempt_number', 'tax_exempt_number'))
+        .input('internalNotes', sql.NVarChar(sql.MAX), _pick('internal_notes', 'internal_notes'))
         .query(`UPDATE customers SET
           first_name=@firstName, last_name=@lastName, email=@email, phone=@phone, country=@country,
           company=@company, job_title=@jobTitle, website=@website, cage_code=@cageCode,
@@ -2166,8 +1712,45 @@ export async function buildAdminRouter() {
       const q = qr.recordset[0];
       const lines = await pool.request().input('id', sql.BigInt, req.params.id)
         .query('SELECT * FROM quote_lines WHERE quote_id=@id ORDER BY line_number');
+      // QUOTE_SOURCES_SUBROW_V1
+      const _qSources = await pool.request().input('id2', sql.BigInt, req.params.id).query('SELECT qls.quote_line_id, qls.supplier_id, qls.allocated_qty, qls.unit_cost, qls.supplier_lead_time_days, qls.lead_time_text, qls.has_8130, qls.has_coc, qls.has_trace, s.company_name AS supplier_name FROM quote_line_sources qls INNER JOIN quote_lines ql ON ql.id = qls.quote_line_id LEFT JOIN suppliers s ON s.id = qls.supplier_id WHERE ql.quote_id = @id2 ORDER BY qls.quote_line_id, qls.sort_order');
+      const _sourcesByLine = {};
+      _qSources.recordset.forEach(function(src) { if (!_sourcesByLine[src.quote_line_id]) _sourcesByLine[src.quote_line_id] = []; _sourcesByLine[src.quote_line_id].push(src); });
+      const _renderSourceSubRow = function(srcs) {
+        if (!srcs || !srcs.length) { return '<tr><td colspan="10" style="padding:6px 12px;background:rgba(200,147,42,0.04);font-size:.72rem;color:#7a8a9a;border-top:none;border-bottom:1px solid #1e2d42;font-style:italic;">No supplier sourcing on this line</td></tr>'; }
+        var html = '';
+        html += '<tr><td colspan="10" style="padding:0;background:rgba(200,147,42,0.04);border-top:none;border-bottom:1px solid #1e2d42;">';
+        html += '<div style="padding:6px 14px;font-size:.65rem;letter-spacing:.12em;color:#c8932a;text-transform:uppercase;">Sourcing (Internal)</div>';
+        html += '<table style="width:100%;margin:0;"><thead><tr style="background:transparent;">';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Supplier</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Qty</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Unit Cost</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Lead Time</th>';
+        html += '<th style="font-size:.65rem;padding:4px 12px;color:#7a8a9a;text-align:left;">Certs</th>';
+        html += '</tr></thead><tbody>';
+        srcs.forEach(function(src) {
+          var leadText = src.lead_time_text || (src.supplier_lead_time_days ? src.supplier_lead_time_days + ' days' : '\u2014');
+          var certs = '';
+          if (src.has_8130) certs += '<span style="display:inline-block;padding:2px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;font-size:.65rem;margin-right:3px;">8130</span>';
+          if (src.has_coc) certs += '<span style="display:inline-block;padding:2px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;font-size:.65rem;margin-right:3px;">CoC</span>';
+          if (src.has_trace) certs += '<span style="display:inline-block;padding:2px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;font-size:.65rem;">Trace</span>';
+          if (!certs) certs = '<span style="color:#7a8a9a;">\u2014</span>';
+          html += '<tr style="background:transparent;">';
+          html += '<td style="padding:4px 12px;font-size:.78rem;color:#eef1f5;">' + (src.supplier_name || '\u2014') + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;">' + (src.allocated_qty || 0) + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;color:#c8932a;font-weight:600;">$' + parseFloat(src.unit_cost || 0).toFixed(2) + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;color:#7a8a9a;">' + leadText + '</td>';
+          html += '<td style="padding:4px 12px;font-size:.78rem;">' + certs + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table></td></tr>';
+        return html;
+      };
       const rfqLog = await pool.request().input('rfqIdLog', sql.BigInt, q.rfq_id)
         .query('SELECT * FROM rfq_status_log WHERE rfq_id=@rfqIdLog ORDER BY created_at ASC');
+      // EDIT_RESEND_V1 load versions
+      const versionsR = await pool.request().input('idv', sql.BigInt, req.params.id).query('SELECT id, version, revised_at, revised_by, revision_note, email_sent, subtotal, total FROM quote_versions WHERE quote_id=@idv ORDER BY version DESC');
+      const versionRows = versionsR.recordset.map(function(v) { return '<tr><td style="color:#c8932a;font-weight:600;">v' + v.version + '</td><td>' + new Date(v.revised_at).toLocaleString() + '</td><td>' + (v.revised_by || 'admin') + '</td><td style="font-weight:600;">$' + parseFloat(v.total || 0).toLocaleString('en-US', {minimumFractionDigits: 2}) + '</td><td style="color:#7a8a9a;">' + (v.revision_note || '\u2014') + '</td><td>' + (v.email_sent ? '<span style="color:#4caf50;">Sent</span>' : '<span style="color:#7a8a9a;">No</span>') + '</td></tr>'; }).join('');
       const logRows = rfqLog.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;font-size:.78rem;">${new Date(l.created_at).toLocaleString()}</td>
         <td>${statusBadge(l.new_status)}</td>
@@ -2184,12 +1767,13 @@ export async function buildAdminRouter() {
         <td style="font-weight:600;">${parseFloat(l.line_total||0).toFixed(2)}</td>
         <td style="color:#7a8a9a;">${l.lead_time_text || (l.lead_time_days ? l.lead_time_days+' days' : '—')}</td>
         <td style="color:${parseFloat(l.margin_pct||0)>=20?'#4caf50':'#e05050'};">${parseFloat(l.margin_pct||0).toFixed(1)}%</td>
-      </tr>`).join('');
+      </tr>${_renderSourceSubRow(_sourcesByLine[l.id])}`).join('');
       res.send(page(`Quote ${q.quote_number}`,'quotes',`
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
           <div class="page-title">Quote ${q.quote_number}</div>
           <div style="display:flex;gap:8px;">
-          <a href="/admin/rfqs/${q.rfq_header_id}/quote-review" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;">↺ Resend / Requote</a>
+          
+          ${q.status!=='Accepted' ? `<a href="/admin/quotes/${q.id}/edit" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;text-decoration:none;">&#x270F; Edit &amp; Resend</a>` : ''}
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
         </div>
@@ -2199,7 +1783,7 @@ export async function buildAdminRouter() {
           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${q.company||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${q.email}" style="color:#c8932a;">${q.email}</a></div></div>
           <div class="detail-item"><div class="detail-label">RFQ</div><div class="detail-value"><a href="/admin/rfqs/${q.rfq_header_id}" style="color:#c8932a;">${q.rfq_number}</a></div></div>
-          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}</div></div>
+          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}${(() => { if (q.status==='Sent' && q.valid_until) {  const days = Math.ceil((new Date(q.valid_until)-new Date())/86400000);  if (days < 0) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">EXPIRED '+Math.abs(days)+'d AGO</span>';  if (days <= 3) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  if (days <= 7) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  return ' <span style="color:#7a8a9a;font-size:.7rem;margin-left:6px;">'+days+'d left</span>'; } if (q.reissued_count > 0) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Reissued '+q.reissued_count+'x</span>'; return '';})()}</div></div>${q.status==='Rejected' ? `<div class="alert alert-error" style="grid-column:1/-1;">&#9888; Customer rejected${q.rejected_at ? ' on '+new Date(q.rejected_at).toLocaleDateString() : ''}${q.rejection_reason ? '. Reason: '+q.rejection_reason : ''}</div>` : ''}${q.status==='Expired' ? `<div class="alert" style="grid-column:1/-1;background:rgba(122,138,154,0.1);border-color:#7a8a9a;color:#7a8a9a;">&#9201; This quote expired${q.expired_at ? ' on '+new Date(q.expired_at).toLocaleDateString() : (q.valid_until ? ' on '+new Date(q.valid_until).toLocaleDateString() : '')}. Use Reissue or Revise to send a new one.</div>` : ''}
           <div class="detail-item"><div class="detail-label">Valid Until</div><div class="detail-value">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Payment Terms</div><div class="detail-value">${q.payment_terms||'—'}</div></div>
           <div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">${parseFloat(q.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}</div></div>
@@ -2222,10 +1806,15 @@ export async function buildAdminRouter() {
         ${q.notes?`<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">${q.notes}</div></div>`:''}
         ${q.personal_message?`<div class="card"><div class="card-header">Personal Message</div><div class="card-body" style="color:#7a8a9a;font-style:italic;">&ldquo;${q.personal_message}&rdquo;</div></div>`:''}
         <div class="card">
+          <div class="card"><div class="card-header">Revision History (Current: v${q.version || 1})</div><table><thead><tr><th>Version</th><th>Date</th><th>By</th><th>Total</th><th>Note</th><th>Emailed</th></tr></thead><tbody>${versionRows || '<tr><td colspan="6" style="color:#7a8a9a;text-align:center;padding:16px;">Original version only \u2014 no revisions yet</td></tr>'}</tbody></table></div>
+        <div class="card">
           <div class="card-header">RFQ Status History</div>
           <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
           <tbody>${logRows||'<tr><td colspan="3" style="color:#7a8a9a;text-align:center;padding:16px;">No history yet</td></tr>'}</tbody></table>
         </div>
+        <script>
+          
+        </script>
       `));
     } catch(err) {
       res.send(page('Quote','quotes',`<div class="alert alert-error">${err.message}</div>`));
@@ -2294,18 +1883,127 @@ export async function buildAdminRouter() {
       res.send(page('Invoices','invoices',`<div class="alert alert-error">${err.message}</div>`));
     }
   });
+  // Invoice Detail
+  router.get('/invoices/:id', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const ir = await pool.request().input('id', sql.BigInt, req.params.id).query(`
+        SELECT i.*, o.order_number, o.id AS order_id,
+          c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone, c.id AS customer_id,
+          c.billing_address1, c.billing_address2, c.billing_city, c.billing_state, c.billing_zip, c.billing_country
+        FROM invoices i
+        LEFT JOIN orders o ON o.id=i.order_id
+        JOIN customers c ON c.id=i.customer_id
+        WHERE i.id=@id
+      `);
+      if (!ir.recordset.length) return res.send(page('Invoice','invoices','<div class="alert alert-error">Invoice not found.</div>'));
+      const inv = ir.recordset[0];
+      const lines = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query('SELECT * FROM invoice_lines WHERE invoice_id=@id ORDER BY line_number');
+
+      const isPaid = inv.status === 'Paid';
+      const balanceDue = parseFloat(inv.balance_due||0);
+
+      let lineRows = '';
+      lines.recordset.forEach(function(l) {
+        lineRows += '<tr>';
+        lineRows += '<td style="color:#7a8a9a;">' + l.line_number + '</td>';
+        lineRows += '<td class="mono" style="color:#c8932a;">' + (l.nsn||l.part_number||'&mdash;') + '</td>';
+        lineRows += '<td>' + (l.description||'&mdash;') + '</td>';
+        lineRows += '<td>' + l.quantity + '</td>';
+        lineRows += '<td style="color:#7a8a9a;">' + (l.condition_code||'&mdash;') + '</td>';
+        lineRows += '<td style="font-weight:600;">$' + parseFloat(l.unit_price||0).toFixed(2) + '</td>';
+        lineRows += '<td style="font-weight:600;">$' + parseFloat(l.line_total||0).toFixed(2) + '</td>';
+        lineRows += '</tr>';
+      });
+      if (!lineRows) lineRows = '<tr><td colspan="7" style="text-align:center;color:#7a8a9a;padding:16px;">No lines</td></tr>';
+
+      const billToParts = [];
+      if (inv.billing_address1) billToParts.push(inv.billing_address1);
+      if (inv.billing_address2) billToParts.push(inv.billing_address2);
+      const cityLine = [inv.billing_city, inv.billing_state, inv.billing_zip].filter(Boolean).join(', ');
+      if (cityLine) billToParts.push(cityLine);
+      if (inv.billing_country) billToParts.push(inv.billing_country);
+      const billTo = billToParts.length ? billToParts.join('<br>') : '<span style="color:#7a8a9a;">No billing address on file</span>';
+
+      let html = '';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px;">';
+      html += '<div><div class="page-title">' + inv.invoice_number + '</div>';
+      html += '<div class="page-sub" style="margin-bottom:0;">' + inv.customer_name + ' &middot; ' + (inv.company||'') + '</div></div>';
+      html += '<div style="display:flex;gap:8px;">';
+      if (inv.order_id) html += '<a href="/admin/orders/' + inv.order_id + '?tab=payment" class="btn btn-outline btn-sm">View Order</a>';
+      html += '<a href="/admin/invoices" class="btn btn-outline btn-sm">&larr; Back</a></div></div>';
+
+      html += '<div class="detail-grid">';
+      html += '<div class="detail-item"><div class="detail-label">Invoice #</div><div class="detail-value" style="font-family:monospace;color:#c8932a;">' + inv.invoice_number + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Order</div><div class="detail-value">' + (inv.order_number ? '<a href="/admin/orders/' + inv.order_id + '" style="color:#c8932a;">' + inv.order_number + '</a>' : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/' + inv.customer_id + '" style="color:#c8932a;">' + inv.customer_name + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:' + inv.email + '" style="color:#c8932a;">' + inv.email + '</a></div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + statusBadge(inv.status) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Issue Date</div><div class="detail-value">' + (inv.issue_date ? new Date(inv.issue_date).toLocaleDateString() : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Due Date</div><div class="detail-value">' + (inv.due_date ? new Date(inv.due_date).toLocaleDateString() : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Paid Date</div><div class="detail-value">' + (inv.paid_date ? new Date(inv.paid_date).toLocaleDateString() : '&mdash;') + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Subtotal</div><div class="detail-value">$' + parseFloat(inv.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Shipping</div><div class="detail-value">$' + parseFloat(inv.shipping_amount||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Total</div><div class="detail-value" style="font-weight:700;color:#c8932a;font-size:1.1rem;">$' + parseFloat(inv.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '<div class="detail-item"><div class="detail-label">Balance Due</div><div class="detail-value" style="font-weight:700;color:' + (balanceDue>0?'#e05050':'#4caf50') + ';font-size:1.1rem;">$' + balanceDue.toLocaleString('en-US',{minimumFractionDigits:2}) + '</div></div>';
+      html += '</div>';
+
+      html += '<div class="card"><div class="card-header">Bill To</div><div class="card-body" style="line-height:1.6;">';
+      html += '<strong>' + inv.customer_name + '</strong>';
+      if (inv.company) html += '<br>' + inv.company;
+      html += '<br>' + billTo + '</div></div>';
+
+      html += '<div class="card"><div class="card-header">Line Items (' + lines.recordset.length + ')</div>';
+      html += '<table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>';
+      html += '<tbody>' + lineRows + '</tbody></table>';
+      html += '<div style="padding:16px;text-align:right;border-top:1px solid #1e2d42;">';
+      html += '<span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong>$' + parseFloat(inv.subtotal||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</strong></span>';
+      if (parseFloat(inv.shipping_amount||0) > 0) {
+        html += '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong>$' + parseFloat(inv.shipping_amount).toFixed(2) + '</strong></span>';
+      }
+      html += '<span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">$' + parseFloat(inv.total_amount||0).toLocaleString('en-US',{minimumFractionDigits:2}) + '</strong></span>';
+      html += '</div></div>';
+
+      if (!isPaid && inv.order_id) {
+        html += '<div class="card"><div class="card-header">Payment</div><div class="card-body">';
+        html += '<p style="font-size:.85rem;color:#7a8a9a;margin-bottom:12px;">To mark this invoice paid, use the order payment tab.</p>';
+        html += '<a href="/admin/orders/' + inv.order_id + '?tab=payment" class="btn btn-gold">Go to Order Payment Tab &rarr;</a>';
+        html += '</div></div>';
+      } else if (isPaid) {
+        html += '<div class="alert alert-success">&#10004; This invoice is paid in full.</div>';
+      }
+
+      if (inv.notes) {
+        html += '<div class="card"><div class="card-header">Notes</div><div class="card-body" style="color:#7a8a9a;">' + inv.notes + '</div></div>';
+      }
+
+      res.send(page('Invoice ' + inv.invoice_number, 'invoices', html));
+    } catch(err) {
+      console.error('Invoice detail error:', err);
+      res.send(page('Invoice','invoices','<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
+
 
   // Suppliers
   router.get('/suppliers', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
+      const filterMode = (req.query.filter || 'all').toLowerCase();
+      let whereClause = '';
+      if (filterMode === 'active') whereClause = "WHERE status='Active'";
+      else if (filterMode === 'preferred') whereClause = "WHERE status='Active' AND is_preferred=1";
+      else if (filterMode === 'cert8130') whereClause = "WHERE status='Active' AND is_certified_8130=1";
+      else if (filterMode === 'inactive') whereClause = "WHERE status<>'Active'";
       const result = await pool.request().query(`
-        SELECT id, name, contact_name, email, phone, country, status, created_at
-        FROM suppliers ORDER BY name ASC
+        SELECT id, company_name AS name, contact_name, email, phone, country, status, is_preferred, is_certified_8130, created_at
+        FROM suppliers ${whereClause} ORDER BY company_name ASC
       `);
-      const rows = result.recordset.map(s => `<tr>
-        <td style="font-weight:600;">${s.name}</td>
+      const rows = result.recordset.map(s => `<tr data-supplier-row data-href="/admin/suppliers/${s.id}" style="cursor:pointer;">
+        <td style="font-weight:600;color:#c8932a;">${s.name}</td>
         <td style="color:#7a8a9a;">${s.contact_name||'—'}</td>
         <td style="color:#7a8a9a;font-size:.8rem;">${s.email||'—'}</td>
         <td style="color:#7a8a9a;">${s.phone||'—'}</td>
@@ -2313,12 +2011,42 @@ export async function buildAdminRouter() {
         <td>${statusBadge(s.status)}</td>
       </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:#7a8a9a;padding:24px;">No suppliers yet</td></tr>';
       res.send(page('Suppliers','suppliers',`
-        <div class="page-title">Suppliers</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div class="page-title">Suppliers</div><a href="/admin/suppliers/new" class="btn btn-gold">+ New Supplier</a></div>
         <div class="page-sub">Verified supplier network</div>
+        <div id="supplierFilters" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">${['all','active','preferred','cert8130','inactive'].map(f=>{const labels={all:'All',active:'Active',preferred:'Preferred',cert8130:'8130 Certified',inactive:'Inactive'};return '<a href="/admin/suppliers'+(f==='all'?'':'?filter='+f)+'" class="btn btn-sm '+(filterMode===f?'btn-gold':'btn-outline')+'" style="font-size:.7rem;">'+labels[f]+'</a>'}).join('')}</div>
         <div class="card">
-          <table><thead><tr><th>Company</th><th>Contact</th><th>Email</th><th>Phone</th><th>Country</th><th>Status</th></tr></thead>
+          <table id="suppliersTable"><thead><tr><th data-sort="0" style="cursor:pointer;user-select:none;">Company &#x25B2;&#x25BC;</th><th data-sort="1" style="cursor:pointer;user-select:none;">Contact &#x25B2;&#x25BC;</th><th>Email</th><th>Phone</th><th data-sort="4" style="cursor:pointer;user-select:none;">Country &#x25B2;&#x25BC;</th><th data-sort="5" style="cursor:pointer;user-select:none;">Status &#x25B2;&#x25BC;</th></tr></thead>
           <tbody>${rows}</tbody></table>
-        </div>`));
+        </div>
+        <script>/* SUPPLIER_ROWCLICK_V1 */(function(){
+          document.querySelectorAll("tr[data-supplier-row]").forEach(function(tr){
+            tr.addEventListener("click", function(e){
+              if (e.target.tagName === "A" || e.target.closest("a")) return;
+              if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+              window.location = tr.getAttribute("data-href");
+            });
+            tr.addEventListener("mouseenter", function(){ tr.style.background="rgba(200,147,42,0.08)"; });
+            tr.addEventListener("mouseleave", function(){ tr.style.background=""; });
+          });
+          var t = document.getElementById("suppliersTable"); if (!t) return;
+          var dirs = {};
+          t.querySelectorAll("th[data-sort]").forEach(function(h){
+            h.addEventListener("click", function(){
+              var col = parseInt(h.getAttribute("data-sort"));
+              var dir = dirs[col] = (dirs[col] === "asc" ? "desc" : "asc");
+              var tbody = t.querySelector("tbody");
+              var rows = Array.from(tbody.querySelectorAll("tr[data-supplier-row]"));
+              rows.sort(function(a,b){
+                var av = (a.children[col].textContent || "").trim().toLowerCase();
+                var bv = (b.children[col].textContent || "").trim().toLowerCase();
+                if (av < bv) return dir==="asc"?-1:1;
+                if (av > bv) return dir==="asc"?1:-1;
+                return 0;
+              });
+              rows.forEach(function(r){ tbody.appendChild(r); });
+            });
+          });
+        })();</script>`));
     } catch(err) {
       res.send(page('Suppliers','suppliers',`<div class="alert alert-error">${err.message}</div>`));
     }
@@ -2404,5 +2132,382 @@ export async function buildAdminRouter() {
   });
 
   mountOrderRoutes(router, requireAuth, page);
+  mountSupplierRoutes(router, requireAuth, page);
+  // EDIT_RESEND_V1 ============================================================
+  // GET /admin/quotes/:id/edit  — show pre-filled edit form for an existing quote
+  router.get('/quotes/:id/edit', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qr = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT q.*, c.first_name+\' \'+c.last_name AS customer_name, c.email, c.company FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=@id');
+      if (!qr.recordset.length) return res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">Quote not found.</div>'));
+      const q = qr.recordset[0];
+      if (q.status === 'Accepted') {
+        return res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">Cannot edit an accepted quote. To fix typos on accepted quotes, use the order page Lines tab.</div><div style="margin-top:12px;"><a href="/admin/quotes/' + q.id + '" class="btn btn-outline">&larr; Back to Quote</a></div>'));
+      }
+      const linesR = await pool.request().input('qid', sql.BigInt, req.params.id).query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      const srcsR = await pool.request().input('qid2', sql.BigInt, req.params.id).query('SELECT qls.*, s.company_name AS supplier_name FROM quote_line_sources qls LEFT JOIN suppliers s ON s.id=qls.supplier_id INNER JOIN quote_lines ql ON ql.id=qls.quote_line_id WHERE ql.quote_id=@qid2 ORDER BY qls.quote_line_id, qls.sort_order');
+      const srcsByLine = {};
+      srcsR.recordset.forEach(function(src) { if (!srcsByLine[src.quote_line_id]) srcsByLine[src.quote_line_id] = []; srcsByLine[src.quote_line_id].push(src); });
+      // SUPPLIER_DROPDOWN_V1: load suppliers for dropdown
+      const _suppliersR = await pool.request().query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
+      const _supplierOptions = _suppliersR.recordset.map(function(s2) { return '<option value="' + s2.id + '">' + (s2.company_name || ('Supplier ' + s2.id)).replace(/</g,'&lt;') + '</option>'; }).join('');
+      var html = '';
+      html += '<div class="page-title">Edit Quote ' + q.quote_number + ' &mdash; v' + (q.version || 1) + ' \u2192 v' + ((q.version || 1) + 1) + '</div>';
+      html += '<div class="page-sub">Editing creates a new version. Customer will receive an email with the revised PDF.</div>';
+      html += '<form method="POST" action="/admin/quotes/' + q.id + '/edit-save">';
+      html += '<div class="card"><div class="card-body">';
+      html += '<div class="detail-grid">';
+      html += '<div><div class="detail-label">Valid Until</div><input type="date" name="valid_until" value="' + (q.valid_until ? new Date(q.valid_until).toISOString().substring(0,10) : '') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+      html += '<div><div class="detail-label">Payment Terms</div><input type="text" name="payment_terms" value="' + (q.payment_terms || '').replace(/"/g, '&quot;') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
+      html += '</div>';
+      html += '</div></div>';
+      html += '<div class="card" style="margin-top:14px;"><div class="card-header">Line Items</div><div class="card-body">';
+      linesR.recordset.forEach(function(l, idx) {
+        html += '<div style="margin-bottom:14px;padding:12px;background:#0a1628;border:1px solid #1e2d42;border-radius:4px;">';
+        html += '<input type="hidden" name="lines[' + idx + '][id]" value="' + l.id + '"/>';
+        html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">';
+        html += '<div><div class="detail-label">NSN</div><input type="text" name="lines[' + idx + '][nsn]" value="' + ((l.nsn || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Part Number</div><input type="text" name="lines[' + idx + '][part_number]" value="' + ((l.part_number || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div style="grid-column:span 2;"><div class="detail-label">Item Name</div><input type="text" name="lines[' + idx + '][item_name]" value="' + ((l.item_name || '').toString().replace(/"/g, '&quot;')) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Condition</div><input type="text" name="lines[' + idx + '][condition_code]" value="' + (l.condition_code || '') + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Qty</div><input type="number" min="1" name="lines[' + idx + '][quantity]" value="' + (l.quantity || 1) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Unit Cost</div><input type="number" step="0.01" name="lines[' + idx + '][unit_cost]" value="' + parseFloat(l.unit_cost || 0).toFixed(2) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Unit Price</div><input type="number" step="0.01" name="lines[' + idx + '][unit_price]" value="' + parseFloat(l.unit_price || 0).toFixed(2) + '" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '<div><div class="detail-label">Lead Time</div><input type="text" name="lines[' + idx + '][lead_time_text]" value="' + ((l.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 7-10 days" style="width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+        html += '</div>';
+        var srcs = srcsByLine[l.id] || [];
+        // SOURCES_FULL_EDIT_V1
+        html += '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #1e2d42;"><div style="font-size:.65rem;color:#c8932a;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;">Sources (editable)</div>';
+        html += '<div id="srcs-line-' + l.id + '">';
+        var srcs = srcsByLine[l.id] || [];
+        srcs.forEach(function(src, sIdx) {
+          var rk = l.id + '_' + sIdx;
+          html += '<div data-srcrow="' + rk + '" style="display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;">';
+          html += '<input type="hidden" name="line_' + l.id + '_src_' + sIdx + '[id]" value="' + src.id + '"/>';
+          html += '<div style="position:relative;"><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><input type="text" class="sup-combo" data-target-id="sup_' + l.id + '_' + sIdx + '" value="' + ((src.supplier_name || '').toString().replace(/"/g, '&quot;')) + '" placeholder="Type to search suppliers..." autocomplete="off" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 24px 5px 8px;"/><div class="sup-arrow" style="position:absolute;right:8px;top:24px;color:#c8932a;pointer-events:none;font-size:.7rem;">\u25BC</div><div class="sup-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#0a1628;border:1px solid #c8932a;border-top:none;max-height:200px;overflow-y:auto;z-index:1000;"></div><input type="hidden" id="sup_' + l.id + '_' + sIdx + '" name="line_' + l.id + '_src_' + sIdx + '[supplier_id]" value="' + src.supplier_id + '" required/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="line_' + l.id + '_src_' + sIdx + '[allocated_qty]" value="' + (src.allocated_qty || 1) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="line_' + l.id + '_src_' + sIdx + '[unit_cost]" value="' + parseFloat(src.unit_cost || 0).toFixed(2) + '" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="line_' + l.id + '_src_' + sIdx + '[lead_time_text]" value="' + ((src.lead_time_text || '').toString().replace(/"/g, '&quot;')) + '" placeholder="e.g. 5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">8130</div><input type="checkbox" name="line_' + l.id + '_src_' + sIdx + '[has_8130]" value="1"' + (src.has_8130 ? ' checked' : '') + '/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">CoC</div><input type="checkbox" name="line_' + l.id + '_src_' + sIdx + '[has_coc]" value="1"' + (src.has_coc ? ' checked' : '') + '/></div>';
+          html += '<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Trace</div><input type="checkbox" name="line_' + l.id + '_src_' + sIdx + '[has_trace]" value="1"' + (src.has_trace ? ' checked' : '') + '/></div>';
+          html += '<div><button type="button" onclick="this.closest(&quot;[data-srcrow]&quot;).remove();" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:5px 8px;cursor:pointer;border-radius:3px;">&#x2716;</button></div>';
+          html += '</div>';
+        });
+        html += '</div>';
+        html += '<button type="button" onclick="addSrcRow(' + l.id + ')" style="background:rgba(200,147,42,0.1);border:1px solid #c8932a;color:#c8932a;padding:5px 12px;cursor:pointer;border-radius:3px;font-size:.78rem;">+ Add Source</button>';
+        html += '</div>';
+        var srcCount = srcs.length;
+        html += '<input type="hidden" name="line_' + l.id + '_src_count_initial" value="' + srcCount + '"/>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+      html += '<div class="card" style="margin-top:14px;"><div class="card-body">';
+      html += '<div class="detail-label">Revision Note (visible to admin only, optional)</div>';
+      html += '<input type="text" name="revision_note" placeholder="e.g. Updated price per Mike at Acme" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;margin-bottom:10px;"/>';
+      /* QUOTE_EMAIL_v1: CC recipients input on edit page */
+html += '<div style="margin-bottom:10px;">';
+html += '<div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(comma-separated, optional)</span></div>';
+html += '<input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/>';
+html += '</div>';
+      html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" name="email_customer" value="1" checked/> Email customer the revised quote PDF</label>';
+      html += '</div></div>';
+      html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">';
+      html += '<a href="/admin/quotes/' + q.id + '" class="btn btn-outline">Cancel</a>';
+      html += '<button type="submit" class="btn btn-gold">Save & Resend</button>';
+      // SOURCES_FULL_EDIT_V1 - JS for adding new source rows
+      html += '<script>';
+      html += 'window.__SUPPLIERS = ' + JSON.stringify(_suppliersR.recordset) + ';';
+      html += 'window.__supplierOptionsHTML = function(sel) { return window.__SUPPLIERS.map(function(s) { var name = (s.company_name||"").replace(/</g,"&lt;"); return "<option value=\\"" + s.id + "\\"" + (sel == s.id ? " selected" : "") + ">" + name + "</option>"; }).join(""); };';
+      html += 'window.addSrcRow = function(lineId) {';
+      html += '  var container = document.getElementById("srcs-line-" + lineId);';
+      html += '  if (!container) return;';
+      html += '  var existing = container.querySelectorAll("[data-srcrow]");';
+      html += '  var nextIdx = existing.length;';
+      html += '  while (document.querySelector("[data-srcrow=\\\"" + lineId + "_" + nextIdx + "\\\"]")) nextIdx++;';
+      html += '  var prefix = "line_" + lineId + "_src_" + nextIdx;';
+      html += '  var div = document.createElement("div");';
+      html += '  div.setAttribute("data-srcrow", lineId + "_" + nextIdx);';
+      html += '  div.style.cssText = "display:grid;grid-template-columns:1.5fr 0.5fr 0.7fr 1fr 0.5fr 0.5fr 0.5fr 0.3fr;gap:6px;align-items:end;margin-bottom:6px;padding:6px;background:#0e1828;border:1px solid #1e2d42;border-radius:3px;";';
+      html += '  div.innerHTML =';
+      html += '    \'<input type="hidden" name="\' + prefix + \'[id]" value=""/>\' +';
+      html += '    \'<div style="position:relative;"><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Supplier</div><input type="text" class="sup-combo" data-target-id="sup_new_\' + Date.now() + \'_\' + nextIdx + \'" placeholder="Type to search suppliers..." autocomplete="off" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 24px 5px 8px;"/><div style="position:absolute;right:8px;top:24px;color:#c8932a;pointer-events:none;font-size:.7rem;">\\u25BC</div><div class="sup-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:#0a1628;border:1px solid #c8932a;border-top:none;max-height:200px;overflow-y:auto;z-index:1000;"></div><input type="hidden" id="sup_new_\' + Date.now() + \'_\' + nextIdx + \'" name="\' + prefix + \'[supplier_id]" required/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="\' + prefix + \'[allocated_qty]" value="1" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Unit Cost</div><input type="number" step="0.01" name="\' + prefix + \'[unit_cost]" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Lead Time</div><input type="text" name="\' + prefix + \'[lead_time_text]" placeholder="5 days" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">8130</div><input type="checkbox" name="\' + prefix + \'[has_8130]" value="1"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">CoC</div><input type="checkbox" name="\' + prefix + \'[has_coc]" value="1"/></div>\' +';
+      html += '    \'<div><div style="font-size:.6rem;color:#7a8a9a;margin-bottom:2px;">Trace</div><input type="checkbox" name="\' + prefix + \'[has_trace]" value="1"/></div>\' +';
+      html += '    \'<div><button type="button" onclick="this.closest(\\\'[data-srcrow]\\\').remove();" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:5px 8px;cursor:pointer;border-radius:3px;">\\u2716</button></div>\';';
+      html += '  container.appendChild(div);';
+      html += '};';
+      html += 'function renderSupOptions(combo, query) {';
+            html += '  var dd = combo.parentElement.querySelector(".sup-dropdown");';
+            html += '  if (!dd) return;';
+            html += '  var q = (query || "").toLowerCase();';
+            html += '  var matches = window.__SUPPLIERS.filter(function(s) { return !q || (s.company_name||"").toLowerCase().includes(q); }).slice(0, 50);';
+            html += '  if (!matches.length) { dd.innerHTML = "<div style=\\"padding:8px;color:#7a8a9a;font-size:.78rem;\\">No suppliers match</div>"; dd.style.display = "block"; return; }';
+            html += '  dd.innerHTML = matches.map(function(s) { var name = (s.company_name||"").replace(/</g,"&lt;"); return "<div class=\\"sup-opt\\" data-id=\\"" + s.id + "\\" data-name=\\"" + name.replace(/\\"/g, "&quot;") + "\\" style=\\"padding:6px 10px;cursor:pointer;font-size:.82rem;color:#eef1f5;border-bottom:1px solid #1e2d42;\\">" + name + "</div>"; }).join("");';
+            html += '  dd.style.display = "block";';
+            html += '}';
+            html += 'document.addEventListener("focus", function(e) {';
+            html += '  if (!e.target.classList || !e.target.classList.contains("sup-combo")) return;';
+            html += '  renderSupOptions(e.target, e.target.value);';
+            html += '}, true);';
+            html += 'document.addEventListener("input", function(e) {';
+            html += '  if (!e.target.classList || !e.target.classList.contains("sup-combo")) return;';
+            html += '  var hid = document.getElementById(e.target.getAttribute("data-target-id"));';
+            html += '  var match = window.__SUPPLIERS.find(function(s) { return (s.company_name||"").toLowerCase() === e.target.value.trim().toLowerCase(); });';
+            html += '  if (hid) hid.value = match ? match.id : "";';
+            html += '  e.target.style.borderColor = match ? "#4caf50" : (e.target.value ? "#e05050" : "#1e2d42");';
+            html += '  renderSupOptions(e.target, e.target.value);';
+            html += '});';
+            html += 'document.addEventListener("click", function(e) {';
+            html += '  var opt = e.target.closest && e.target.closest(".sup-opt");';
+            html += '  if (opt) {';
+            html += '    var dd = opt.parentElement;';
+            html += '    var wrap = dd.parentElement;';
+            html += '    var input = wrap.querySelector(".sup-combo");';
+            html += '    var hid = document.getElementById(input.getAttribute("data-target-id"));';
+            html += '    input.value = opt.getAttribute("data-name");';
+            html += '    if (hid) hid.value = opt.getAttribute("data-id");';
+            html += '    input.style.borderColor = "#4caf50";';
+            html += '    dd.style.display = "none";';
+            html += '    return;';
+            html += '  }';
+            html += '  if (!e.target.classList || !e.target.classList.contains("sup-combo")) {';
+            html += '    document.querySelectorAll(".sup-dropdown").forEach(function(dd) { dd.style.display = "none"; });';
+            html += '  }';
+            html += '});';
+      html += '<\\/script>';
+      html += '</div></form>';
+      res.send(page('Edit Quote', 'quotes', html));
+    } catch (err) { console.error('Quote edit form error:', err); res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">' + err.message + '</div>')); }
+  });
+
+  // POST /admin/quotes/:id/edit-save — snapshot old version, update current, optionally email
+  router.post('/quotes/:id/edit-save', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const qid = parseInt(req.params.id);
+      const qCur = await pool.request().input('id', sql.BigInt, qid).query('SELECT q.*, c.email, c.first_name+\' \'+c.last_name AS customer_name FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=@id');
+      if (!qCur.recordset.length) return res.redirect('/admin/quotes/' + qid + '?error=Quote+not+found');
+      const q = qCur.recordset[0];
+      if (q.status === 'Accepted') return res.redirect('/admin/quotes/' + qid + '?error=Cannot+edit+accepted+quote');
+
+      // Snapshot current state before changes
+      const linesBefore = await pool.request().input('qid', sql.BigInt, qid).query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      const srcsBefore = await pool.request().input('qid', sql.BigInt, qid).query('SELECT qls.* FROM quote_line_sources qls INNER JOIN quote_lines ql ON ql.id=qls.quote_line_id WHERE ql.quote_id=@qid');
+      const snapshot = JSON.stringify({ quote: q, lines: linesBefore.recordset, sources: srcsBefore.recordset });
+
+      const curVer = q.version || 1;
+      await pool.request()
+        .input('qid', sql.BigInt, qid)
+        .input('ver', sql.Int, curVer)
+        .input('snap', sql.NVarChar(sql.MAX), snapshot)
+        .input('sub', sql.Decimal(12,2), q.subtotal || 0)
+        .input('tot', sql.Decimal(12,2), q.total_amount || 0)
+        .input('vu', sql.Date, q.valid_until)
+        .input('by', sql.NVarChar(255), 'admin')
+        .input('note', sql.NVarChar(sql.MAX), b.revision_note || null)
+        .input('sent', sql.Bit, q.status === 'Sent' ? 1 : 0)
+        .query('INSERT INTO quote_versions (quote_id, version, snapshot_json, subtotal, total, valid_until, revised_by, revision_note, email_sent) VALUES (@qid, @ver, @snap, @sub, @tot, @vu, @by, @note, @sent)');
+
+      // Apply edits to quote header
+      const newVer = curVer + 1;
+      await pool.request()
+        .input('id', sql.BigInt, qid)
+        .input('ver', sql.Int, newVer)
+        .input('vu', sql.Date, b.valid_until || q.valid_until)
+        .input('pt', sql.NVarChar(100), b.payment_terms || q.payment_terms)
+        .query("UPDATE quotes SET version=@ver, valid_until=@vu, payment_terms=@pt, status='Sent', rejected_at=NULL, rejection_reason=NULL, expired_at=NULL, updated_at=GETDATE() WHERE id=@id");
+
+      // Apply line edits + recompute totals
+      let newSubtotal = 0, newTotalCost = 0, newTotalMargin = 0;
+      const editLines = b.lines || [];
+      // SOURCES_FULL_EDIT_V1: collect submitted sources keyed by line id
+      const _srcsByLine = {};
+      Object.keys(b).forEach(function(k) {
+        var m = k.match(/^line_(\d+)_src_(\d+)$/);
+        if (!m) return;
+        var lid = parseInt(m[1]);
+        if (!_srcsByLine[lid]) _srcsByLine[lid] = [];
+        var data = b[k];
+        if (!data || typeof data !== 'object') return;
+        _srcsByLine[lid].push({
+          id: data.id ? parseInt(data.id) : null,
+          supplier_id: data.supplier_id ? parseInt(data.supplier_id) : null,
+          allocated_qty: data.allocated_qty ? parseInt(data.allocated_qty) : 0,
+          unit_cost: data.unit_cost ? parseFloat(data.unit_cost) : 0,
+          lead_time_text: data.lead_time_text || null,
+          has_8130: data.has_8130 === '1' ? 1 : 0,
+          has_coc: data.has_coc === '1' ? 1 : 0,
+          has_trace: data.has_trace === '1' ? 1 : 0
+        });
+      });
+      for (const ln of editLines) {
+        const lid = parseInt(ln.id);
+        const qty = parseInt(ln.quantity) || 0;
+        var uc = parseFloat(ln.unit_cost) || 0;
+        // SOURCES_FULL_EDIT_V1: recompute uc from sources if any submitted
+        var _srcs = _srcsByLine[parseInt(ln.id)] || [];
+        if (_srcs.length) {
+          var totalQty = 0, totalCost = 0;
+          _srcs.forEach(function(s2) { totalQty += s2.allocated_qty; totalCost += s2.allocated_qty * s2.unit_cost; });
+          if (totalQty > 0) uc = totalCost / totalQty;
+        }
+        const up = parseFloat(ln.unit_price) || 0;
+        const lineTotal = qty * up;
+        const lineCost = qty * uc;
+        const lineMargin = lineTotal - lineCost;
+        const marginPct = up > 0 ? Math.min(999.99, Math.max(-999.99, (lineMargin / lineTotal) * 100)) : 0;
+        const markupPct = uc > 0 ? Math.min(999.99, Math.max(-999.99, ((up - uc) / uc) * 100)) : 0;
+        newSubtotal += lineTotal;
+        newTotalCost += lineCost;
+        newTotalMargin += lineMargin;
+        await pool.request()
+          .input('id', sql.BigInt, lid)
+          .input('nsn', sql.NVarChar(20), ln.nsn || null)
+          .input('pn', sql.NVarChar(100), ln.part_number || null)
+          .input('iname', sql.NVarChar(255), ln.item_name || null)
+          .input('cond', sql.NVarChar(5), ln.condition_code || null)
+          .input('qty', sql.Int, qty)
+          .input('uc', sql.Decimal(10,2), uc)
+          .input('up', sql.Decimal(10,2), up)
+          .input('lt', sql.Decimal(12,2), lineTotal)
+          .input('lc', sql.Decimal(12,2), lineCost)
+          .input('lm', sql.Decimal(12,2), lineMargin)
+          .input('mpct', sql.Decimal(5,2), marginPct)
+          .input('mkp', sql.Decimal(5,2), markupPct)
+          .input('ltt', sql.NVarChar(100), ln.lead_time_text || null)
+          .query('UPDATE quote_lines SET nsn=@nsn, part_number=@pn, item_name=@iname, condition_code=@cond, quantity=@qty, unit_cost=@uc, unit_price=@up, line_total=@lt, line_cost=@lc, line_margin=@lm, margin_pct=@mpct, markup_pct=@mkp, lead_time_text=@ltt WHERE id=@id');
+        // SOURCES_FULL_EDIT_V1: rebuild quote_line_sources for this line
+        await pool.request().input('qlid', sql.BigInt, parseInt(ln.id))
+          .query('DELETE FROM quote_line_sources WHERE quote_line_id=@qlid');
+        var _sortOrder = 1;
+        for (const src of _srcs) {
+          if (!src.supplier_id) continue;
+          await pool.request()
+            .input('qlid2', sql.BigInt, parseInt(ln.id))
+            .input('sid', sql.BigInt, src.supplier_id)
+            .input('aq', sql.Int, src.allocated_qty)
+            .input('uc2', sql.Decimal(10,2), src.unit_cost)
+            .input('ltt2', sql.NVarChar(sql.MAX), src.lead_time_text)
+            .input('h81', sql.Bit, src.has_8130)
+            .input('hcoc', sql.Bit, src.has_coc)
+            .input('htr', sql.Bit, src.has_trace)
+            .input('so', sql.Int, _sortOrder++)
+            .query('INSERT INTO quote_line_sources (quote_line_id, supplier_id, allocated_qty, unit_cost, lead_time_text, has_8130, has_coc, has_trace, sort_order, is_selected) VALUES (@qlid2, @sid, @aq, @uc2, @ltt2, @h81, @hcoc, @htr, @so, 1)');
+        }
+      }
+      await pool.request()
+        .input('id', sql.BigInt, qid)
+        .input('sub', sql.Decimal(12,2), newSubtotal)
+        .input('tot', sql.Decimal(12,2), newSubtotal)
+        .input('tc', sql.Decimal(12,2), newTotalCost)
+        .input('tm', sql.Decimal(12,2), newTotalMargin)
+        .query('UPDATE quotes SET subtotal=@sub, total_amount=@tot, total_cost=@tc, total_margin=@tm WHERE id=@id');
+
+      // Send email if requested
+      if (b.email_customer === '1') {
+        try {
+          const nodemailerMod = await import('nodemailer');
+          const nodemailer = nodemailerMod.default;
+          if (process.env.SMTP_HOST) {
+            const transport = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT || '587'), auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+            const body = '<p>Hello ' + q.customer_name + ',</p><p>Your quote ' + q.quote_number + ' has been revised (version ' + newVer + '). Please review and let us know if you have any questions.</p><p>View: <a href="https://jupiteroneusa.com/quote/' + q.accept_token + '">https://jupiteroneusa.com/quote/' + q.accept_token + '</a></p><p>Thank you,<br/>Jupiter One USA</p>';
+            /* QUOTE_EMAIL_v1: PDF attachment + CC recipients */
+            let pdfBuf = null;
+            try {
+              const pdfMod = await import('../services/pdfService.js');
+              const linesR = await pool.request().input('qidPdf', sql.BigInt, qid)
+                .query('SELECT * FROM quote_lines WHERE quote_id=@qidPdf ORDER BY line_number');
+              pdfBuf = await pdfMod.generateQuotePdf({ quote: q, lines: linesR.recordset });
+            } catch (e) { console.error('PDF generation error:', e.message); }
+            
+            const ccList = (b.cc_emails || '')
+              .split(',')
+              .map(function(s){ return s.trim(); })
+              .filter(function(s){ return s && s.indexOf('@') > -1; });
+            
+            const mailOptions = {
+              from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
+              to: q.email,
+              subject: 'Revised Quote ' + q.quote_number + ' (v' + newVer + ')',
+              html: body
+            };
+            if (ccList.length > 0) mailOptions.cc = ccList;
+            if (pdfBuf) {
+              mailOptions.attachments = [{
+                filename: 'Quote_' + q.quote_number + '_v' + newVer + '.pdf',
+                content: pdfBuf,
+                contentType: 'application/pdf'
+              }];
+            } else {
+              console.warn('Sending quote email WITHOUT PDF attachment (generation failed)');
+            }
+            await transport.sendMail(mailOptions);
+            console.log('Quote ' + q.quote_number + ' v' + newVer + ' emailed to ' + q.email + (ccList.length ? ' (cc: ' + ccList.join(',') + ')' : '') + (pdfBuf ? ' WITH PDF' : ' WITHOUT PDF'));
+          }
+        } catch (mailErr) { console.error('Quote revise email error:', mailErr.message); }
+      }
+      res.redirect('/admin/quotes/' + qid + '?saved=1&new_version=' + newVer);
+    } catch (err) { console.error('Quote edit-save error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
+  });
+
+  // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
+  router.post('/quotes/:id/reissue', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const days = parseInt(req.body.valid_days || 30);
+      const newValid = new Date(Date.now() + days*24*60*60*1000);
+      await pool.request()
+        .input('id', sql.BigInt, req.params.id)
+        .input('vu', sql.Date, newValid)
+        .query("UPDATE quotes SET status='Sent', valid_until=@vu, expired_at=NULL, rejected_at=NULL, rejection_reason=NULL, reissued_count=ISNULL(reissued_count,0)+1, updated_at=GETDATE() WHERE id=@id");
+      res.redirect('/admin/quotes/'+req.params.id+'?reissued=1');
+    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  // Phase B3: Revise quote - mark old quote Superseded, redirect admin to new quote builder
+  router.post('/quotes/:id/revise', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qR = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT rfq_id FROM quotes WHERE id=@id');
+      if (!qR.recordset.length) return res.redirect('/admin/quotes?error=Quote+not+found');
+      const rfqId = qR.recordset[0].rfq_id;
+      // Mark current quote as Superseded (keep history)
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
+      // Redirect to existing requote flow on the RFQ
+      res.redirect('/admin/rfqs/'+rfqId+'/quote-review');
+    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  
+  // Phase B3: Revise quote - mark old quote Superseded, redirect admin to new quote builder
+  router.post('/quotes/:id/revise', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qR = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT rfq_id FROM quotes WHERE id=@id');
+      if (!qR.recordset.length) return res.redirect('/admin/quotes?error=Quote+not+found');
+      const rfqId = qR.recordset[0].rfq_id;
+      // Mark current quote as Superseded (keep history)
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
+      // Redirect to existing requote flow on the RFQ
+      res.redirect('/admin/rfqs/'+rfqId+'/quote-review');
+    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  mountSupplierPoRoutes(router, requireAuth, page);
+mountAdminDocRoutes(router, requireAuth);
+  mountQuoteBuilder(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };
 }

@@ -82,6 +82,39 @@ export function mountQuoteBuilder(router, requireAuth, page) {
     }
   });
 
+
+  // ==========================================================================
+  // SAVE_DRAFT_v1: POST /rfqs/:id/quote-draft-full  (save in-progress work)
+  // ==========================================================================
+  router.post('/rfqs/:id/quote-draft-full', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const result = await saveQuoteDraftFull(req.params.id, req.body);
+      res.json({ ok: true, quote_number: result.quote_number });
+    } catch (err) {
+      console.error('quote-draft-full save error:', err);
+      res.json({ ok: false, error: err.message });
+    }
+  });
+
+  // ==========================================================================
+  // SAVE_DRAFT_v1: GET /rfqs/:id/quote-review-draft-full  (resume saved work)
+  // ==========================================================================
+  router.get('/rfqs/:id/quote-review-draft-full', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const ctx = await loadContext(req.params.id);
+      if (!ctx) return res.redirect('/admin/rfqs');
+      const submitted = await loadDraftAsSubmitted(req.params.id, ctx);
+      if (!submitted) return res.redirect('/admin/rfqs/' + req.params.id + '/quote-review');
+      const banner = '<div class="alert" style="background:rgba(76,175,80,0.1);border-color:#4caf50;color:#4caf50;margin-bottom:14px;">Resuming saved draft &mdash; ' + escHtml(submitted.__draftNumber || '') + '</div>';
+      res.send(page('Resume Draft', 'rfqs', banner + renderForm(ctx, submitted)));
+    } catch (err) {
+      console.error('quote-review-draft-full error:', err);
+      res.send(page('Resume Draft', 'rfqs', '<div class="alert alert-error">' + err.message + '</div>'));
+    }
+  });
+
 }
 
 // ============================================================================
@@ -241,6 +274,7 @@ function renderForm(ctx, submitted) {
 
   html += '<div style="display:flex;gap:10px;">';
   html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
+  html += '<button type="button" id="save-draft-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" onclick="saveDraftFull()">Save</button>';
   html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Cancel</a>';
   html += '</div>';
   html += '</form>';
@@ -250,6 +284,7 @@ function renderForm(ctx, submitted) {
 
   // Client-side scripts: add/remove sources, recalc margins, validate sums on submit
   html += renderClientScript(rfqLines.length);
+  html += '<script>(function(){var d=false;document.querySelectorAll("#quote-send-form input,#quote-send-form select,#quote-send-form textarea").forEach(function(el){el.addEventListener("input",function(){d=true;});el.addEventListener("change",function(){d=true;});});window.saveDraftFull=function(){var f=document.getElementById("quote-send-form");if(!f)return;var fd=new URLSearchParams(new FormData(f));var b=document.getElementById("save-draft-btn");if(b){b.textContent="Saving...";}fetch("/admin/rfqs/' + rfq.id + '/quote-draft-full",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){d=false;if(b){b.textContent=j.ok?"Draft Saved \u2713":"Save Failed";b.style.color=j.ok?"#4caf50":"#e05050";setTimeout(function(){b.textContent="Save Draft";b.style.color="#4caf50";},2500);}}).catch(function(){if(b){b.textContent="Save Failed";b.style.color="#e05050";}});};var ff=document.getElementById("quote-send-form");if(ff){ff.addEventListener("submit",function(){d=false;});}window.addEventListener("beforeunload",function(e){if(d){e.preventDefault();e.returnValue="";}});})();</scr'+'ipt>';
 
   return html;
 }
@@ -605,6 +640,219 @@ async function saveQuote(rfqId, body, adminId) {
 // ============================================================================
 // HTML escape helpers
 // ============================================================================
+async function saveQuoteDraftFull(rfqId, body) {
+  const pool = await getPool();
+  const rfqR = await pool.request().input('id', sql.BigInt, rfqId)
+    .query('SELECT h.*, c.id AS customer_id FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
+  if (!rfqR.recordset.length) throw new Error('RFQ not found');
+  const rfq = rfqR.recordset[0];
+
+  const linesObj = body.lines || {};
+  const lineKeys = Object.keys(linesObj).sort(function(a, b) { return parseInt(a) - parseInt(b); });
+
+  let subtotal = 0, totalCost = 0;
+  const processedLines = lineKeys.map(function(k, i) {
+    const l = linesObj[k] || {};
+    const qty = parseInt(l.quantity) || 1;
+    const unitPrice = parseFloat(l.unit_price) || 0;
+    const fulfillPart = (l.fulfillment_part || '').trim().toUpperCase();
+    const isNSN = /^\d{4}-\d{2}-\d{3}-\d{4}$/.test(fulfillPart);
+
+    const srcObj = l.sources || {};
+    const srcArr = Object.keys(srcObj).map(function(sk) { return srcObj[sk]; })
+      .filter(function(s) { return s && s.supplier_id; });
+
+    let lineCost = 0, alloc = 0;
+    const sources = srcArr.map(function(s) {
+      const aq = parseInt(s.allocated_qty) || 0;
+      const uc = parseFloat(s.unit_cost) || 0;
+      const used = (s.is_selected === '1' || s.is_selected === 1 || s.is_selected === true);
+      if (used) { alloc += aq; lineCost += aq * uc; }
+      return {
+        supplier_id: parseInt(s.supplier_id),
+        allocated_qty: aq,
+        unit_cost: uc,
+        lead_days: s.lead_days ? (parseInt(('' + s.lead_days).replace(/[^0-9]/g, '')) || null) : null,
+        lead_time_text: ('' + (s.lead_days || '')) || null,
+        has_8130: s.has_8130 ? 1 : 0,
+        has_coc: s.has_coc ? 1 : 0,
+        has_trace: s.has_trace ? 1 : 0,
+        notes: s.notes || null,
+        is_selected: used ? 1 : 0
+      };
+    });
+
+    const lineTotal = unitPrice * qty;
+    const avgUnitCost = alloc > 0 ? (lineCost / alloc) : 0;
+    const rawMarkup = avgUnitCost > 0 ? ((unitPrice - avgUnitCost) / avgUnitCost * 100) : 0;
+    const markupPct = Math.min(999.99, Math.max(-999.99, Number.isFinite(rawMarkup) ? rawMarkup : 0));
+    const lineMargin = lineTotal - lineCost;
+    const marginPct = lineTotal > 0 ? Math.min(999.99, Math.max(-999.99, (lineMargin / lineTotal * 100))) : 0;
+    subtotal += lineTotal; totalCost += lineCost;
+
+    return {
+      line_number: i + 1,
+      rfq_line_id: l.rfq_line_id ? parseInt(l.rfq_line_id) : null,
+      nsn: isNSN ? fulfillPart : (l.original_nsn || null),
+      part_number: (!isNSN && fulfillPart) ? fulfillPart : (l.original_part || null),
+      item_name: l.item_name || null,
+      condition_code: l.condition_code || 'NE',
+      quantity: qty,
+      unit_cost: avgUnitCost,
+      unit_price: unitPrice,
+      line_total: lineTotal,
+      line_cost: lineCost,
+      line_margin: lineMargin,
+      markup_pct: markupPct,
+      margin_pct: marginPct,
+      lead_time_text: l.lead_time_text || null,
+      sources: sources
+    };
+  });
+
+  const validUntil = new Date(Date.now() + 30 * 86400 * 1000);
+  const quoteNumber = (rfq.rfq_number || 'RFQ-0').replace(/^RFQ-/, 'QT-') + '-D';
+
+  const existing = await pool.request().input('rfqId', sql.BigInt, rfqId)
+    .query("SELECT id FROM quotes WHERE rfq_id=@rfqId AND status='Draft' AND quote_number LIKE '%-D'");
+  let quoteId;
+  if (existing.recordset.length) {
+    quoteId = existing.recordset[0].id;
+    await pool.request()
+      .input('id', sql.BigInt, quoteId)
+      .input('sub', sql.Decimal(12, 2), subtotal)
+      .input('tot', sql.Decimal(12, 2), subtotal)
+      .input('tc', sql.Decimal(12, 2), totalCost)
+      .input('tm', sql.Decimal(12, 2), subtotal - totalCost)
+      .input('vu', sql.Date, validUntil)
+      .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
+      .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
+      .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
+      .query("UPDATE quotes SET subtotal=@sub,total_amount=@tot,total_cost=@tc,total_margin=@tm,valid_until=@vu,payment_terms=@pt,notes=@nt,personal_message=@pm,updated_at=GETDATE() WHERE id=@id");
+    await pool.request().input('qid', sql.BigInt, quoteId)
+      .query("DELETE FROM quote_line_sources WHERE quote_line_id IN (SELECT id FROM quote_lines WHERE quote_id=@qid)");
+    await pool.request().input('qid', sql.BigInt, quoteId)
+      .query("DELETE FROM quote_lines WHERE quote_id=@qid");
+  } else {
+    const qh = await pool.request()
+      .input('rfqId', sql.BigInt, rfqId)
+      .input('cid', sql.BigInt, rfq.customer_id)
+      .input('qn', sql.NVarChar(20), quoteNumber)
+      .input('sub', sql.Decimal(12, 2), subtotal)
+      .input('tot', sql.Decimal(12, 2), subtotal)
+      .input('tc', sql.Decimal(12, 2), totalCost)
+      .input('tm', sql.Decimal(12, 2), subtotal - totalCost)
+      .input('vu', sql.Date, validUntil)
+      .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
+      .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
+      .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
+      .query("INSERT INTO quotes (rfq_id,customer_id,quote_number,subtotal,total_amount,total_cost,total_margin,valid_until,payment_terms,notes,personal_message,status) OUTPUT INSERTED.id VALUES (@rfqId,@cid,@qn,@sub,@tot,@tc,@tm,@vu,@pt,@nt,@pm,'Draft')");
+    quoteId = qh.recordset[0].id;
+  }
+
+  for (const pl of processedLines) {
+    const qlR = await pool.request()
+      .input('qid', sql.BigInt, quoteId)
+      .input('rli', sql.BigInt, pl.rfq_line_id)
+      .input('ln', sql.Int, pl.line_number)
+      .input('nsn', sql.NVarChar(20), pl.nsn)
+      .input('pn', sql.NVarChar(100), pl.part_number)
+      .input('iname', sql.NVarChar(255), pl.item_name)
+      .input('cond', sql.NVarChar(5), pl.condition_code)
+      .input('qty', sql.Int, pl.quantity)
+      .input('uc', sql.Decimal(10, 2), pl.unit_cost)
+      .input('mkp', sql.Decimal(5, 2), pl.markup_pct)
+      .input('up', sql.Decimal(10, 2), pl.unit_price)
+      .input('lt', sql.Decimal(12, 2), pl.line_total)
+      .input('lc', sql.Decimal(12, 2), pl.line_cost)
+      .input('lm', sql.Decimal(12, 2), pl.line_margin)
+      .input('mpct', sql.Decimal(5, 2), pl.margin_pct)
+      .input('ltt', sql.NVarChar(100), pl.lead_time_text)
+      .query("INSERT INTO quote_lines (quote_id,rfq_line_id,line_number,nsn,part_number,item_name,condition_code,quantity,unit_cost,markup_pct,unit_price,line_total,line_cost,line_margin,margin_pct,lead_time_text) OUTPUT INSERTED.id VALUES (@qid,@rli,@ln,@nsn,@pn,@iname,@cond,@qty,@uc,@mkp,@up,@lt,@lc,@lm,@mpct,@ltt)");
+    const quoteLineId = qlR.recordset[0].id;
+    let sortOrder = 1;
+    for (const s of pl.sources) {
+      await pool.request()
+        .input('qli', sql.BigInt, quoteLineId)
+        .input('sid', sql.BigInt, s.supplier_id)
+        .input('aq', sql.Int, s.allocated_qty)
+        .input('uc', sql.Decimal(10, 2), s.unit_cost)
+        .input('ld', sql.Int, s.lead_days)
+        .input('ltt', sql.NVarChar(sql.MAX), s.lead_time_text)
+        .input('h81', sql.Bit, s.has_8130)
+        .input('hcoc', sql.Bit, s.has_coc)
+        .input('htr', sql.Bit, s.has_trace)
+        .input('nt', sql.NVarChar(500), s.notes)
+        .input('so', sql.Int, sortOrder++)
+        .input('issel', sql.Bit, s.is_selected)
+        .query("INSERT INTO quote_line_sources (quote_line_id,supplier_id,allocated_qty,unit_cost,supplier_lead_time_days,lead_time_text,has_8130,has_coc,has_trace,notes,sort_order,is_selected) VALUES (@qli,@sid,@aq,@uc,@ld,@ltt,@h81,@hcoc,@htr,@nt,@so,@issel)");
+    }
+  }
+
+  return { quote_id: quoteId, quote_number: quoteNumber };
+}
+
+async function loadDraftAsSubmitted(rfqId, ctx) {
+  const pool = await getPool();
+  const dq = await pool.request().input('rfqId', sql.BigInt, rfqId)
+    .query("SELECT TOP 1 * FROM quotes WHERE rfq_id=@rfqId AND status='Draft' AND quote_number LIKE '%-D' ORDER BY updated_at DESC, created_at DESC");
+  if (!dq.recordset.length) return null;
+  const draft = dq.recordset[0];
+
+  const ql = await pool.request().input('qid', sql.BigInt, draft.id)
+    .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+  const qs = await pool.request().input('qid2', sql.BigInt, draft.id)
+    .query('SELECT s.* FROM quote_line_sources s JOIN quote_lines l ON l.id=s.quote_line_id WHERE l.quote_id=@qid2 ORDER BY s.quote_line_id, s.sort_order');
+
+  const srcByLine = {};
+  qs.recordset.forEach(function(s) {
+    (srcByLine[s.quote_line_id] = srcByLine[s.quote_line_id] || []).push(s);
+  });
+
+  const submitted = {
+    lines: {},
+    payment_terms: draft.payment_terms || 'Credit Card or Wire Transfer',
+    valid_days: 30,
+    notes: draft.notes || '',
+    personal_message: draft.personal_message || '',
+    cc_emails: '',
+    __draftNumber: draft.quote_number
+  };
+
+  ql.recordset.forEach(function(qline) {
+    let idx = ctx.rfqLines.findIndex(function(rl) { return rl.id === qline.rfq_line_id; });
+    if (idx < 0) idx = (qline.line_number || 1) - 1;
+    const srcs = srcByLine[qline.id] || [];
+    const sourcesMap = {};
+    srcs.forEach(function(s, j) {
+      sourcesMap[j] = {
+        supplier_id: s.supplier_id,
+        allocated_qty: s.allocated_qty,
+        unit_cost: s.unit_cost,
+        lead_days: s.supplier_lead_time_days,
+        has_8130: s.has_8130,
+        has_coc: s.has_coc,
+        has_trace: s.has_trace,
+        notes: s.notes,
+        is_selected: s.is_selected
+      };
+    });
+    submitted.lines[idx] = {
+      fulfillment_part: qline.nsn || qline.part_number || '',
+      item_name: qline.item_name || '',
+      quantity: qline.quantity || 1,
+      unit_price: (qline.unit_price !== null && qline.unit_price !== undefined) ? qline.unit_price : '',
+      lead_time_text: qline.lead_time_text || '',
+      original_nsn: qline.nsn || '',
+      original_part: qline.part_number || '',
+      condition_code: qline.condition_code || 'NE',
+      sources: sourcesMap
+    };
+  });
+
+  return submitted;
+}
+
 function escHtml(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
