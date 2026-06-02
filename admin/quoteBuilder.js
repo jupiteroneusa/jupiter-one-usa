@@ -313,6 +313,7 @@ function renderForm(ctx, submitted) {
 // ============================================================================
 // renderSourceRow - one row of the per-line sources table
 // ============================================================================
+/* REMOVE_SOURCE_REQUIRED_v1 */
 function renderSourceRow(lineIdx, sIdx, s, supplierOpts) {
   const sid = s.supplier_id || '';
   const qty = s.allocated_qty || '';
@@ -330,9 +331,9 @@ function renderSourceRow(lineIdx, sIdx, s, supplierOpts) {
   const selectedOpts = supplierOpts.replace('value="' + sid + '"', 'value="' + sid + '" selected').replace('-- Select supplier --', '-- Select --');
 
   let html = '<tr class="source-row" data-line-idx="' + lineIdx + '" data-source-idx="' + sIdx + '">';
-  html += '<td style="padding:4px 6px;"><select name="lines[' + lineIdx + '][sources][' + sIdx + '][supplier_id]" required style="width:100%;font-size:.82rem;">' + selectedOpts + '</select></td>';
-  html += '<td style="padding:4px 6px;"><input type="number" min="1" required name="lines[' + lineIdx + '][sources][' + sIdx + '][allocated_qty]" value="' + escAttr(qty) + '" class="src-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
-  html += '<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" required name="lines[' + lineIdx + '][sources][' + sIdx + '][unit_cost]" value="' + escAttr(cost) + '" class="src-cost" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;"><select name="lines[' + lineIdx + '][sources][' + sIdx + '][supplier_id]" style="width:100%;font-size:.82rem;">' + selectedOpts + '</select></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" min="1" name="lines[' + lineIdx + '][sources][' + sIdx + '][allocated_qty]" value="' + escAttr(qty) + '" class="src-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" name="lines[' + lineIdx + '][sources][' + sIdx + '][unit_cost]" value="' + escAttr(cost) + '" class="src-cost" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
   html += '<td style="padding:4px 6px;"><input type="number" min="0" name="lines[' + lineIdx + '][sources][' + sIdx + '][lead_days]" value="' + escAttr(lead) + '" placeholder="days" style="width:100%;font-size:.82rem;"/></td>';
   html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_8130]" value="1" ' + has8130 + ' style="accent-color:#c8932a;"/></td>';
   html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_coc]" value="1" ' + hasCoc + ' style="accent-color:#c8932a;"/></td>';
@@ -368,9 +369,9 @@ function renderClientScript(lineCount) {
 '      tr.setAttribute("data-line-idx", lineIdx);\n' +
 '      tr.setAttribute("data-source-idx", sIdx);\n' +
 '      tr.innerHTML =\n' +
-'        \'<td style="padding:4px 6px;"><select name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][supplier_id]" required style="width:100%;font-size:.82rem;">\'+supplierTemplate+\'</select></td>\' +\n' +
-'        \'<td style="padding:4px 6px;"><input type="number" min="1" required name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][allocated_qty]" class="src-qty" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
-'        \'<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" required name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][unit_cost]" class="src-cost" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><select name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][supplier_id]" style="width:100%;font-size:.82rem;">\'+supplierTemplate+\'</select></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" min="1" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][allocated_qty]" class="src-qty" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][unit_cost]" class="src-cost" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;"><input type="number" min="0" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][lead_days]" placeholder="days" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_8130]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_coc]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
