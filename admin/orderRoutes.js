@@ -1026,6 +1026,63 @@ export function mountOrderRoutes(router, requireAuth, page) {
     }
   });
 
+
+  // PROFORMA_PREVIEW_v1: side-effect-free preview (no DB row, no PF number, no email)
+  router.post('/orders/:id/proforma-preview', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body;
+      const orderId = parseInt(req.params.id);
+      const oR = await pool.request().input('id', sql.BigInt, orderId).query(`
+        SELECT o.*, c.first_name, c.last_name, c.email, c.phone, c.company,
+               o.ship_to_address1 AS bill_address1, o.ship_to_city AS bill_city,
+               o.ship_to_state AS bill_state, o.ship_to_zip AS bill_zip,
+               o.ship_to_country AS bill_country,
+               o.buyer_name, o.buyer_email, o.buyer_phone,
+               o.bill_to_address1, o.bill_to_city, o.bill_to_state, o.bill_to_zip, o.bill_to_country,
+               q.quote_number
+        FROM orders o
+        INNER JOIN customers c ON c.id = o.customer_id
+        LEFT JOIN quotes q ON q.id = o.quote_id
+        WHERE o.id = @id
+      `);
+      if (!oR.recordset.length) return res.status(404).send('Order not found');
+      const o = oR.recordset[0];
+
+      // Mirror send-proforma totals math exactly
+      const paymentMethod = b.payment_method || 'Credit Card';
+      const shippingCost = parseFloat(b.shipping_cost) || 0;
+      const subtotal = parseFloat(o.subtotal || 0);
+      const preFeeTotal = subtotal + shippingCost;
+      const ccFeePercent = (paymentMethod === 'Credit Card') ? 3.5 : 0;
+      const ccFeeAmount = preFeeTotal * ccFeePercent / 100;
+      const total = preFeeTotal + ccFeeAmount;
+
+      // Build a preview pf object shaped like the saved proforma row + joined fields
+      const previewPf = Object.assign({}, o, {
+        order_id: orderId,
+        proforma_number: 'PREVIEW',
+        payment_method: paymentMethod,
+        subtotal: subtotal,
+        shipping_cost: shippingCost,
+        cc_fee_amount: ccFeeAmount,
+        cc_fee_percent: ccFeePercent,
+        total: total,
+        notes: b.notes || null
+      });
+
+      const pdfBuffer = await generateProformaPdf(null, previewPf);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="proforma-preview.pdf"');
+      res.send(pdfBuffer);
+    } catch (err) {
+      console.error('Proforma preview error:', err);
+      res.status(500).send('Preview failed: ' + err.message);
+    }
+  });
+
   // PROFORMA_ROUTES_V1: View PDF
   router.get('/proformas/:id/pdf', async (req, res) => {
     if (!requireAuth(req, res)) return;

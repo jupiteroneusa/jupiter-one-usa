@@ -114,7 +114,9 @@ export function renderProformaTab(o, proformas, authorizations, baseUrl) {
   html += '<div id="pf_total" style="border-top:1px solid #1e2d42;padding-top:8px;margin-top:6px;text-align:right;color:#c8932a;font-weight:700;font-size:1.1rem;">$0.00</div>';
   html += '</div></div>';
 
-  html += '<div style="grid-column:1/-1;"><button type="submit" class="btn btn-gold">Generate &amp; Send Proforma</button></div>';
+  html += '<div style="grid-column:1/-1;display:flex;gap:10px;">' +
+    '<button type="button" class="btn btn-outline" onclick="(function(f){var a=f.getAttribute(\'action\'),t=f.getAttribute(\'target\');f.setAttribute(\'action\',\'/admin/orders/' + o.id + '/proforma-preview\');f.setAttribute(\'target\',\'_blank\');f.submit();f.setAttribute(\'action\',a);if(t){f.setAttribute(\'target\',t);}else{f.removeAttribute(\'target\');}})(this.form)">Generate &amp; Preview</button>' +
+    '<button type="submit" class="btn btn-gold">Generate &amp; Send Proforma</button></div>'; /* PROFORMA_PREVIEW_v1 */
   html += '</form>';
 
   // Live calc script

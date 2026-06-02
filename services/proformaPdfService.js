@@ -14,8 +14,16 @@ function fmtDate(d) {
   return dt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export async function generateProformaPdf(proformaId) {
+export async function generateProformaPdf(proformaId, previewPf /* PROFORMA_PREVIEW_v1 */) {
   const pool = await getPool();
+
+  if (previewPf) { /* PROFORMA_PREVIEW_v1: render from supplied data, no DB row */
+    const pf = previewPf;
+    const linesR = await pool.request().input('oid', sql.BigInt, pf.order_id)
+      .query('SELECT * FROM order_lines WHERE order_id=@oid ORDER BY line_number');
+    const lines = linesR.recordset;
+    return _renderProformaDoc(pf, lines);
+  }
 
   const pfR = await pool.request().input('id', sql.BigInt, proformaId).query(`
     SELECT pf.*, o.order_number, o.quote_id,
@@ -38,7 +46,10 @@ export async function generateProformaPdf(proformaId) {
   const linesR = await pool.request().input('oid', sql.BigInt, pf.order_id)
     .query('SELECT * FROM order_lines WHERE order_id=@oid ORDER BY line_number');
   const lines = linesR.recordset;
+  return _renderProformaDoc(pf, lines); /* PROFORMA_PREVIEW_v1 */
+}
 
+function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted renderer */
   // Brand colors
   const gold = [200, 147, 42];
   const navy = [10, 22, 40];
