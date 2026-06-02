@@ -188,7 +188,7 @@ export async function generateQuotePdf({ quote, lines }) {
       doc.setFont('helvetica', 'normal');
       /* QUOTE_PDF_WRAP_v1: wrap long descriptions, track extra row height */
 const __descRaw = String(l.item_name || '');
-const __descLines = doc.splitTextToSize(__descRaw, 53);
+const __descLines = doc.splitTextToSize(__descRaw, 50);
 for (let __di = 0; __di < __descLines.length; __di++) {
   doc.text(__descLines[__di], colX.desc, y + (__di * 3.2));
 }
@@ -244,20 +244,21 @@ const __descExtraY = Math.max(0, (__descLines.length - 1) * 3.2);
     // === NOTES (optional) ===
     if (q.notes) {
       if (y > 240) { doc.addPage(); y = 20; }
+      const noteLines = doc.splitTextToSize(String(q.notes), contentW - 10);
+      const __noteBoxH = 8 + noteLines.length * 3.6;
       doc.setFillColor(254, 249, 236);
-      doc.rect(margin, y - 4, contentW, 14, 'F');
+      doc.rect(margin, y - 4, contentW, __noteBoxH, 'F');
       doc.setDrawColor(...gold);
       doc.setLineWidth(1.5);
-      doc.line(margin, y - 4, margin, y + 10);
+      doc.line(margin, y - 4, margin, y - 4 + __noteBoxH);
       doc.setTextColor(...gold);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'bold');
       doc.text('Notes:', margin + 3, y);
       doc.setTextColor(60, 60, 60);
       doc.setFont('helvetica', 'normal');
-      const noteLines = doc.splitTextToSize(String(q.notes), contentW - 10);
-      doc.text(noteLines.slice(0, 2), margin + 3, y + 4);
-      y += 18;
+      doc.text(noteLines, margin + 3, y + 4);
+      y += __noteBoxH + 4;
     }
 
     // === TERMS ===
