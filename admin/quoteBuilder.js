@@ -140,7 +140,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
 async function loadContext(rfqId) {
   const pool = await getPool();
   const h = await pool.request().input('id', sql.BigInt, rfqId)
-    .query("SELECT h.*, c.id AS customer_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id");
+    .query("SELECT h.*, c.id AS cust_id, c.first_name+' '+c.last_name AS customer_name, c.company, c.email FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id");
   if (!h.recordset.length) return null;
   const rfq = h.recordset[0];
 
@@ -563,7 +563,7 @@ async function saveQuote(rfqId, body, adminId) {
   // Insert quote header
   const qhR = await pool.request()
     .input('rfqId', sql.BigInt, rfqId)
-    .input('cid', sql.BigInt, rfq.customer_id)
+    .input('cid', sql.BigInt, parseInt(String(rfq.customer_id).split(',')[0], 10))
     .input('qn', sql.NVarChar(20), quoteNumber)
     .input('sub', sql.Decimal(12,2), subtotal)
     .input('tot', sql.Decimal(12,2), subtotal)
@@ -629,7 +629,7 @@ async function saveQuote(rfqId, body, adminId) {
   try {
     const linesR = await pool.request().input('qid', sql.BigInt, quoteId)
       .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
-    const custR = await pool.request().input('cid', sql.BigInt, rfq.customer_id)
+    const custR = await pool.request().input('cid', sql.BigInt, parseInt(String(rfq.customer_id).split(',')[0], 10))
       .query('SELECT first_name, last_name, email FROM customers WHERE id=@cid');
     const quoteRow = (await pool.request().input('id', sql.BigInt, quoteId)
       .query('SELECT * FROM quotes WHERE id=@id')).recordset[0];
@@ -664,7 +664,7 @@ async function saveQuote(rfqId, body, adminId) {
 async function saveQuoteDraftFull(rfqId, body) {
   const pool = await getPool();
   const rfqR = await pool.request().input('id', sql.BigInt, rfqId)
-    .query('SELECT h.*, c.id AS customer_id FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
+    .query('SELECT h.*, c.id AS cust_id FROM rfq_headers h JOIN customers c ON c.id=h.customer_id WHERE h.id=@id');
   if (!rfqR.recordset.length) throw new Error('RFQ not found');
   const rfq = rfqR.recordset[0];
 
@@ -757,7 +757,7 @@ async function saveQuoteDraftFull(rfqId, body) {
   } else {
     const qh = await pool.request()
       .input('rfqId', sql.BigInt, rfqId)
-      .input('cid', sql.BigInt, rfq.customer_id)
+      .input('cid', sql.BigInt, parseInt(String(rfq.customer_id).split(',')[0], 10))
       .input('qn', sql.NVarChar(20), quoteNumber)
       .input('sub', sql.Decimal(12, 2), subtotal)
       .input('tot', sql.Decimal(12, 2), subtotal)
