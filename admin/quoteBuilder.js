@@ -202,7 +202,7 @@ function renderForm(ctx, submitted) {
     lineGroupsHtml += '<div style="display:grid;grid-template-columns:170px 1fr 80px 110px 130px;gap:8px;align-items:end;">';
     lineGroupsHtml += inputCell('NSN/Part #', 'lines[' + lineIdx + '][fulfillment_part]', part, 'text', 'style="text-transform:uppercase;font-family:monospace;color:#c8932a;" oninput="this.value=this.value.toUpperCase()"');
     lineGroupsHtml += inputCell('Description', 'lines[' + lineIdx + '][item_name]', desc, 'text', '');
-    lineGroupsHtml += inputCell('Qty', 'lines[' + lineIdx + '][quantity]', qty, 'number', 'min="1" required class="line-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
+    lineGroupsHtml += inputCell('Qty', 'lines[' + lineIdx + '][quantity]', qty, 'number', 'class="line-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
     lineGroupsHtml += inputCell('Unit Price ($)', 'lines[' + lineIdx + '][unit_price]', unitPrice, 'number', 'step="0.01" min="0" class="line-price" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
     lineGroupsHtml += inputCell('Lead Time (customer)', 'lines[' + lineIdx + '][lead_time_text]', leadText, 'text', 'placeholder="e.g. 7-10 days"');
     lineGroupsHtml += '</div>';
@@ -290,7 +290,7 @@ function renderForm(ctx, submitted) {
   html += '</div></div>';
 
   html += '<div style="display:flex;gap:10px;">';
-  html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
+  html += '<button type="submit" formnovalidate class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
   html += '<button type="button" id="save-draft-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" onclick="saveDraftFull()">Save</button>';
   html += '<button type="button" id="initiate-order-btn" class="btn" style="padding:12px 22px;background:#1d9e75;color:#fff;border:none;" onclick="initiateOrder()">Initiate Sales Order &rarr;</button>';
   html += '<button type="button" id="preview-pdf-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#c8932a;color:#c8932a;" onclick="previewQuotePdf()">Preview PDF</button>';
@@ -332,8 +332,8 @@ function renderSourceRow(lineIdx, sIdx, s, supplierOpts) {
 
   let html = '<tr class="source-row" data-line-idx="' + lineIdx + '" data-source-idx="' + sIdx + '">';
   html += '<td style="padding:4px 6px;"><select name="lines[' + lineIdx + '][sources][' + sIdx + '][supplier_id]" style="width:100%;font-size:.82rem;">' + selectedOpts + '</select></td>';
-  html += '<td style="padding:4px 6px;"><input type="number" min="1" name="lines[' + lineIdx + '][sources][' + sIdx + '][allocated_qty]" value="' + escAttr(qty) + '" class="src-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
-  html += '<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" name="lines[' + lineIdx + '][sources][' + sIdx + '][unit_cost]" value="' + escAttr(cost) + '" class="src-cost" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" name="lines[' + lineIdx + '][sources][' + sIdx + '][allocated_qty]" value="' + escAttr(qty) + '" class="src-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
+  html += '<td style="padding:4px 6px;"><input type="number" step="0.01" name="lines[' + lineIdx + '][sources][' + sIdx + '][unit_cost]" value="' + escAttr(cost) + '" class="src-cost" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')" style="width:100%;font-size:.82rem;"/></td>';
   html += '<td style="padding:4px 6px;"><input type="number" min="0" name="lines[' + lineIdx + '][sources][' + sIdx + '][lead_days]" value="' + escAttr(lead) + '" placeholder="days" style="width:100%;font-size:.82rem;"/></td>';
   html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_8130]" value="1" ' + has8130 + ' style="accent-color:#c8932a;"/></td>';
   html += '<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[' + lineIdx + '][sources][' + sIdx + '][has_coc]" value="1" ' + hasCoc + ' style="accent-color:#c8932a;"/></td>';
@@ -370,8 +370,8 @@ function renderClientScript(lineCount) {
 '      tr.setAttribute("data-source-idx", sIdx);\n' +
 '      tr.innerHTML =\n' +
 '        \'<td style="padding:4px 6px;"><select name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][supplier_id]" style="width:100%;font-size:.82rem;">\'+supplierTemplate+\'</select></td>\' +\n' +
-'        \'<td style="padding:4px 6px;"><input type="number" min="1" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][allocated_qty]" class="src-qty" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
-'        \'<td style="padding:4px 6px;"><input type="number" step="0.01" min="0" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][unit_cost]" class="src-cost" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][allocated_qty]" class="src-qty" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
+'        \'<td style="padding:4px 6px;"><input type="number" step="0.01" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][unit_cost]" class="src-cost" data-line-idx="\'+lineIdx+\'" oninput="recalcLine(\'+lineIdx+\')" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;"><input type="number" min="0" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][lead_days]" placeholder="days" style="width:100%;font-size:.82rem;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_8130]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
 '        \'<td style="padding:4px 6px;text-align:center;"><input type="checkbox" name="lines[\'+lineIdx+\'][sources][\'+sIdx+\'][has_coc]" value="1" style="accent-color:#c8932a;"/></td>\' +\n' +
@@ -474,6 +474,7 @@ function renderClientScript(lineCount) {
 // ============================================================================
 // saveQuote - validate + INSERT quote, quote_lines, quote_line_sources
 // ============================================================================
+/* KILL_CLIENT_BLOCKS_v1 */
 async function saveQuote(rfqId, body, adminId) {
   const pool = await getPool();
   const linesObj = body.lines || {};
