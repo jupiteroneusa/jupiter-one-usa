@@ -174,14 +174,37 @@ export async function buildAdminRouter() {
     </div></body></html>`);
   });
 
-  router.post('/login', (req, res) => {
+  router.post('/login', async (req, res) => { /* ADMIN_LOGIN_TABLE_FALLBACK_v1 */
     const { email, password } = req.body;
-    if (email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase() && password === process.env.ADMIN_PASSWORD) {
-      const token = jwt.sign({ email, type: 'admin' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
-      res.cookie('j1_admin_token', token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
-      res.redirect('/admin/dashboard');
-    } else {
-      res.redirect('/admin?error=1');
+    try {
+      // 1) Env credential (legacy/fallback) - unchanged, keeps existing admin working
+      if (process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD &&
+          email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase() && password === process.env.ADMIN_PASSWORD) {
+        const token = jwt.sign({ email, type: 'admin', via: 'env' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
+        res.cookie('j1_admin_token', token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
+        return res.redirect('/admin/dashboard');
+      }
+
+      // 2) admin_users table (bcrypt) - per-user, hashed, traceable
+      const pool = await getPool();
+      const ur = await pool.request().input('email', sql.NVarChar(150), (email||'').toLowerCase())
+        .query("SELECT id, email, password_hash, role, status FROM admin_users WHERE LOWER(email)=@email");
+      if (ur.recordset.length) {
+        const u = ur.recordset[0];
+        const bcrypt = await import('bcryptjs');
+        const ok = u.password_hash ? await bcrypt.default.compare(password, u.password_hash) : false;
+        if (ok && (u.status === 'Active' || u.status == null)) {
+          const token = jwt.sign({ id: u.id, email: u.email, role: u.role, type: 'admin', via: 'table' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
+          res.cookie('j1_admin_token', token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
+          try { await pool.request().input('id', sql.BigInt, u.id).query('UPDATE admin_users SET last_login_at=GETDATE() WHERE id=@id'); } catch(e) { console.error('last_login update:', e.message); }
+          return res.redirect('/admin/dashboard');
+        }
+      }
+
+      return res.redirect('/admin?error=1');
+    } catch (err) {
+      console.error('Admin login error:', err);
+      return res.redirect('/admin?error=1');
     }
   });
 
