@@ -327,12 +327,6 @@ export async function sendQuoteToCustomer({ customer, quote, lines, pdfUrl, rfq,
       </table>
       </div>
       ${quote.notes ? '<div style="background:#fff8e7;border-left:3px solid #c8932a;padding:12px 16px;font-size:13px;color:#555;margin-bottom:16px;">' + quote.notes + '</div>' : ''}
-      <div style="margin:20px 0;">
-        <a href="${process.env.FRONTEND_URL}/account/quotes/${quote.id}/accept"
-           style="background:#c8932a;color:#000;padding:12px 28px;text-decoration:none;font-weight:bold;font-size:13px;display:inline-block;">
-          ACCEPT QUOTE &#8594;
-        </a>
-      </div>
       <div style="background:#f9f9f9;border:1px solid #eee;padding:14px 18px;font-size:11px;color:#777;line-height:1.9;margin-top:20px;">
         <strong style="color:#555;font-size:12px;display:block;margin-bottom:6px;">Terms &amp; Conditions</strong>
         <div><strong>Payment:</strong> Credit Card or Wire Transfer. Credit card payments subject to a 3.5% processing fee. Wire transfer details provided upon order confirmation.</div>
