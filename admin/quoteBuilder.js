@@ -891,7 +891,6 @@ async function createOrderFromQuote(quoteId, adminId) {
     .input('subtotal',    sql.Decimal(12,2), quote.subtotal || 0)
     .input('taxAmount',   sql.Decimal(12,2), quote.tax_amount || 0)
     .input('totalAmount', sql.Decimal(12,2), quote.total_amount || 0)
-    .input('paymentTerms',sql.NVarChar(100), quote.payment_terms || null)
     .input('addr1',       sql.NVarChar(150), null)
     .input('city',        sql.NVarChar(100), null)
     .input('state',       sql.NVarChar(50),  null)
@@ -899,7 +898,7 @@ async function createOrderFromQuote(quoteId, adminId) {
     .input('country',     sql.NVarChar(50),  'USA')
     .input('notes',       sql.NVarChar(sql.MAX), null)
     .input('createdBy',   sql.BigInt,        adminId || null)
-    .query("INSERT INTO orders (quote_id, rfq_id, customer_id, order_number, customer_po, subtotal, tax_amount, total_amount, payment_terms, ship_to_address1, ship_to_city, ship_to_state, ship_to_zip, ship_to_country, notes, created_by) OUTPUT INSERTED.id VALUES (@quoteId, @rfqId, @customerId, @orderNumber, @customerPo, @subtotal, @taxAmount, @totalAmount, @paymentTerms, @addr1, @city, @state, @zip, @country, @notes, @createdBy)");
+    .query("INSERT INTO orders (quote_id, rfq_id, customer_id, order_number, customer_po, subtotal, tax_amount, total_amount, ship_to_address1, ship_to_city, ship_to_state, ship_to_zip, ship_to_country, notes, created_by) OUTPUT INSERTED.id VALUES (@quoteId, @rfqId, @customerId, @orderNumber, @customerPo, @subtotal, @taxAmount, @totalAmount, @addr1, @city, @state, @zip, @country, @notes, @createdBy)");
   const orderId = oR.recordset[0].id;
 
   const qlR = await pool.request().input('qid', sql.BigInt, quoteId)
