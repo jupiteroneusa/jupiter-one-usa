@@ -203,7 +203,7 @@ function renderForm(ctx, submitted) {
     lineGroupsHtml += inputCell('NSN/Part #', 'lines[' + lineIdx + '][fulfillment_part]', part, 'text', 'style="text-transform:uppercase;font-family:monospace;color:#c8932a;" oninput="this.value=this.value.toUpperCase()"');
     lineGroupsHtml += inputCell('Description', 'lines[' + lineIdx + '][item_name]', desc, 'text', '');
     lineGroupsHtml += inputCell('Qty', 'lines[' + lineIdx + '][quantity]', qty, 'number', 'min="1" required class="line-qty" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
-    lineGroupsHtml += inputCell('Unit Price ($)', 'lines[' + lineIdx + '][unit_price]', unitPrice, 'number', 'step="0.01" min="0" required class="line-price" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
+    lineGroupsHtml += inputCell('Unit Price ($)', 'lines[' + lineIdx + '][unit_price]', unitPrice, 'number', 'step="0.01" min="0" class="line-price" data-line-idx="' + lineIdx + '" oninput="recalcLine(' + lineIdx + ')"');
     lineGroupsHtml += inputCell('Lead Time (customer)', 'lines[' + lineIdx + '][lead_time_text]', leadText, 'text', 'placeholder="e.g. 7-10 days"');
     lineGroupsHtml += '</div>';
 
