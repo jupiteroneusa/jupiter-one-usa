@@ -1266,6 +1266,50 @@ export async function buildAdminRouter() {
     }
   });
 
+  // PDF_PREVIEW_v1: inline jsPDF quote view (matches the emailed quote PDF)
+  router.get('/quotes/:quoteId/pdf-view', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const { generateQuotePdf } = await import('../services/pdfService.js');
+      const pool = await getPool();
+      const qr = await pool.request().input('id', sql.BigInt, req.params.quoteId)
+        .query("SELECT q.*, c.first_name+' '+c.last_name AS customer_name, c.email, c.company FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=@id");
+      if (!qr.recordset.length) return res.status(404).send('Quote not found');
+      const lr = await pool.request().input('qid', sql.BigInt, req.params.quoteId)
+        .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      const pdfRaw = await generateQuotePdf({ quote: qr.recordset[0], lines: lr.recordset });
+      if (!pdfRaw) return res.status(500).send('PDF generation failed');
+      const pdfBuffer = Buffer.isBuffer(pdfRaw) ? pdfRaw : Buffer.from(pdfRaw);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="quote-' + req.params.quoteId + '.pdf"');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(pdfBuffer);
+    } catch (err) {
+      console.error('Quote PDF view error:', err);
+      res.status(500).send('PDF generation failed: ' + err.message);
+    }
+  });
+
+  // PDF_PREVIEW_v1: inline invoice view (same generator used for the emailed invoice)
+  router.get('/invoices/:id/pdf', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const { generateInvoicePdf } = await import('../services/invoicePdfService.js');
+      const pdfRaw = await generateInvoicePdf(parseInt(req.params.id), {});
+      if (!pdfRaw) return res.status(500).send('PDF generation failed');
+      const pdfBuffer = Buffer.isBuffer(pdfRaw) ? pdfRaw : Buffer.from(pdfRaw);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="invoice-' + req.params.id + '.pdf"');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(pdfBuffer);
+    } catch (err) {
+      console.error('Invoice PDF view error:', err);
+      res.status(500).send('PDF generation failed: ' + err.message);
+    }
+  });
+
     /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote', */
 
   // RFQ Status Update
@@ -1774,6 +1818,7 @@ export async function buildAdminRouter() {
           <div style="display:flex;gap:8px;">
           
           ${q.status!=='Accepted' ? `<a href="/admin/quotes/${q.id}/edit" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;text-decoration:none;">&#x270F; Edit &amp; Resend</a>` : ''}
+          <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
         </div>
@@ -1955,6 +2000,7 @@ export async function buildAdminRouter() {
       if (inv.company) html += '<br>' + inv.company;
       html += '<br>' + billTo + '</div></div>';
 
+      html += '<div style="margin-bottom:16px;"><a href="/admin/invoices/' + req.params.id + '/pdf" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview Invoice PDF</a></div>';
       html += '<div class="card"><div class="card-header">Line Items (' + lines.recordset.length + ')</div>';
       html += '<table><thead><tr><th>#</th><th>NSN/Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Unit Price</th><th>Line Total</th></tr></thead>';
       html += '<tbody>' + lineRows + '</tbody></table>';

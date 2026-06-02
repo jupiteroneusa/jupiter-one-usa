@@ -90,7 +90,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
     if (!requireAuth(req, res)) return;
     try {
       const result = await saveQuoteDraftFull(req.params.id, req.body);
-      res.json({ ok: true, quote_number: result.quote_number });
+      res.json({ ok: true, quote_id: result.quote_id, quote_number: result.quote_number });
     } catch (err) {
       console.error('quote-draft-full save error:', err);
       res.json({ ok: false, error: err.message });
@@ -293,6 +293,7 @@ function renderForm(ctx, submitted) {
   html += '<button type="submit" class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
   html += '<button type="button" id="save-draft-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" onclick="saveDraftFull()">Save</button>';
   html += '<button type="button" id="initiate-order-btn" class="btn" style="padding:12px 22px;background:#1d9e75;color:#fff;border:none;" onclick="initiateOrder()">Initiate Sales Order &rarr;</button>';
+  html += '<button type="button" id="preview-pdf-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#c8932a;color:#c8932a;" onclick="previewQuotePdf()">Preview PDF</button>';
   html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Cancel</a>';
   html += '</div>';
   html += '</form>';
@@ -302,6 +303,7 @@ function renderForm(ctx, submitted) {
 
   // Client-side scripts: add/remove sources, recalc margins, validate sums on submit
   html += renderClientScript(rfqLines.length);
+  html += '<script>(function(){window.previewQuotePdf=function(){var f=document.getElementById("quote-send-form");if(!f)return;var b=document.getElementById("preview-pdf-btn");if(b){b.textContent="Generating...";b.disabled=true;}var fd=new URLSearchParams(new FormData(f));fetch("/admin/rfqs/' + rfq.id + '/quote-draft-full",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){if(b){b.textContent="Preview PDF";b.disabled=false;}if(j.ok&&j.quote_id){window.open("/admin/quotes/"+j.quote_id+"/pdf-view","_blank");}else{alert(j.error||"Could not generate preview");}}).catch(function(){if(b){b.textContent="Preview PDF";b.disabled=false;}alert("Network error generating preview");});};})();</scr'+'ipt>';
   html += '<script>(function(){window.initiateOrder=function(){if(!confirm("Create a sales order from this quote? You can change suppliers and details on the order afterward."))return;var f=document.getElementById("quote-send-form");if(!f)return;var b=document.getElementById("initiate-order-btn");if(b){b.textContent="Creating order...";b.disabled=true;}var fd=new URLSearchParams(new FormData(f));fetch("/admin/rfqs/' + rfq.id + '/initiate-order",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){if(j.ok&&j.order_id){window.__skipUnload=true;window.location="/admin/orders/"+j.order_id;}else{alert(j.error||"Failed to create order");if(b){b.textContent="Initiate Sales Order \u2192";b.disabled=false;}}}).catch(function(){alert("Network error creating order");if(b){b.textContent="Initiate Sales Order \u2192";b.disabled=false;}});};})();</scr'+'ipt>';
   html += '<script>(function(){var d=false;document.querySelectorAll("#quote-send-form input,#quote-send-form select,#quote-send-form textarea").forEach(function(el){el.addEventListener("input",function(){d=true;});el.addEventListener("change",function(){d=true;});});window.saveDraftFull=function(){var f=document.getElementById("quote-send-form");if(!f)return;var fd=new URLSearchParams(new FormData(f));var b=document.getElementById("save-draft-btn");if(b){b.textContent="Saving...";}fetch("/admin/rfqs/' + rfq.id + '/quote-draft-full",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(j){d=false;if(b){b.textContent=j.ok?"Draft Saved \u2713":"Save Failed";b.style.color=j.ok?"#4caf50":"#e05050";setTimeout(function(){b.textContent="Save Draft";b.style.color="#4caf50";},2500);}}).catch(function(){if(b){b.textContent="Save Failed";b.style.color="#e05050";}});};var ff=document.getElementById("quote-send-form");if(ff){ff.addEventListener("submit",function(){d=false;});}window.addEventListener("beforeunload",function(e){if(d&&!window.__skipUnload){e.preventDefault();e.returnValue="";}});})();</scr'+'ipt>';
 
