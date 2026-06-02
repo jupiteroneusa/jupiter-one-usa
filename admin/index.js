@@ -1371,6 +1371,7 @@ export async function buildAdminRouter() {
         .input('newStatus', sql.NVarChar, status)
         .input('note', sql.NVarChar(500), note||null)
         .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, @oldStatus, @newStatus, @note)`);
+      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'rfq_status_changed', entityType: 'rfq', entityId: req.params.id, summary: 'RFQ status: ' + (oldStatus || '?') + ' -> ' + status, ipAddress: getIp(req) }); } catch(e) { console.error('audit rfq_status:', e.message); } /* AUDIT_ACTIONS_A_v1 */
       res.redirect(`/admin/rfqs/${req.params.id}?updated=1`);
     } catch(err) {
       res.redirect(`/admin/rfqs/${req.params.id}?error=1`);
@@ -1675,6 +1676,7 @@ export async function buildAdminRouter() {
           tax_exempt=@taxExempt, tax_exempt_number=@taxExemptNumber,
           internal_notes=@internalNotes, updated_at=GETDATE()
           WHERE id=@id`);
+      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'customer_updated', entityType: 'customer', entityId: req.params.id, summary: 'Customer record updated', ipAddress: getIp(req) }); } catch(e) { console.error('audit customer_updated:', e.message); } /* AUDIT_ACTIONS_A_v1 */
       res.redirect('/admin/customers/' + req.params.id + '?tab=' + (b.tab||'overview') + '&saved=1');
     } catch(err) {
       console.error('Customer update error:', err);

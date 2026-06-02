@@ -30,6 +30,7 @@ import { getPool, sql } from '../db/connect.js';
 import { generateNumber } from '../db/numbering.js';
 import { sendQuoteToCustomer } from '../services/mailer.js';
 import { generateQuotePdf } from '../services/pdfService.js';
+import { logAudit, getIp } from '../middleware/audit.js'; /* AUDIT_ACTIONS_B_v1 */
 
 export function mountQuoteBuilder(router, requireAuth, page) {
 
@@ -75,6 +76,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
     if (!requireAuth(req, res)) return;
     try {
       const result = await saveQuote(req.params.id, req.body, req.adminId);
+      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'quote_sent', entityType: 'quote', entityId: result.quote_id, summary: 'Quote ' + (result.quote_number || result.quote_id) + ' saved/sent', ipAddress: getIp(req) }); } catch(e) { console.error('audit quote_sent:', e.message); }
       res.redirect('/admin/quotes/' + result.quote_id + '?saved=1');
     } catch (err) {
       console.error('quote save error:', err);
@@ -125,6 +127,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
     try {
       const saved = await saveQuoteDraftFull(req.params.id, req.body);
       const result = await createOrderFromQuote(saved.quote_id, req.adminId);
+      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'order_created', entityType: 'order', entityId: result.order_id, summary: 'Order ' + (result.order_number || result.order_id) + ' created from quote', ipAddress: getIp(req) }); } catch(e) { console.error('audit order_created:', e.message); }
       res.json({ ok: true, order_id: result.order_id, order_number: result.order_number });
     } catch (err) {
       console.error('initiate-order error:', err);

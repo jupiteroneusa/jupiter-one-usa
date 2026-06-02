@@ -13,6 +13,7 @@ import crypto from 'crypto';
 // PROFORMA_ROUTES_V1
 import { renderPaymentTab } from './orderPaymentBlock.js';
 import { renderLinesTab } from './orderLinesBlock.js';
+import { logAudit, getIp } from '../middleware/audit.js'; /* AUDIT_ACTIONS_B_v1 */
 
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
@@ -1019,6 +1020,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         console.error('Proforma email error:', emailErr.message);
       }
 
+      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'proforma_sent', entityType: 'order', entityId: orderId, summary: 'Proforma ' + (proformaNumber || '') + ' sent', ipAddress: getIp(req) }); } catch(e) { console.error('audit proforma_sent:', e.message); }
       res.redirect('/admin/orders/' + orderId + '?tab=proforma&saved=1');
     } catch (err) {
       console.error('Send proforma error:', err);
