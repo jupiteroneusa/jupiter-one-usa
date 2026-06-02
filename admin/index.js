@@ -13,6 +13,7 @@ import { mountAdminDocRoutes } from './adminDocRoutes.js';
 import { mountQuoteBuilder } from './quoteBuilder.js';
 import jwt from 'jsonwebtoken';
 import { getPool, sql } from '../db/connect.js';
+import { logAudit, getIp } from '../middleware/audit.js'; /* ADMIN_AUDIT_FOUNDATION_v1 */
 
 const CSS = `
 * { margin:0; padding:0; box-sizing:border-box; }
@@ -118,8 +119,13 @@ function statusBadge(s) {
 function requireAuth(req, res) {
   const token = req.cookies?.j1_admin_token;
   if (!token) { res.redirect('/admin'); return false; }
-  try { jwt.verify(token, process.env.ADMIN_JWT_SECRET); return true; }
-  catch { res.redirect('/admin'); return false; }
+  try {
+    const d = jwt.verify(token, process.env.ADMIN_JWT_SECRET); /* ADMIN_AUDIT_FOUNDATION_v1: expose identity */
+    req.adminEmail = d.email || null;
+    req.adminId = (d.id !== undefined && d.id !== null) ? d.id : null;
+    req.adminRole = d.role || null;
+    return true;
+  } catch { res.redirect('/admin'); return false; }
 }
 
 // Sortable table script for dashboard
@@ -182,6 +188,7 @@ export async function buildAdminRouter() {
           email.toLowerCase() === process.env.ADMIN_EMAIL.toLowerCase() && password === process.env.ADMIN_PASSWORD) {
         const token = jwt.sign({ email, type: 'admin', via: 'env' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
         res.cookie('j1_admin_token', token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
+        try { await logAudit({ userType: 'admin', userEmail: email, action: 'logged_in', summary: 'Admin login (env)', ipAddress: getIp(req) }); } catch(e) { console.error('audit login(env):', e.message); }
         return res.redirect('/admin/dashboard');
       }
 
@@ -196,6 +203,7 @@ export async function buildAdminRouter() {
         if (ok && (u.status === 'Active' || u.status == null)) {
           const token = jwt.sign({ id: u.id, email: u.email, role: u.role, type: 'admin', via: 'table' }, process.env.ADMIN_JWT_SECRET, { expiresIn: '12h' });
           res.cookie('j1_admin_token', token, { httpOnly: true, maxAge: 12 * 60 * 60 * 1000 });
+          try { await logAudit({ userType: 'admin', userId: u.id, userEmail: u.email, action: 'logged_in', summary: 'Admin login', ipAddress: getIp(req) }); } catch(e) { console.error('audit login:', e.message); }
           try { await pool.request().input('id', sql.BigInt, u.id).query('UPDATE admin_users SET last_login_at=GETDATE() WHERE id=@id'); } catch(e) { console.error('last_login update:', e.message); }
           return res.redirect('/admin/dashboard');
         }
