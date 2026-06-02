@@ -835,7 +835,7 @@ async function saveQuoteDraftFull(rfqId, body) {
 async function loadDraftAsSubmitted(rfqId, ctx) {
   const pool = await getPool();
   const dq = await pool.request().input('rfqId', sql.BigInt, rfqId)
-    .query("SELECT TOP 1 * FROM quotes WHERE rfq_id=@rfqId AND status='Draft' AND quote_number LIKE '%-D' ORDER BY updated_at DESC, created_at DESC");
+    .query("SELECT TOP 1 * FROM quotes WHERE rfq_id=@rfqId ORDER BY id ASC"); /* RESUME_DRAFT_LOOKUP_FIX_v1: read the single quote per RFQ that Save writes */
   if (!dq.recordset.length) return null;
   const draft = dq.recordset[0];
 
