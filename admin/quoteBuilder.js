@@ -493,9 +493,9 @@ async function saveQuote(rfqId, body, adminId) {
 
     const sourcesObj = line.sources || {};
     const sourceKeys = Object.keys(sourcesObj);
-    if (sourceKeys.length === 0) throw new Error('Line ' + lineNum + ': at least one supplier source required');
+    /* PARTIAL_SEND_SKIP_BLANK_v1: zero sources allowed (partial send) */
 
-    const sources = sourceKeys.map(function(sk) { return sourcesObj[sk]; });
+    const sources = sourceKeys.map(function(sk) { return sourcesObj[sk]; }).filter(function(s){ return s && s.supplier_id; }); // PARTIAL_SEND_SKIP_BLANK_v1
     // [Rewire 7] Only checked sources count toward allocation
     let allocSum = 0, costSum = 0, selectedCount = 0;
     sources.forEach(function(s, sIdx) {
