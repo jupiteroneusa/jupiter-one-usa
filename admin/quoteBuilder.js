@@ -459,11 +459,7 @@ function renderClientScript(lineCount) {
 '            var isUsed = srcUses[j] ? srcUses[j].checked : true;\n' +
 '            if (isUsed) totalAlloc += parseFloat(srcQtys[j].value) || 0;\n' +
 '          }\n' +
-'          if (totalAlloc !== lineQty) {\n' +
-'            e.preventDefault();\n' +
-'            alert("Line " + lineNum + ": supplier sources allocate " + totalAlloc + " units, but line quantity is " + lineQty + ". Please adjust.");\n' +
-'            return false;\n' +
-'          }\n' +
+'          /* ONE_QUOTE_PER_RFQ_v1: partial allocation allowed - no block */\n' +
 '        }\n' +
 '      });\n' +
 '    }\n' +
@@ -515,8 +511,7 @@ async function saveQuote(rfqId, body, adminId) {
         selectedCount++;
       }
     });
-    if (selectedCount === 0) throw new Error('Line ' + lineNum + ': at least one supplier must be checked (USE)');
-    if (allocSum !== lineQty) throw new Error('Line ' + lineNum + ': checked sources allocate ' + allocSum + ' but line qty is ' + lineQty);
+    // PARTIAL_SEND_v1: allow incomplete lines - do NOT require a checked source or full allocation
 
     const lineTotal = unitPrice * lineQty;
     const lineMargin = lineTotal - costSum;
@@ -558,23 +553,46 @@ async function saveQuote(rfqId, body, adminId) {
   const totalMargin = subtotal - totalCost;
   const validDays = parseInt(body.valid_days || 30);
   const validUntil = new Date(Date.now() + validDays * 86400 * 1000);
-  const quoteNumber = await generateNumber('QT');
-
-  // Insert quote header
-  const qhR = await pool.request()
-    .input('rfqId', sql.BigInt, rfqId)
-    .input('cid', sql.BigInt, parseInt(String(rfq.customer_id).split(',')[0], 10))
-    .input('qn', sql.NVarChar(20), quoteNumber)
-    .input('sub', sql.Decimal(12,2), subtotal)
-    .input('tot', sql.Decimal(12,2), subtotal)
-    .input('tc', sql.Decimal(12,2), totalCost)
-    .input('tm', sql.Decimal(12,2), totalMargin)
-    .input('vu', sql.Date, validUntil)
-    .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
-    .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
-    .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
-    .query("INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, personal_message, status) OUTPUT INSERTED.id VALUES (@rfqId, @cid, @qn, @sub, @tot, @tc, @tm, @vu, @pt, @nt, @pm, 'Sent')");
-  const quoteId = qhR.recordset[0].id;
+  // ONE_QUOTE_PER_RFQ_v1: one quote per RFQ - reuse the existing row if present
+  const existingQ = await pool.request().input('rfqId', sql.BigInt, rfqId)
+    .query("SELECT TOP 1 id, quote_number FROM quotes WHERE rfq_id=@rfqId ORDER BY id ASC");
+  const _custId = parseInt(String(rfq.customer_id).split(',')[0], 10);
+  let quoteId, quoteNumber;
+  if (existingQ.recordset.length) {
+    quoteId = existingQ.recordset[0].id;
+    quoteNumber = existingQ.recordset[0].quote_number;
+    await pool.request()
+      .input('id', sql.BigInt, quoteId)
+      .input('sub', sql.Decimal(12,2), subtotal)
+      .input('tot', sql.Decimal(12,2), subtotal)
+      .input('tc', sql.Decimal(12,2), totalCost)
+      .input('tm', sql.Decimal(12,2), totalMargin)
+      .input('vu', sql.Date, validUntil)
+      .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
+      .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
+      .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
+      .query("UPDATE quotes SET subtotal=@sub,total_amount=@tot,total_cost=@tc,total_margin=@tm,valid_until=@vu,payment_terms=@pt,notes=@nt,personal_message=@pm,status='Sent',updated_at=GETDATE() WHERE id=@id");
+    await pool.request().input('qid', sql.BigInt, quoteId)
+      .query("DELETE FROM quote_line_sources WHERE quote_line_id IN (SELECT id FROM quote_lines WHERE quote_id=@qid)");
+    await pool.request().input('qid', sql.BigInt, quoteId)
+      .query("DELETE FROM quote_lines WHERE quote_id=@qid");
+  } else {
+    quoteNumber = await generateNumber('QT');
+    const qhR = await pool.request()
+      .input('rfqId', sql.BigInt, rfqId)
+      .input('cid', sql.BigInt, _custId)
+      .input('qn', sql.NVarChar(20), quoteNumber)
+      .input('sub', sql.Decimal(12,2), subtotal)
+      .input('tot', sql.Decimal(12,2), subtotal)
+      .input('tc', sql.Decimal(12,2), totalCost)
+      .input('tm', sql.Decimal(12,2), totalMargin)
+      .input('vu', sql.Date, validUntil)
+      .input('pt', sql.NVarChar(100), body.payment_terms || 'Credit Card or Wire Transfer')
+      .input('nt', sql.NVarChar(sql.MAX), body.notes || null)
+      .input('pm', sql.NVarChar(sql.MAX), body.personal_message || null)
+      .query("INSERT INTO quotes (rfq_id, customer_id, quote_number, subtotal, total_amount, total_cost, total_margin, valid_until, payment_terms, notes, personal_message, status) OUTPUT INSERTED.id VALUES (@rfqId, @cid, @qn, @sub, @tot, @tc, @tm, @vu, @pt, @nt, @pm, 'Sent')");
+    quoteId = qhR.recordset[0].id;
+  }
 
   // Insert each quote line + its sources
   for (const pl of processedLines) {
@@ -732,10 +750,11 @@ async function saveQuoteDraftFull(rfqId, body) {
   });
 
   const validUntil = new Date(Date.now() + 30 * 86400 * 1000);
-  const quoteNumber = (rfq.rfq_number || 'RFQ-0').replace(/^RFQ-/, 'QT-') + '-D';
+  // ONE_QUOTE_PER_RFQ_v1: single quote per RFQ (number reused below)
 
   const existing = await pool.request().input('rfqId', sql.BigInt, rfqId)
-    .query("SELECT id FROM quotes WHERE rfq_id=@rfqId AND status='Draft' AND quote_number LIKE '%-D'");
+    .query("SELECT TOP 1 id, quote_number FROM quotes WHERE rfq_id=@rfqId ORDER BY id ASC");
+  let quoteNumber = existing.recordset.length ? existing.recordset[0].quote_number : await generateNumber('QT');
   let quoteId;
   if (existing.recordset.length) {
     quoteId = existing.recordset[0].id;
