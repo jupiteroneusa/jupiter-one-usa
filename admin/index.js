@@ -629,12 +629,13 @@ export async function buildAdminRouter() {
               .then(r => r.json())
               .then(results => {
                 if (!results.length) { box.innerHTML = '<div style="padding:10px 14px;color:#7a8a9a;font-size:.82rem;">No customers found</div>'; box.style.display = 'block'; return; }
-                box.innerHTML = results.map(c => \`<div onclick="selectCustomer('\${c.id}','\${c.name}','\${c.company||''}','\${c.email}')"
+                /* CUSTOMER_PICKER_APOSTROPHE_FIX: data-attrs instead of inline onclick (quote-safe) */
+                box.innerHTML = results.map(c => \`<div class="cust-suggestion" data-cid="\${_csAttr(c.id)}" data-cname="\${_csAttr(c.name)}" data-ccompany="\${_csAttr(c.company||'')}" data-cemail="\${_csAttr(c.email)}"
                   style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #1e2d42;font-size:.82rem;"
                   onmouseover="this.style.background='rgba(200,147,42,0.1)'" onmouseout="this.style.background=''">
-                  <span style="color:#eef1f5;font-weight:600;">\${c.name}</span>
-                  \${c.company ? '<span style="color:#7a8a9a;"> — '+c.company+'</span>' : ''}
-                  <br><span style="color:#c8932a;font-size:.75rem;">\${c.email}</span>
+                  <span style="color:#eef1f5;font-weight:600;">\${_csText(c.name)}</span>
+                  \${c.company ? '<span style="color:#7a8a9a;"> — '+_csText(c.company)+'</span>' : ''}
+                  <br><span style="color:#c8932a;font-size:.75rem;">\${_csText(c.email)}</span>
                 </div>\`).join('');
                 box.style.display = 'block';
               });
@@ -648,6 +649,16 @@ export async function buildAdminRouter() {
           sel.innerHTML = '✓ Selected: <strong>' + name + '</strong> (' + email + ')';
           sel.style.display = 'block';
         }
+        /* CUSTOMER_PICKER_APOSTROPHE_FIX: escape helpers + delegated click on suggestions */
+        function _csAttr(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function _csText(v){ return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        document.addEventListener('click', function(e) {
+          var row = e.target.closest ? e.target.closest('.cust-suggestion') : null;
+          if (row) {
+            selectCustomer(row.getAttribute('data-cid'), row.getAttribute('data-cname'), row.getAttribute('data-ccompany'), row.getAttribute('data-cemail'));
+            return;
+          }
+        });
         document.addEventListener('click', function(e) {
           if (!e.target.closest('#existing-customer-section')) {
             document.getElementById('customer-suggestions').style.display = 'none';
