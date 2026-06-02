@@ -89,7 +89,7 @@ function adminNav(active) {
   <div class="sidebar">
     <a href="/admin/dashboard" class="${active==='dashboard'?'active':''}">📈 Dashboard</a>
     <a href="/admin/rfqs" class="${active==='rfqs'?'active':''}">📋 RFQs</a>
-    <a href="/admin/accounts" class="${active==='accounts'?'active':''}">🏢 Accounts</a>
+    <!-- CLEANUP_AND_RESUME_FIX_v1: Accounts link removed -->
     <a href="/admin/customers" class="${active==='customers'?'active':''}">👥 Customers</a>
     <a href="/admin/quotes" class="${active==='quotes'?'active':''}">💰 Quotes</a>
     <a href="/admin/orders" class="${active==='orders'?'active':''}">📦 Orders</a>
@@ -857,7 +857,7 @@ export async function buildAdminRouter() {
 
       // Check for existing draft quote
       const draftCheck = await pool.request().input('rfqIdDraft', sql.BigInt, req.params.id)
-        .query("SELECT id FROM quotes WHERE rfq_id=@rfqIdDraft AND status='Draft'");
+        .query("SELECT TOP 1 id FROM quotes WHERE rfq_id=@rfqIdDraft AND status<>'Accepted' ORDER BY id ASC"); /* CLEANUP_AND_RESUME_FIX_v1 */
       const existingDraft = draftCheck.recordset.length > 0 ? draftCheck.recordset[0] : null;
       const successMsg = req.query.created ? '<div class="alert alert-success">Manual RFQ created successfully!</div>' : req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
 
@@ -1828,7 +1828,7 @@ export async function buildAdminRouter() {
           <div class="page-title">Quote ${q.quote_number}</div>
           <div style="display:flex;gap:8px;">
           
-          ${q.status!=='Accepted' ? `<a href="/admin/quotes/${q.id}/edit" class="btn btn-sm" style="background:#c8932a;color:#000;font-weight:600;text-decoration:none;">&#x270F; Edit &amp; Resend</a>` : ''}
+          ''/* CLEANUP_AND_RESUME_FIX_v1: Edit & Resend button removed */
           <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
