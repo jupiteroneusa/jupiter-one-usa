@@ -15,6 +15,67 @@ import { renderPaymentTab } from './orderPaymentBlock.js';
 import { renderLinesTab } from './orderLinesBlock.js';
 import { logAudit, getIp } from '../middleware/audit.js'; /* AUDIT_ACTIONS_B_v1 */
 
+// ORDER_DOCS_TAB_v1: Documents tab renderer (uses /api/documents endpoints)
+function renderDocumentsTab(o) {
+  var oid = o.id;
+  var docTypes = ['8130 Cert','Certificate of Conformance (CoC)','Packing Slip','Supplier Quote','Supplier PO','Customer PO','Invoice','Trace Document','Other'];
+  var opts = docTypes.map(function(t){ return '<option value="'+t+'">'+t+'</option>'; }).join('');
+  var h = '';
+  h += '<div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;font-weight:700;margin-bottom:12px;">Documents</div>';
+  h += '<div style="background:#0e1828;border:1px solid #1e2d42;border-radius:6px;padding:16px;margin-bottom:18px;">';
+  h += '<div style="font-size:.8rem;color:#cfd5dc;margin-bottom:10px;">Upload a file for this order (certs, packing slips, POs, etc.)</div>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">';
+  h += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">File</div><input type="file" id="doc-file" style="width:100%;color:#cfd5dc;font-size:.82rem;"/></div>';
+  h += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Document Type</div><select id="doc-type" style="width:100%;">'+opts+'</select></div>';
+  h += '</div>';
+  h += '<div style="margin-bottom:10px;"><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:4px;">Notes (optional)</div><input type="text" id="doc-notes" placeholder="e.g. 8130 for line 2, lot 4471" style="width:100%;"/></div>';
+  h += '<label style="display:flex;align-items:center;gap:8px;font-size:.8rem;color:#cfd5dc;margin-bottom:12px;cursor:pointer;"><input type="checkbox" id="doc-custvis" style="width:auto;"/> Visible to customer in their portal</label>';
+  h += '<button type="button" class="btn btn-gold" id="doc-upload-btn" onclick="uploadOrderDoc('+oid+')">Upload</button>';
+  h += '<span id="doc-upload-msg" style="margin-left:12px;font-size:.82rem;"></span>';
+  h += '</div>';
+  h += '<div id="doc-list"><div style="color:#7a8a9a;font-size:.82rem;padding:10px;">Loading documents&hellip;</div></div>';
+  var js = '';
+  js += 'function fmtSize(b){ if(b==null) return ""; if(b<1024) return b+" B"; if(b<1048576) return (b/1024).toFixed(0)+" KB"; return (b/1048576).toFixed(1)+" MB"; }';
+  js += 'window.loadOrderDocs=function(oid){';
+  js += '  fetch("/api/documents/order/"+oid,{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(list){';
+  js += '    var box=document.getElementById("doc-list"); if(!box) return;';
+  js += '    if(!Array.isArray(list)||!list.length){ box.innerHTML="<div style=\\"color:#7a8a9a;font-size:.82rem;padding:10px;\\">No documents uploaded yet.</div>"; return; }';
+  js += '    var rows=list.map(function(d){';
+  js += '      var when = d.uploaded_at ? new Date(d.uploaded_at).toLocaleString() : (d.created_at ? new Date(d.created_at).toLocaleString() : "");';
+  js += '      var vis = d.is_customer_visible ? "<span style=\\"color:#4caf50;font-size:.68rem;\\">customer-visible</span>" : "<span style=\\"color:#7a8a9a;font-size:.68rem;\\">internal</span>";';
+  js += '      return "<tr>"+';
+  js += '        "<td style=\\"padding:6px 10px;\\"><a href=\\"/api/documents/"+d.id+"/download\\" target=\\"_blank\\" style=\\"color:#c8932a;\\">"+(d.file_name||"file")+"</a></td>"+';
+  js += '        "<td style=\\"padding:6px 10px;color:#cfd5dc;font-size:.8rem;\\">"+(d.doc_type||"")+"</td>"+';
+  js += '        "<td style=\\"padding:6px 10px;color:#7a8a9a;font-size:.78rem;\\">"+fmtSize(d.file_size_bytes)+"</td>"+';
+  js += '        "<td style=\\"padding:6px 10px;\\">"+vis+"</td>"+';
+  js += '        "<td style=\\"padding:6px 10px;color:#7a8a9a;font-size:.74rem;\\">"+when+"</td>"+';
+  js += '        "<td style=\\"padding:6px 10px;\\"><button type=\\"button\\" onclick=\\"deleteOrderDoc("+d.id+","+oid+")\\" style=\\"background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:3px 8px;cursor:pointer;border-radius:3px;font-size:.72rem;\\">Delete</button></td>"+';
+  js += '        "</tr>";';
+  js += '    }).join("");';
+  js += '    box.innerHTML="<table style=\\"width:100%;border-collapse:collapse;\\"><thead><tr style=\\"border-bottom:1px solid #1e2d42;\\"><th style=\\"text-align:left;padding:6px 10px;font-size:.68rem;color:#7a8a9a;text-transform:uppercase;\\">File</th><th style=\\"text-align:left;padding:6px 10px;font-size:.68rem;color:#7a8a9a;text-transform:uppercase;\\">Type</th><th style=\\"text-align:left;padding:6px 10px;font-size:.68rem;color:#7a8a9a;text-transform:uppercase;\\">Size</th><th style=\\"text-align:left;padding:6px 10px;font-size:.68rem;color:#7a8a9a;text-transform:uppercase;\\">Visibility</th><th style=\\"text-align:left;padding:6px 10px;font-size:.68rem;color:#7a8a9a;text-transform:uppercase;\\">Uploaded</th><th></th></tr></thead><tbody>"+rows+"</tbody></table>";';
+  js += '  }).catch(function(){ var box=document.getElementById("doc-list"); if(box) box.innerHTML="<div style=\\"color:#e05050;font-size:.82rem;padding:10px;\\">Could not load documents.</div>"; });';
+  js += '};';
+  js += 'window.uploadOrderDoc=function(oid){';
+  js += '  var f=document.getElementById("doc-file"); var msg=document.getElementById("doc-upload-msg"); var btn=document.getElementById("doc-upload-btn");';
+  js += '  if(!f||!f.files||!f.files.length){ if(msg){msg.style.color="#e05050";msg.textContent="Choose a file first.";} return; }';
+  js += '  var fd=new FormData(); fd.append("file",f.files[0]); fd.append("related_to_type","order"); fd.append("related_to_id",oid);';
+  js += '  fd.append("doc_type",document.getElementById("doc-type").value); fd.append("notes",document.getElementById("doc-notes").value);';
+  js += '  fd.append("is_customer_visible", document.getElementById("doc-custvis").checked ? "true":"false");';
+  js += '  if(btn){btn.disabled=true;btn.textContent="Uploading...";} if(msg){msg.style.color="#7a8a9a";msg.textContent="";}';
+  js += '  fetch("/api/documents/upload",{method:"POST",credentials:"same-origin",body:fd}).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(res){';
+  js += '    if(btn){btn.disabled=false;btn.textContent="Upload";}';
+  js += '    if(res.ok){ if(msg){msg.style.color="#4caf50";msg.textContent="Uploaded.";} f.value=""; document.getElementById("doc-notes").value=""; document.getElementById("doc-custvis").checked=false; window.loadOrderDocs(oid); }';
+  js += '    else { if(msg){msg.style.color="#e05050";msg.textContent=(res.j&&res.j.error)?res.j.error:"Upload failed.";} }';
+  js += '  }).catch(function(){ if(btn){btn.disabled=false;btn.textContent="Upload";} if(msg){msg.style.color="#e05050";msg.textContent="Network error.";} });';
+  js += '};';
+  js += 'window.deleteOrderDoc=function(id,oid){';
+  js += '  if(!confirm("Delete this document? This cannot be undone.")) return;';
+  js += '  fetch("/api/documents/"+id,{method:"DELETE",credentials:"same-origin"}).then(function(r){ if(r.ok){ window.loadOrderDocs(oid); } else { alert("Delete failed."); } }).catch(function(){ alert("Network error."); });';
+  js += '};';
+  js += 'window.loadOrderDocs('+oid+');';
+  h += '<scr'+'ipt>(function(){' + js + '})();<\/scr'+'ipt>';
+  return h;
+}
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
   const c = map[s] || 'gray';
@@ -59,7 +120,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       html += '<div><div class="page-title">'+o.order_number+'</div><div class="page-sub" style="margin-bottom:0;">'+o.customer_name+' &middot; '+(o.company||'')+'</div></div>';
       html += '<a href="/admin/orders" class="btn btn-outline btn-sm">&#8592; Back</a></div>';
       html += '<div style="border-bottom:1px solid #1e2d42;margin-bottom:24px;overflow-x:auto;white-space:nowrap;">';
-      html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping') + tabLink('proforma','&#129534; Proforma')+tabLink('payment','&#128179; Payment');
+      html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping') + tabLink('proforma','&#129534; Proforma')+tabLink('payment','&#128179; Payment')+tabLink('documents','&#128206; Documents'); /* ORDER_DOCS_TAB_v1 */
       html += '</div><div class="card"><div class="card-body">';
       if (activeTab === 'overview') {
         html += renderOverviewTab(o, sLog);
@@ -88,6 +149,8 @@ export function mountOrderRoutes(router, requireAuth, page) {
         html += renderProformaTab(o, pfR.recordset, authR.recordset, '');
       } else if (activeTab === 'payment') {
         html += renderPaymentTab(o, invoices, payments);
+      } else if (activeTab === 'documents') {
+        html += renderDocumentsTab(o);
       }
       html += '</div></div>';
       res.send(page('Order '+o.order_number, 'orders', html));

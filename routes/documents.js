@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { getPool, sql } from '../db/connect.js';
 import { requireAdmin, requireCustomer } from '../middleware/auth.js';
 import { logAudit, getIp } from '../middleware/audit.js';
-import { BlobServiceClient } from '@azure/storage-blob';
+import { BlobServiceClient, StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions } from '@azure/storage-blob'; /* DOC_DOWNLOAD_ROUTE_v1 */
 import multer from 'multer';
 import 'dotenv/config';
 
@@ -76,6 +76,49 @@ router.post('/upload', requireAdmin, upload.single('file'), async (req, res) => 
 });
 
 // ── GET /api/documents/:entityType/:entityId ──────────────────
+
+// DOC_DOWNLOAD_ROUTE_v1: secure short-lived download link (works for private or public containers)
+router.get('/:id/download', requireAdmin, async (req, res) => {
+  try {
+    const pool = await getPool();
+    const r = await pool.request().input('id', sql.BigInt, parseInt(req.params.id))
+      .query('SELECT file_url, file_name FROM documents WHERE id=@id');
+    if (!r.recordset.length) return res.status(404).send('Document not found.');
+    const doc = r.recordset[0];
+    const fileUrl = doc.file_url;
+    // Parse account + container + blob path from the stored URL
+    // Expected: https://<account>.blob.core.windows.net/<container>/<blobPath>
+    let m = /^https?:\/\/([^.]+)\.blob\.core\.windows\.net\/([^/]+)\/(.+)$/.exec(fileUrl || '');
+    const conn = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
+    const keyMatch = /AccountKey=([^;]+)/.exec(conn);
+    const nameMatch = /AccountName=([^;]+)/.exec(conn);
+    if (m && keyMatch && nameMatch) {
+      const accountName = nameMatch[1];
+      const accountKey = keyMatch[1];
+      const containerName = m[2];
+      const blobName = decodeURIComponent(m[3]);
+      const cred = new StorageSharedKeyCredential(accountName, accountKey);
+      const expiresOn = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      const sas = generateBlobSASQueryParameters({
+        containerName, blobName,
+        permissions: BlobSASPermissions.parse('r'),
+        startsOn: new Date(Date.now() - 60 * 1000),
+        expiresOn,
+        contentDisposition: 'attachment; filename="' + (doc.file_name || 'document').replace(/"/g, '') + '"'
+      }, cred).toString();
+      try { await logAudit({ userType: 'admin', userId: req.adminId, action: 'downloaded', entityType: 'document', entityId: parseInt(req.params.id), summary: 'Document downloaded: ' + (doc.file_name || ''), ipAddress: getIp(req) }); } catch(e) { console.error('audit doc download:', e.message); }
+      return res.redirect(fileUrl + '?' + sas);
+    }
+    // Fallback: container is public or URL not parseable -> redirect to stored URL directly
+    if (!fileUrl) return res.status(404).send('No file URL on record.');
+    try { await logAudit({ userType: 'admin', userId: req.adminId, action: 'downloaded', entityType: 'document', entityId: parseInt(req.params.id), summary: 'Document downloaded (direct): ' + (doc.file_name || ''), ipAddress: getIp(req) }); } catch(e) { console.error('audit doc download:', e.message); }
+    return res.redirect(fileUrl);
+  } catch (err) {
+    console.error('Document download error:', err);
+    return res.status(500).send('Download failed: ' + err.message);
+  }
+});
+
 router.get('/:entityType/:entityId', requireAdmin, async (req, res) => {
   try {
     const pool = await getPool();
