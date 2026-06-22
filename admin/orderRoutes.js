@@ -361,7 +361,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       // (compliance_blocked check end)
       const b = req.body;
       const shipNum = await generateNumber('SHP');
-      await pool.request()
+      const _shipResult = await pool.request()
         .input('orderId', sql.BigInt, req.params.id)
         .input('shipNum', sql.NVarChar(20), shipNum)
         .input('carrier', sql.NVarChar(100), b.carrier||null)
@@ -374,9 +374,48 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('pkgs', sql.Int, parseInt(b.package_count)||1)
         .input('sigReq', sql.Bit, b.signature_required==='1'?1:0)
         .input('ins', sql.Decimal(12,2), parseFloat(b.insurance_value)||null)
-        .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,weight_lbs,dimensions,package_count,signature_required,insurance_value,status) VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,@weight,@dims,@pkgs,@sigReq,@ins,'Shipped')");
-      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped',shipped_at=ISNULL(shipped_at,GETDATE()),updated_at=GETDATE() WHERE id=@id");
-      await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','Shipment added')");
+        .query("INSERT INTO shipments (order_id,shipment_number,carrier,tracking_number,tracking_url,ship_date,estimated_delivery,weight_lbs,dimensions,package_count,signature_required,insurance_value,status) OUTPUT INSERTED.id VALUES (@orderId,@shipNum,@carrier,@tracking,@trackingUrl,@shipDate,@estDelivery,@weight,@dims,@pkgs,@sigReq,@ins,'Shipped')");
+
+      /* SHIP_UPDATES_LINES_v1: record line-level fulfillment + roll up order status */
+      try {
+        const _shipId = (typeof _shipResult !== 'undefined' && _shipResult.recordset && _shipResult.recordset[0]) ? _shipResult.recordset[0].id : null;
+        // Lines with remaining quantity to ship
+        const _linesR = await pool.request().input('oid', sql.BigInt, req.params.id)
+          .query("SELECT id, quantity_ordered, ISNULL(quantity_shipped,0) AS shipped_so_far, status FROM order_lines WHERE order_id=@oid AND status<>'Cancelled'");
+        for (const _ln of _linesR.recordset) {
+          const _remaining = (_ln.quantity_ordered || 0) - (_ln.shipped_so_far || 0);
+          if (_remaining <= 0) continue;
+          if (_shipId) {
+            await pool.request()
+              .input('sid', sql.BigInt, _shipId)
+              .input('olid', sql.BigInt, _ln.id)
+              .input('qty', sql.Int, _remaining)
+              .query("INSERT INTO shipment_lines (shipment_id, order_line_id, quantity_shipped, created_at) VALUES (@sid, @olid, @qty, GETDATE())");
+          }
+          await pool.request()
+            .input('olid2', sql.BigInt, _ln.id)
+            .input('qty2', sql.Int, _remaining)
+            .query("UPDATE order_lines SET quantity_shipped=ISNULL(quantity_shipped,0)+@qty2, status='Shipped' WHERE id=@olid2");
+        }
+        // Roll up order status from line reality
+        const _rollR = await pool.request().input('oid2', sql.BigInt, req.params.id)
+          .query("SELECT COUNT(*) AS total, SUM(CASE WHEN status='Cancelled' THEN 1 ELSE 0 END) AS cancelled, SUM(CASE WHEN ISNULL(quantity_shipped,0) >= quantity_ordered THEN 1 ELSE 0 END) AS fully FROM order_lines WHERE order_id=@oid2");
+        const _rr = _rollR.recordset[0] || { total:0, cancelled:0, fully:0 };
+        const _active = (_rr.total || 0) - (_rr.cancelled || 0);
+        const _allShipped = _active > 0 && (_rr.fully || 0) >= _active;
+        if (_allShipped) {
+          await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped', shipped_at=ISNULL(shipped_at,GETDATE()), updated_at=GETDATE() WHERE id=@id");
+          await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','All lines shipped')");
+        } else {
+          await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Partially Shipped', shipped_at=ISNULL(shipped_at,GETDATE()), updated_at=GETDATE() WHERE id=@id");
+          await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Partially Shipped','Partial shipment recorded')");
+        }
+      } catch (_shipLineErr) {
+        console.error('SHIP_UPDATES_LINES_v1 error:', _shipLineErr.message);
+        // Fallback: at least flip the order to Shipped as before, so behavior never regresses
+        await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Shipped',shipped_at=ISNULL(shipped_at,GETDATE()),updated_at=GETDATE() WHERE id=@id");
+        await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Shipped','Shipment added')");
+      }
       // Send shipment notification to customer
       try {
         const custR = await pool.request().input('id', sql.BigInt, req.params.id)
