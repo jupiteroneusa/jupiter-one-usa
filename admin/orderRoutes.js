@@ -457,8 +457,9 @@ export function mountOrderRoutes(router, requireAuth, page) {
       try {
         const _shipId = (typeof _shipResult !== 'undefined' && _shipResult.recordset && _shipResult.recordset[0]) ? _shipResult.recordset[0].id : null;
         // Lines with remaining quantity to ship
+        const _invLines = []; /* PER_SHIPMENT_INVOICE_v1: collect shipped lines for invoicing */
         const _linesR = await pool.request().input('oid', sql.BigInt, req.params.id)
-          .query("SELECT id, quantity_ordered, ISNULL(quantity_shipped,0) AS shipped_so_far, status FROM order_lines WHERE order_id=@oid AND status<>'Cancelled'");
+          .query("SELECT id, quantity_ordered, ISNULL(quantity_shipped,0) AS shipped_so_far, status, unit_price, nsn, part_number, item_name, condition_code, line_number FROM order_lines WHERE order_id=@oid AND status<>'Cancelled'");
         for (const _ln of _linesR.recordset) {
           const _remaining = (_ln.quantity_ordered || 0) - (_ln.shipped_so_far || 0);
           if (_remaining <= 0) continue;
@@ -473,6 +474,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
             .input('olid2', sql.BigInt, _ln.id)
             .input('qty2', sql.Int, _remaining)
             .query("UPDATE order_lines SET quantity_shipped=ISNULL(quantity_shipped,0)+@qty2, status='Shipped' WHERE id=@olid2");
+          _invLines.push({ order_line_id: _ln.id, qty: _remaining, unit_price: parseFloat(_ln.unit_price || 0), nsn: _ln.nsn, part_number: _ln.part_number, item_name: _ln.item_name, condition_code: _ln.condition_code, line_number: _ln.line_number }); /* PER_SHIPMENT_INVOICE_v1 */
         }
         // Roll up order status from line reality
         const _rollR = await pool.request().input('oid2', sql.BigInt, req.params.id)
@@ -486,6 +488,48 @@ export function mountOrderRoutes(router, requireAuth, page) {
         } else {
           await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE orders SET status='Partially Shipped', shipped_at=ISNULL(shipped_at,GETDATE()), updated_at=GETDATE() WHERE id=@id");
           await pool.request().input('id', sql.BigInt, req.params.id).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Partially Shipped','Partial shipment recorded')");
+        }
+        /* PER_SHIPMENT_INVOICE_v1: generate an invoice for exactly what shipped in this shipment */
+        if (_shipId && _invLines.length > 0) {
+          try {
+            const _custR = await pool.request().input('oidC', sql.BigInt, req.params.id).query("SELECT customer_id FROM orders WHERE id=@oidC");
+            const _custId = _custR.recordset.length ? _custR.recordset[0].customer_id : null;
+            const _subtotal = _invLines.reduce(function(sum, l){ return sum + (l.qty * l.unit_price); }, 0);
+            const _invNumber = await generateNumber('INV');
+            const _issue = new Date();
+            const _due = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // Net 30
+            const _invR = await pool.request()
+              .input('orderId', sql.BigInt, req.params.id)
+              .input('customerId', sql.BigInt, _custId)
+              .input('shipmentId', sql.BigInt, _shipId)
+              .input('invNumber', sql.NVarChar(20), _invNumber)
+              .input('subtotal', sql.Decimal(12,2), _subtotal)
+              .input('total', sql.Decimal(12,2), _subtotal)
+              .input('balance', sql.Decimal(12,2), _subtotal)
+              .input('issueDate', sql.Date, _issue)
+              .input('dueDate', sql.Date, _due)
+              .query("INSERT INTO invoices (order_id, customer_id, shipment_id, invoice_number, subtotal, shipping_amount, total_amount, amount_paid, balance_due, status, issue_date, due_date) OUTPUT INSERTED.id VALUES (@orderId, @customerId, @shipmentId, @invNumber, @subtotal, 0, @total, 0, @balance, 'Open', @issueDate, @dueDate)");
+            const _newInvId = _invR.recordset[0].id;
+            for (const _il of _invLines) {
+              await pool.request()
+                .input('invId', sql.BigInt, _newInvId)
+                .input('olId', sql.BigInt, _il.order_line_id)
+                .input('lineNum', sql.Int, _il.line_number || 1)
+                .input('desc', sql.NVarChar(255), _il.item_name || null)
+                .input('nsn', sql.NVarChar(20), _il.nsn || null)
+                .input('pn', sql.NVarChar(100), _il.part_number || null)
+                .input('cond', sql.NVarChar(5), _il.condition_code || null)
+                .input('qty', sql.Int, _il.qty)
+                .input('price', sql.Decimal(12,2), _il.unit_price)
+                .input('ltot', sql.Decimal(12,2), _il.qty * _il.unit_price)
+                .query("INSERT INTO invoice_lines (invoice_id, order_line_id, line_number, description, nsn, part_number, condition_code, quantity, unit_price, line_total) VALUES (@invId, @olId, @lineNum, @desc, @nsn, @pn, @cond, @qty, @price, @ltot)");
+            }
+            await pool.request().input('id', sql.BigInt, req.params.id).input('inv', sql.NVarChar(20), _invNumber)
+              .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Invoice Generated', 'Invoice ' + @inv + ' generated for shipment')");
+            try { await logAudit({ userType:'admin', userId:req.adminId, userEmail:req.adminEmail, action:'invoice_generated', entityType:'invoice', entityId:_newInvId, summary:'Invoice ' + _invNumber + ' generated for shipment', ipAddress:getIp(req) }); } catch(e) { console.error('audit invoice_generated:', e.message); }
+          } catch (_invErr) {
+            console.error('PER_SHIPMENT_INVOICE_v1 error:', _invErr.message);
+          }
         }
       } catch (_shipLineErr) {
         console.error('SHIP_UPDATES_LINES_v1 error:', _shipLineErr.message);
