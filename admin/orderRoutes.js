@@ -76,6 +76,77 @@ function renderDocumentsTab(o) {
   h += '<scr'+'ipt>(function(){' + js + '})();<\/scr'+'ipt>';
   return h;
 }
+// COMPLETION_GATE_v1: renders the four-track completion checklist + Mark Complete button
+function renderCompletionChecklist(o, lines, invoices, pos) {
+  function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var alreadyComplete = (o.status === 'Complete' || o.status === 'Completed' || o.status === 'Closed');
+  // Track 1: lines terminal (fully shipped or cancelled)
+  var openLines = (lines||[]).filter(function(l){
+    if ((l.status||'') === 'Cancelled') return false;
+    return (l.quantity_shipped||0) < (l.quantity_ordered||0);
+  });
+  var t1ok = (lines && lines.length > 0) && openLines.length === 0;
+  var t1msg = t1ok ? 'All lines shipped or cancelled' : (openLines.length + ' line(s) not fully shipped');
+  // Track 2: money in - at least one invoice, all Paid
+  var unpaidInv = (invoices||[]).filter(function(iv){ return (iv.status||'') !== 'Paid'; });
+  var t2ok = (invoices && invoices.length > 0) && unpaidInv.length === 0;
+  var t2msg = (!invoices || invoices.length === 0) ? 'No invoice yet' : (t2ok ? 'All invoices paid' : (unpaidInv.length + ' invoice(s) unpaid'));
+  // Track 3: money out - all supplier POs terminal (Received/Paid/Closed or Cancelled)
+  var openPos = (pos||[]).filter(function(p){
+    var st = (p.status||'');
+    return !(st === 'Paid' || st === 'Closed' || st === 'Cancelled' || st === 'Received');
+  });
+  var unpaidPos = (pos||[]).filter(function(p){
+    var st = (p.status||'');
+    return !(st === 'Paid' || st === 'Closed' || st === 'Cancelled');
+  });
+  var t3ok = unpaidPos.length === 0;
+  var t3msg = (!pos || pos.length === 0) ? 'No supplier POs' : (t3ok ? 'All supplier POs settled' : (unpaidPos.length + ' PO(s) not yet paid/closed'));
+  // Track 4: certs - every line requiring a cert has it received
+  var missingCerts = (lines||[]).filter(function(l){
+    if ((l.status||'') === 'Cancelled') return false;
+    var need8130 = (l.cert_8130_required ? true : false) && !(l.cert_8130_received);
+    var needCoc  = (l.coc_required ? true : false) && !(l.coc_received);
+    return need8130 || needCoc;
+  });
+  var t4ok = missingCerts.length === 0;
+  var t4msg = t4ok ? 'Required certs on file (or none required)' : (missingCerts.length + ' line(s) missing required certs');
+  var allOk = t1ok && t2ok && t3ok && t4ok;
+  function row(ok, label, msg) {
+    var icon = ok ? '<span style="color:#4caf50;font-weight:700;">&#10004;</span>' : '<span style="color:#e0a050;font-weight:700;">&#9888;</span>';
+    var color = ok ? '#cfd5dc' : '#e0a050';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #16223a;">' +
+      '<div style="width:20px;text-align:center;">' + icon + '</div>' +
+      '<div style="flex:1;"><span style="color:#eef1f5;font-size:.86rem;">' + label + '</span>' +
+      '<span style="color:' + color + ';font-size:.78rem;margin-left:8px;">' + esc(msg) + '</span></div></div>';
+  }
+  var h = '';
+  h += '<div style="background:#0e1828;border:1px solid ' + (alreadyComplete ? '#4caf50' : (allOk ? '#4caf50' : '#1e2d42')) + ';border-radius:8px;padding:16px 18px;margin-bottom:20px;">';
+  if (alreadyComplete) {
+    h += '<div style="display:flex;align-items:center;gap:10px;"><span style="color:#4caf50;font-size:1.1rem;font-weight:700;">&#10004; Order Complete</span>';
+    h += '<span style="color:#7a8a9a;font-size:.8rem;">' + (o.completed_at ? ('Completed ' + new Date(o.completed_at).toLocaleString()) : '') + '</span></div>';
+    h += '</div>';
+    return h;
+  }
+  h += '<div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;font-weight:700;margin-bottom:10px;">Completion Checklist</div>';
+  h += row(t1ok, 'Fulfillment', t1msg);
+  h += row(t2ok, 'Payment received (money in)', t2msg);
+  h += row(t3ok, 'Suppliers paid (money out)', t3msg);
+  h += row(t4ok, 'Certs / documents', t4msg);
+  h += '<div style="margin-top:14px;display:flex;align-items:center;gap:12px;">';
+  if (allOk) {
+    h += '<form method="POST" action="/admin/orders/' + o.id + '/complete" onsubmit="return confirm(\u0027Mark this order Complete? All checks passed.\u0027);" style="margin:0;">';
+    h += '<button type="submit" class="btn btn-gold">&#10004; Mark Order Complete</button></form>';
+    h += '<span style="color:#4caf50;font-size:.8rem;">All checks passed &mdash; ready to complete.</span>';
+  } else {
+    h += '<form method="POST" action="/admin/orders/' + o.id + '/complete" onsubmit="return confirm(\u0027Some checks are not complete. Mark complete anyway? The open items will be recorded.\u0027);" style="margin:0;">';
+    h += '<input type="hidden" name="force" value="1"/>';
+    h += '<button type="submit" class="btn btn-outline" style="border-color:#e0a050;color:#e0a050;">Mark Complete Anyway</button></form>';
+    h += '<span style="color:#e0a050;font-size:.8rem;">Finish the open items above, or complete anyway (recorded).</span>';
+  }
+  h += '</div></div>';
+  return h;
+}
 function statusBadge(s) {
   const map = { 'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold','Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue','Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green','Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green','Paid':'green','Unpaid':'red','Overdue':'red','Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red' };
   const c = map[s] || 'gray';
@@ -110,7 +181,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const logRows = sLog.recordset.map(function(l) {
         return '<tr><td style="color:#7a8a9a;font-size:.78rem;">'+new Date(l.created_at).toLocaleString()+'</td><td>'+statusBadge(l.new_status)+'</td><td style="color:#7a8a9a;">'+(l.note||'&mdash;')+'</td></tr>';
       }).join('') || '<tr><td colspan="3" style="text-align:center;color:#7a8a9a;padding:12px;">No history</td></tr>';
-      const statuses = ['Confirmed','Processing','Ready to Ship','Shipped','Delivered','Cancelled'];
+      const statuses = ['Confirmed','Processing','Ready to Ship','Partially Shipped','Shipped','Delivered','Complete','Cancelled']; /* COMPLETION_GATE_v1 */
       const statusOpts = statuses.map(function(st) { return '<option value="'+st+'"'+(o.status===st?' selected':'')+'>'+st+'</option>'; }).join('');
       function tabLink(tab, label) {
         return '<a href="/admin/orders/'+o.id+'?tab='+tab+'" style="display:inline-block;padding:8px 18px;font-size:.82rem;font-weight:600;border-bottom:2px solid '+(activeTab===tab?'#c8932a':'transparent')+';color:'+(activeTab===tab?'#c8932a':'#7a8a9a')+';text-decoration:none;white-space:nowrap;">'+label+'</a>';
@@ -123,6 +194,12 @@ export function mountOrderRoutes(router, requireAuth, page) {
       html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping') + tabLink('proforma','&#129534; Proforma')+tabLink('payment','&#128179; Payment')+tabLink('documents','&#128206; Documents'); /* ORDER_DOCS_TAB_v1 */
       html += '</div><div class="card"><div class="card-body">';
       if (activeTab === 'overview') {
+        /* COMPLETION_GATE_v1: four-track completion checklist */
+        try {
+          const _pos = await pool.request().input('oidG', sql.BigInt, req.params.id)
+            .query("SELECT status FROM supplier_pos WHERE order_id=@oidG");
+          html += renderCompletionChecklist(o, oLines.recordset, invoices.recordset, _pos.recordset);
+        } catch (_gateErr) { console.error('COMPLETION_GATE_v1 render:', _gateErr.message); }
         html += renderOverviewTab(o, sLog);
       } else if (activeTab === 'lines') {
         // [Rewire 4] One-click Create Supplier POs button
@@ -428,6 +505,25 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } catch(shipEmailErr) { console.error('Shipment email error:', shipEmailErr.message); }
       res.redirect('/admin/orders/'+req.params.id+'?tab=shipping&saved=1');
     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+  });
+
+  // COMPLETION_GATE_v1: mark order complete (forgiving; records open items if forced)
+  router.post('/orders/:id/complete', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const forced = (req.body && req.body.force === '1');
+      const note = forced ? 'Order marked Complete (forced - some checks were open)' : 'Order marked Complete - all checks passed';
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE orders SET status='Complete', completed_at=ISNULL(completed_at,GETDATE()), updated_at=GETDATE() WHERE id=@id");
+      await pool.request().input('id', sql.BigInt, req.params.id).input('n', sql.NVarChar(500), note)
+        .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Complete',@n)");
+      try { await logAudit({ userType:'admin', userId:req.adminId, userEmail:req.adminEmail, action:'order_completed', entityType:'order', entityId:req.params.id, summary:note, ipAddress:getIp(req) }); } catch(e) { console.error('audit order_completed:', e.message); }
+      res.redirect('/admin/orders/' + req.params.id + '?tab=overview&saved=1');
+    } catch (err) {
+      console.error('Order complete error:', err);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=overview&error=' + encodeURIComponent(err.message));
+    }
   });
 
   router.post('/orders/:id/shipments/:sid/deliver', async (req, res) => {
