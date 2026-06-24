@@ -498,7 +498,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
             html += '<tr>' +
               '<td>' + l.line_number + '</td>' +
               '<td class="mono" style="color:#c8932a;">' + (l.nsn || l.part_number || '&mdash;') + '</td>' +
-              '<td style="font-size:.8rem;">' + (l.item_name || '&mdash;') + '</td>' +
+              '<td style="font-size:.82rem;min-width:280px;max-width:420px;white-space:normal;word-break:break-word;line-height:1.4;padding:8px 10px;vertical-align:top;">' + (l.item_name || '&mdash;') + '</td>' + /* PO_ITEM_WRAP_v1 */
               '<td>' + (l.condition_code || '&mdash;') + '</td>' +
               '<td style="font-weight:600;">' + l.quantity + '</td>' +
               '<td>' + (l.received_quantity || 0) + ' / ' + l.quantity + (fullReceived ? ' <span style="color:#4caf50;">&#10004;</span>' : '') + '</td>' +
