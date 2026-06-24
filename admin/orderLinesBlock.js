@@ -90,10 +90,18 @@ export async function renderLinesTab(o, oLines, suppliers) {
         html += '</tr>';
       });
       html += '</tbody></table>';
+    } /* FIX_LINE_SOURCES_v1: close read-only table block; panel now always renders */
 
-      // Edit sources panel
-      // ORDER_SOURCES_ADDREMOVE_V2 panel
-      html += '<div id="srcedit-' + l.id + '" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed #1e2d42;">';
+    {
+      // FIX_LINE_SOURCES_v1: edit panel ALWAYS renders (works for 0 or more sources)
+      var _noSrc = (lineSources.length === 0);
+      var _panelStyle = _noSrc ? 'display:block;margin-top:0;padding:10px 16px;border-bottom:1px solid #1e2d42;background:rgba(200,147,42,0.04);' : 'display:none;margin-top:10px;padding-top:10px;border-top:1px dashed #1e2d42;';
+      if (_noSrc) {
+        html += '<div style="padding:8px 16px;background:rgba(224,80,80,0.06);color:#e0a050;font-size:.78rem;border-bottom:1px solid #1e2d42;">&#9888; No sources yet &mdash; add one below.</div>';
+      } else {
+        html += '<div style="padding:8px 16px;border-bottom:1px solid #1e2d42;"><button type="button" onclick="var d=document.getElementById(\u0027srcedit-' + l.id + '\u0027);d.style.display=d.style.display===\u0027none\u0027?\u0027block\u0027:\u0027none\u0027;" style="background:transparent;border:1px solid #c8932a;color:#c8932a;padding:3px 12px;cursor:pointer;border-radius:3px;font-size:.7rem;">&#9998; Edit / Add Sources</button></div>';
+      }
+      html += '<div id="srcedit-' + l.id + '" style="' + _panelStyle + '">';
       html += '<form method="POST" action="/admin/orders/' + o.id + '/lines/' + l.id + '/sources-update">';
       html += '<div id="src-rows-' + l.id + '">';
       lineSources.forEach(function(src, idx) {
@@ -126,9 +134,7 @@ export async function renderLinesTab(o, oLines, suppliers) {
       html += '<button type="submit" class="btn btn-gold btn-sm">Save Source Changes</button>';
       html += '</div>';
       html += '</form></div></div>';
-    } else {
-      html += '<div style="padding:8px 16px;background:rgba(224,80,80,0.06);color:#e05050;font-size:.78rem;border-bottom:1px solid #1e2d42;">⚠ No sources on this line.</div>';
-    }
+    } /* FIX_LINE_SOURCES_v1: end always-on edit panel */
 
     // Action bar
     html += '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">';
