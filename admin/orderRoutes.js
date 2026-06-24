@@ -290,32 +290,26 @@ export function mountOrderRoutes(router, requireAuth, page) {
         return res.redirect('/admin/orders/' + orderId + '?tab=lines&error=No+sources');
       }
 
-      // Fetch existing DB rows for this line so we know what to UPDATE/DELETE
+      // SOURCES_REPLACE_ALL_v1: stale-id-proof rebuild.
+      // The form's submitted ids can be stale (a prior save renumbered rows), so we do NOT use
+      // them to decide keep-vs-delete. Instead: protect PO'd rows, wipe the rest, re-insert the form.
       const existR = await pool.request().input('lineId', sql.BigInt, lineId)
         .query('SELECT id, supplier_po_line_id FROM order_line_sources WHERE order_line_id=@lineId');
       const existing = existR.recordset || [];
-      const submittedIds = new Set(validRows.filter(function(r){ return r.id; }).map(function(r){ return r.id; }));
+      // Real ids that are PO'd (protected) - these actually exist in the DB right now.
+      const protectedIds = new Set(existing.filter(function(row){ return row.supplier_po_line_id; }).map(function(row){ return row.id; }));
 
-      // Determine rows to DELETE (in DB but not in submission). Skip rows that
-      // already have a supplier_po_line_id — those are PO'd and protected.
-      const toDelete = existing.filter(function(row){
-        return !submittedIds.has(row.id) && !row.supplier_po_line_id;
-      });
-
-      // Compute totals for line cost recalc, and the next sort_order for INSERTs
       let totalQty = 0, totalCost = 0;
-      const maxSortR = await pool.request().input('lineId', sql.BigInt, lineId)
-        .query('SELECT ISNULL(MAX(sort_order),0) AS maxs FROM order_line_sources WHERE order_line_id=@lineId');
-      let nextSort = (maxSortR.recordset[0] && maxSortR.recordset[0].maxs) || 0;
+      let nextSort = 0;
 
-      // UPDATE / INSERT each submitted valid row
+      // 1) UPDATE submitted rows that match a REAL protected (PO'd) id; INSERT everything else.
       for (let k = 0; k < validRows.length; k++) {
         const r = validRows[k];
         totalQty += r.qty;
         totalCost += r.qty * r.cost;
-
-        if (r.id) {
-          // UPDATE existing
+        nextSort += 1;
+        if (r.id && protectedIds.has(r.id)) {
+          // This is a real, PO'd row - update in place (do not delete/recreate).
           await pool.request()
             .input('id', sql.BigInt, r.id)
             .input('sup', sql.BigInt, r.supplier_id)
@@ -325,10 +319,10 @@ export function mountOrderRoutes(router, requireAuth, page) {
             .input('h8', sql.Bit, r.h8)
             .input('hc', sql.Bit, r.hc)
             .input('ht', sql.Bit, r.ht)
-            .query("UPDATE order_line_sources SET supplier_id=@sup, allocated_qty=@qty, unit_cost=@cost, lead_time_text=@lead, has_8130_required=@h8, has_coc_required=@hc, has_trace_required=@ht, updated_at=GETDATE() WHERE id=@id");
+            .input('sortO', sql.Int, nextSort)
+            .query("UPDATE order_line_sources SET supplier_id=@sup, allocated_qty=@qty, unit_cost=@cost, lead_time_text=@lead, has_8130_required=@h8, has_coc_required=@hc, has_trace_required=@ht, sort_order=@sortO, updated_at=GETDATE() WHERE id=@id");
         } else {
-          // INSERT new (Add Source path). line_cost is COMPUTED — do not insert.
-          nextSort += 1;
+          // New row, OR an edited row whose submitted id is stale/non-protected: insert fresh.
           await pool.request()
             .input('olId', sql.BigInt, lineId)
             .input('sup', sql.BigInt, r.supplier_id)
@@ -343,11 +337,13 @@ export function mountOrderRoutes(router, requireAuth, page) {
         }
       }
 
-      // DELETE removed rows
-      for (let d = 0; d < toDelete.length; d++) {
-        await pool.request()
-          .input('delId', sql.BigInt, toDelete[d].id)
-          .query('DELETE FROM order_line_sources WHERE id=@delId');
+      // 2) DELETE every existing NON-protected row (clean slate; protected PO'd rows were updated above).
+      for (let d = 0; d < existing.length; d++) {
+        if (!protectedIds.has(existing[d].id)) {
+          await pool.request()
+            .input('delId', sql.BigInt, existing[d].id)
+            .query('DELETE FROM order_line_sources WHERE id=@delId');
+        }
       }
 
       // Recompute line's supplier_cost (weighted average across remaining sources)
@@ -357,7 +353,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('uc', sql.Decimal(10, 2), newLineUnitCost)
         .query('UPDATE order_lines SET supplier_cost=@uc WHERE id=@id');
 
-      const summary = 'Sources+updated+%28' + validRows.filter(function(r){return !r.id;}).length + '+added%2C+' + toDelete.length + '+removed%29';
+      const summary = 'Sources+saved+%28' + validRows.length + '+source%28s%29%29'; /* SOURCES_REPLACE_ALL_v1 */
       res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=' + summary);
     } catch (err) {
       console.error('Sources update error:', err);
