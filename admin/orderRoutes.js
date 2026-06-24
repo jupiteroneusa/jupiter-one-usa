@@ -245,6 +245,14 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const b = req.body || {};
       const orderId = parseInt(req.params.id);
       const lineId = parseInt(req.params.lineId);
+      /* DEBUG_SOURCES_v1: capture raw submitted body for diagnosis */
+      try {
+        let _dbg = '';
+        Object.keys(b).forEach(function(k){ if (k.indexOf('src_') === 0) { _dbg += k + '=' + b[k] + '; '; } });
+        if (_dbg.length > 480) _dbg = _dbg.substring(0, 480);
+        await pool.request().input('id', sql.BigInt, orderId).input('n', sql.NVarChar(500), 'DEBUG sources-update line ' + lineId + ': ' + _dbg)
+          .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'DEBUG',@n)");
+      } catch(_dbgErr) { console.error('DEBUG_SOURCES_v1:', _dbgErr.message); }
 
       // Scan submitted rows (no src_count needed). A row is "present" if
       // at minimum src_X_supplier_id is in the body (Add Source rows lack id).
