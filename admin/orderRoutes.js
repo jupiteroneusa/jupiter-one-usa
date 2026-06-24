@@ -259,6 +259,14 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const b = req.body || {};
       const orderId = parseInt(req.params.id);
       const lineId = parseInt(req.params.lineId);
+      /* DEBUG_SOURCES2_v1: capture raw src_* fields submitted (TEMPORARY) */
+      try {
+        var _dbgPairs = [];
+        Object.keys(req.body || {}).forEach(function(k){ if (k.indexOf('src_') === 0) { _dbgPairs.push(k + '=' + req.body[k]); } });
+        var _dbgTxt = ('DBG line ' + lineId + ': ' + _dbgPairs.join(' | ')).substring(0, 480);
+        await pool.request().input('oid', sql.BigInt, parseInt(req.params.id)).input('n', sql.NVarChar(500), _dbgTxt)
+          .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'DEBUG2',@n)");
+      } catch(_dbgErr) { console.error('DEBUG_SOURCES2:', _dbgErr.message); }
 
       // Scan submitted rows (no src_count needed). A row is "present" if
       // at minimum src_X_supplier_id is in the body (Add Source rows lack id).
