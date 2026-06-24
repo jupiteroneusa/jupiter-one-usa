@@ -197,9 +197,19 @@ export async function generatePoPdf(poId) {
   lines.forEach(function(l) {
     if (y > 240) { doc.addPage(); y = 20; }
 
+    /* PO_PDF_DESC_WRAP_v1: wrap description instead of truncating at 32 chars */
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    var descWidth = (colX.cond - colX.desc) - 3; // usable mm for description, small gap before Cond
+    var descLinesAll = doc.splitTextToSize(String(l.item_name || '\u2014'), descWidth);
+    var descLines = descLinesAll.slice(0, 5); // cap at 5 lines (long descriptions allowed)
+    var hasLead = !!l.lead_time_text;
+    var lineCount = descLines.length + (hasLead ? 1 : 0);
+    var rowH = Math.max(8, 4 + lineCount * 3.6); // dynamic row height
+
     if (alt) {
       doc.setFillColor(248, 248, 248);
-      doc.rect(margin, y - 4, contentW, 7, 'F');
+      doc.rect(margin, y - 4, contentW, rowH, 'F');
     }
     alt = !alt;
 
@@ -208,20 +218,24 @@ export async function generatePoPdf(poId) {
 
     doc.setTextColor(...gold);
     doc.setFont('helvetica', 'bold');
-    doc.text(String(l.nsn || l.part_number || '—').substring(0, 18), colX.part, y);
+    doc.text(String(l.nsn || l.part_number || '\u2014').substring(0, 18), colX.part, y);
 
     doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
-    doc.text(String(l.item_name || '—').substring(0, 32), colX.desc, y);
-    if (l.lead_time_text) {
+    // render wrapped description lines
+    for (var _di = 0; _di < descLines.length; _di++) {
+      doc.text(descLines[_di], colX.desc, y + (_di * 3.6));
+    }
+    var _leadY = y + (descLines.length * 3.6);
+    if (hasLead) {
       doc.setFontSize(7);
       doc.setTextColor(120, 120, 120);
-      doc.text('Lead: ' + String(l.lead_time_text).substring(0, 30), colX.desc, y + 3);
+      doc.text('Lead: ' + String(l.lead_time_text).substring(0, 40), colX.desc, _leadY);
       doc.setFontSize(8);
       doc.setTextColor(60, 60, 60);
     }
 
-    doc.text(String(l.condition_code || '—'), colX.cond, y, { align: 'center' });
+    doc.text(String(l.condition_code || '\u2014'), colX.cond, y, { align: 'center' });
     doc.text(String(l.quantity || 0), colX.qty, y, { align: 'center' });
     doc.text(fmtMoney(l.unit_cost), colX.cost + 15, y, { align: 'right' });
 
@@ -230,8 +244,8 @@ export async function generatePoPdf(poId) {
 
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.1);
-    doc.line(margin, y + 2, pageW - margin, y + 2);
-    y += 8;
+    doc.line(margin, y + rowH - 6, pageW - margin, y + rowH - 6);
+    y += rowH;
   });
 
   y += 4;
