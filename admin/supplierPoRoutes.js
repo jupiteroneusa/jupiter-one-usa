@@ -466,7 +466,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
                       html += '<span class="mono" style="color:#c8932a;font-size:.8rem;">' + nsnEsc + '</span>';
                     }
                     html += '</td>';
-                    html += '<td style="padding:6px;"><input type="text" name="line_' + idx + '_item" value="' + itemEsc + '" placeholder="' + (isAdHoc ? 'e.g. 3.5% CC surcharge' : 'Item name') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.78rem;"/></td>';
+                    html += '<td style="padding:6px;min-width:280px;"><input type="text" name="line_' + idx + '_item" value="' + itemEsc + '" placeholder="' + (isAdHoc ? 'e.g. 3.5% CC surcharge' : 'Item name') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.8rem;"/></td>'; /* PO_ITEM_WRAP_EDIT_v1 */
                     html += '<td style="padding:6px;text-align:center;"><input type="number" name="line_' + idx + '_qty" min="1" value="' + (l.quantity || 1) + '" style="width:70px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 6px;font-size:.78rem;text-align:center;"/></td>';
                     html += '<td style="padding:6px;text-align:right;">$<input type="number" step="0.01" name="line_' + idx + '_cost" value="' + parseFloat(l.unit_cost || 0).toFixed(2) + '" style="width:100px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 6px;font-size:.78rem;text-align:right;"/></td>';
                     html += '<td style="padding:6px;text-align:right;color:#7a8a9a;font-size:.78rem;">computed on save</td>';
