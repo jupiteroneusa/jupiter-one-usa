@@ -222,7 +222,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">NSN</div><input type="text" name="nsn" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Part Number</div><input type="text" name="part_number" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Item Name</div><input type="text" name="item_name" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
-        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Cond</div><input type="text" name="condition_code" placeholder="NE" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Cond</div><select name="condition_code" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"><option value="">&mdash;</option><option value="NE">NE</option><option value="NS">NS</option><option value="AR">AR</option><option value="OH">OH</option><option value="RP">RP</option><option value="SV">SV</option><option value="SC">SC</option></select></div>'; /* ADD_LINE_COND_FIX_v1 */
         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Qty</div><input type="number" name="quantity_ordered" min="1" value="1" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
         html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Unit Price ($)</div><input type="number" step="0.01" min="0" name="unit_price" value="0.00" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
         html += '<div><button type="submit" class="btn btn-gold btn-sm">Add Line</button></div>';
@@ -668,7 +668,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('nsn', sql.NVarChar(20), (b.nsn || '').trim() || null)
         .input('pn', sql.NVarChar(100), (b.part_number || '').trim() || null)
         .input('item', sql.NVarChar(255), (b.item_name || '').trim() || null)
-        .input('cond', sql.NVarChar(5), (b.condition_code || '').trim() || null)
+        .input('cond', sql.NVarChar(5), (function(){ var _valid=['AR','NE','NS','OH','RP','SV','SC']; var _c=(b.condition_code||'').trim().toUpperCase(); return _valid.indexOf(_c)!==-1 ? _c : null; })()) /* ADD_LINE_COND_FIX_v1 */
         .input('qty', sql.Int, qty)
         .input('price', sql.Decimal(12,2), price)
         .input('ltot', sql.Decimal(12,2), lineTotal)
