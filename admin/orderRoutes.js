@@ -215,6 +215,20 @@ export function mountOrderRoutes(router, requireAuth, page) {
           html += '</form></div>';
         }
         html += await renderLinesTab(o, oLines, suppliers);
+        /* ADD_ORDER_LINE_v1: simple add-line form (no inline JS) */
+        html += '<div style="margin-top:20px;background:#0e1828;border:1px solid #1e2d42;border-radius:6px;padding:16px;">';
+        html += '<div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;font-weight:700;margin-bottom:12px;">Add Line to Order</div>';
+        html += '<form method="POST" action="/admin/orders/' + o.id + '/lines/add" style="display:grid;grid-template-columns:1fr 1fr 2fr 0.6fr 0.6fr 0.8fr auto;gap:10px;align-items:end;">';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">NSN</div><input type="text" name="nsn" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Part Number</div><input type="text" name="part_number" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Item Name</div><input type="text" name="item_name" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Cond</div><input type="text" name="condition_code" placeholder="NE" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Qty</div><input type="number" name="quantity_ordered" min="1" value="1" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><div style="font-size:.65rem;color:#7a8a9a;margin-bottom:3px;">Unit Price ($)</div><input type="number" step="0.01" min="0" name="unit_price" value="0.00" required style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:6px 8px;font-size:.82rem;"/></div>';
+        html += '<div><button type="submit" class="btn btn-gold btn-sm">Add Line</button></div>';
+        html += '</form>';
+        html += '<div style="font-size:.72rem;color:#7a8a9a;margin-top:10px;">Adds a new line and updates the order total. Source and ship it like any other line.</div>';
+        html += '</div>';
       } else if (activeTab === 'shipping') {
         const missingCertsR = await pool.request().input('idMc', sql.BigInt, req.params.id).query("SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS part_number, nsn, cert_8130_required, cert_8130_received, coc_required, coc_received FROM order_lines WHERE order_id=@idMc AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))");
         html += renderShippingTab(o, ships, missingCertsR.recordset);
@@ -633,6 +647,51 @@ export function mountOrderRoutes(router, requireAuth, page) {
       }
       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
     } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
+  });
+
+  // ADD_ORDER_LINE_v1: add a new line to an existing order
+  router.post('/orders/:id/lines/add', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const b = req.body || {};
+      const orderId = parseInt(req.params.id);
+      const qty = Math.max(1, parseInt(b.quantity_ordered) || 1);
+      const price = Math.max(0, parseFloat(b.unit_price) || 0);
+      const lineTotal = qty * price;
+      const lnR = await pool.request().input('oid', sql.BigInt, orderId)
+        .query('SELECT ISNULL(MAX(line_number),0)+1 AS nextln FROM order_lines WHERE order_id=@oid');
+      const nextLn = (lnR.recordset[0] && lnR.recordset[0].nextln) || 1;
+      const insR = await pool.request()
+        .input('oid', sql.BigInt, orderId)
+        .input('ln', sql.Int, nextLn)
+        .input('nsn', sql.NVarChar(20), (b.nsn || '').trim() || null)
+        .input('pn', sql.NVarChar(100), (b.part_number || '').trim() || null)
+        .input('item', sql.NVarChar(255), (b.item_name || '').trim() || null)
+        .input('cond', sql.NVarChar(5), (b.condition_code || '').trim() || null)
+        .input('qty', sql.Int, qty)
+        .input('price', sql.Decimal(12,2), price)
+        .input('ltot', sql.Decimal(12,2), lineTotal)
+        .query("INSERT INTO order_lines (order_id, line_number, nsn, part_number, item_name, condition_code, quantity_ordered, quantity_received, quantity_shipped, unit_price, line_total, status, cert_8130_required, cert_8130_received, coc_required, coc_received, created_at) OUTPUT INSERTED.id VALUES (@oid, @ln, @nsn, @pn, @item, @cond, @qty, 0, 0, @price, @ltot, 'Pending', 0, 0, 0, 0, GETDATE())");
+      const newLineId = insR.recordset[0].id;
+      const sumR = await pool.request().input('oid', sql.BigInt, orderId)
+        .query("SELECT ISNULL(SUM(line_total),0) AS sub FROM order_lines WHERE order_id=@oid AND status<>'Cancelled'");
+      const newSub = (sumR.recordset[0] && sumR.recordset[0].sub) || 0;
+      await pool.request()
+        .input('oid', sql.BigInt, orderId)
+        .input('sub', sql.Decimal(12,2), newSub)
+        .query("UPDATE orders SET subtotal=@sub, total_amount=@sub + ISNULL(tax_amount,0) + ISNULL(shipping_cost,0), updated_at=GETDATE() WHERE id=@oid");
+      try {
+        const _noteTxt = 'Line ' + nextLn + ' added (qty ' + qty + ')';
+        await pool.request().input('oid', sql.BigInt, orderId).input('n', sql.NVarChar(500), _noteTxt)
+          .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Line Added',@n)");
+      } catch(_logErr) { console.error('add-line log:', _logErr.message); }
+      try { await logAudit({ userType:'admin', userId:req.adminId, userEmail:req.adminEmail, action:'order_line_added', entityType:'order_line', entityId:newLineId, summary:'Added line ' + nextLn + ' to order ' + orderId, ipAddress:getIp(req) }); } catch(e) { console.error('audit order_line_added:', e.message); }
+      res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=1');
+    } catch (err) {
+      console.error('Add order line error:', err);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
+    }
   });
 
   router.post('/orders/:id/lines/:lineId/update', async (req, res) => {
