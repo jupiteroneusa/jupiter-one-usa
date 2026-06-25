@@ -502,6 +502,13 @@ export function mountOrderRoutes(router, requireAuth, page) {
         /* PER_SHIPMENT_INVOICE_v1: generate an invoice for exactly what shipped in this shipment */
         if (_shipId && _invLines.length > 0) {
           try {
+            /* INVOICE_DUP_GUARD_v1: skip per-shipment invoice if order already has a PAID invoice covering its total */
+            const _dupR = await pool.request().input('oidDup', sql.BigInt, req.params.id).query("SELECT o.total_amount AS order_total, ISNULL((SELECT SUM(total_amount) FROM invoices WHERE order_id=o.id AND status<>'Cancelled' AND status='Paid'),0) AS paid_invoiced FROM orders o WHERE o.id=@oidDup");
+            const _dup = _dupR.recordset[0] || { order_total: 0, paid_invoiced: 0 };
+            if (parseFloat(_dup.paid_invoiced) >= parseFloat(_dup.order_total) && parseFloat(_dup.order_total) > 0) {
+              try { await pool.request().input('oid', sql.BigInt, req.params.id).input('n', sql.NVarChar(500), 'Per-shipment invoice skipped: order already fully invoiced + paid').query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Invoice Skipped',@n)"); } catch(_se) { console.error('dup-guard log:', _se.message); }
+              throw new Error('__SKIP_DUP_INVOICE__');
+            }
             const _custR = await pool.request().input('oidC', sql.BigInt, req.params.id).query("SELECT customer_id FROM orders WHERE id=@oidC");
             const _custId = _custR.recordset.length ? _custR.recordset[0].customer_id : null;
             const _subtotal = _invLines.reduce(function(sum, l){ return sum + (l.qty * l.unit_price); }, 0);
@@ -538,7 +545,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
               .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Invoice Generated', 'Invoice ' + @inv + ' generated for shipment')");
             try { await logAudit({ userType:'admin', userId:req.adminId, userEmail:req.adminEmail, action:'invoice_generated', entityType:'invoice', entityId:_newInvId, summary:'Invoice ' + _invNumber + ' generated for shipment', ipAddress:getIp(req) }); } catch(e) { console.error('audit invoice_generated:', e.message); }
           } catch (_invErr) {
-            console.error('PER_SHIPMENT_INVOICE_v1 error:', _invErr.message);
+            if (_invErr.message === '__SKIP_DUP_INVOICE__') { console.log('Per-shipment invoice intentionally skipped (already paid).'); } else { console.error('PER_SHIPMENT_INVOICE_v1 error:', _invErr.message); }
           }
         }
       } catch (_shipLineErr) {
@@ -647,51 +654,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
       }
       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
     } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
-  });
-
-  // REMOVE_ORDER_LINE_HANDLER_v1: remove (delete if clean, cancel if attached to PO/shipment/invoice)
-  router.post('/orders/:id/lines/:lineId/remove', async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const orderId = parseInt(req.params.id);
-      const lineId = parseInt(req.params.lineId);
-      // Is this line attached to anything downstream?
-      const attR = await pool.request().input('lid', sql.BigInt, lineId).query(
-        "SELECT (SELECT COUNT(*) FROM supplier_po_lines WHERE order_line_id=@lid) AS pos, (SELECT COUNT(*) FROM shipment_lines WHERE order_line_id=@lid) AS ships, (SELECT COUNT(*) FROM invoice_lines WHERE order_line_id=@lid) AS invs");
-      const att = attR.recordset[0] || { pos:0, ships:0, invs:0 };
-      const isAttached = (att.pos > 0 || att.ships > 0 || att.invs > 0);
-      let action = '';
-      if (isAttached) {
-        // Keep for audit - mark Cancelled.
-        await pool.request().input('lid', sql.BigInt, lineId)
-          .query("UPDATE order_lines SET status='Cancelled' WHERE id=@lid");
-        action = 'cancelled';
-      } else {
-        // Clean line - delete its sources then the line.
-        await pool.request().input('lid', sql.BigInt, lineId)
-          .query('DELETE FROM order_line_sources WHERE order_line_id=@lid');
-        await pool.request().input('lid', sql.BigInt, lineId)
-          .query('DELETE FROM order_lines WHERE id=@lid');
-        action = 'deleted';
-      }
-      // Recompute order subtotal + total (Cancelled excluded).
-      const sumR = await pool.request().input('oid', sql.BigInt, orderId)
-        .query("SELECT ISNULL(SUM(line_total),0) AS sub FROM order_lines WHERE order_id=@oid AND status<>'Cancelled'");
-      const newSub = (sumR.recordset[0] && sumR.recordset[0].sub) || 0;
-      await pool.request().input('oid', sql.BigInt, orderId).input('sub', sql.Decimal(12,2), newSub)
-        .query("UPDATE orders SET subtotal=@sub, total_amount=@sub + ISNULL(tax_amount,0) + ISNULL(shipping_cost,0), updated_at=GETDATE() WHERE id=@oid");
-      try {
-        const _noteR = 'Line ' + lineId + ' ' + action + (isAttached ? ' (had PO/shipment/invoice)' : '');
-        await pool.request().input('oid', sql.BigInt, orderId).input('n', sql.NVarChar(500), _noteR)
-          .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Line Removed',@n)");
-      } catch(_le) { console.error('remove-line log:', _le.message); }
-      try { await logAudit({ userType:'admin', userId:req.adminId, userEmail:req.adminEmail, action:'order_line_removed', entityType:'order_line', entityId:lineId, summary:'Line ' + lineId + ' ' + action, ipAddress:getIp(req) }); } catch(e) { console.error('audit order_line_removed:', e.message); }
-      res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=1');
-    } catch (err) {
-      console.error('Remove order line error:', err);
-      res.redirect('/admin/orders/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
-    }
   });
 
   // ADD_ORDER_LINE_v1: add a new line to an existing order
@@ -863,8 +825,15 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query('SELECT o.*, c.first_name, c.last_name, c.email, c.company FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=@id');
       if (!or.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?error=Order+not+found');
       const o = or.recordset[0];
-      const existing = await pool.request().input('oid', sql.BigInt, req.params.id).query('SELECT id FROM invoices WHERE order_id=@oid');
-      if (existing.recordset.length) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=Invoice+already+exists');
+      /* INVOICE_DUP_GUARD_v1: warn-but-allow instead of hard block. Cancelled invoices do not count. */
+      const existing = await pool.request().input('oid', sql.BigInt, req.params.id).query("SELECT id, invoice_number, total_amount FROM invoices WHERE order_id=@oid AND status<>'Cancelled'");
+      if (existing.recordset.length && req.body.confirm !== '1') {
+        const _exNum = existing.recordset.map(function(r){ return r.invoice_number; }).join(', ');
+        const _exTot = existing.recordset.reduce(function(sum,r){ return sum + parseFloat(r.total_amount||0); }, 0);
+        const _dollar = String.fromCharCode(36);
+        const _warnMsg = 'This order already has invoice(s): ' + _exNum + ' totaling ' + _dollar + _exTot.toFixed(2) + '. To create another, use Generate Anyway.';
+        return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&warn=' + encodeURIComponent(_warnMsg));
+      }
       // EMPTY_GUARD - refuse to make invoice from order with no lines
       const orderLineCount = await pool.request().input('oidCheck', sql.BigInt, req.params.id).query('SELECT COUNT(*) AS cnt FROM order_lines WHERE order_id=@oidCheck');
       if (!orderLineCount.recordset[0].cnt) return res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error=' + encodeURIComponent('Cannot generate invoice: this order has no line items. Add lines from the source quote first.'));
