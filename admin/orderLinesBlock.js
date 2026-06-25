@@ -138,6 +138,8 @@ export async function renderLinesTab(o, oLines, suppliers) {
 
     // Action bar
     html += '<div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">';
+    /* REMOVE_ORDER_LINE_v1: per-line Remove button (left side of the bar) */
+    html += '<form method="POST" action="/admin/orders/' + o.id + '/lines/' + l.id + '/remove" style="margin:0;" onsubmit="return confirm(&quot;Remove this line? If it has a PO, shipment, or invoice it will be cancelled (kept for records); otherwise it will be deleted.&quot;);"><button type="submit" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:5px 12px;cursor:pointer;border-radius:3px;font-size:.72rem;">&#10006; Remove Line</button></form>';
     html += '<button type="button" onclick="var d=document.getElementById(\'lineedit-' + l.id + '\');d.style.display=d.style.display===\'none\'?\'block\':\'none\';" style="background:transparent;border:1px solid #7a8a9a;color:#7a8a9a;padding:5px 12px;cursor:pointer;border-radius:3px;font-size:.72rem;">✎ Edit Line Details</button>';
     if (hasPending) {
       html += '<form method="GET" action="/admin/orders/' + o.id + '/create-supplier-pos-from-order" style="margin:0;"><input type="hidden" name="line_id" value="' + l.id + '"/><button type="submit" class="btn btn-gold btn-sm" style="font-size:.78rem;">+ Generate PO for this Line</button></form>';

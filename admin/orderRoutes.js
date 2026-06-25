@@ -649,6 +649,51 @@ export function mountOrderRoutes(router, requireAuth, page) {
     } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
   });
 
+  // REMOVE_ORDER_LINE_HANDLER_v1: remove (delete if clean, cancel if attached to PO/shipment/invoice)
+  router.post('/orders/:id/lines/:lineId/remove', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const orderId = parseInt(req.params.id);
+      const lineId = parseInt(req.params.lineId);
+      // Is this line attached to anything downstream?
+      const attR = await pool.request().input('lid', sql.BigInt, lineId).query(
+        "SELECT (SELECT COUNT(*) FROM supplier_po_lines WHERE order_line_id=@lid) AS pos, (SELECT COUNT(*) FROM shipment_lines WHERE order_line_id=@lid) AS ships, (SELECT COUNT(*) FROM invoice_lines WHERE order_line_id=@lid) AS invs");
+      const att = attR.recordset[0] || { pos:0, ships:0, invs:0 };
+      const isAttached = (att.pos > 0 || att.ships > 0 || att.invs > 0);
+      let action = '';
+      if (isAttached) {
+        // Keep for audit - mark Cancelled.
+        await pool.request().input('lid', sql.BigInt, lineId)
+          .query("UPDATE order_lines SET status='Cancelled' WHERE id=@lid");
+        action = 'cancelled';
+      } else {
+        // Clean line - delete its sources then the line.
+        await pool.request().input('lid', sql.BigInt, lineId)
+          .query('DELETE FROM order_line_sources WHERE order_line_id=@lid');
+        await pool.request().input('lid', sql.BigInt, lineId)
+          .query('DELETE FROM order_lines WHERE id=@lid');
+        action = 'deleted';
+      }
+      // Recompute order subtotal + total (Cancelled excluded).
+      const sumR = await pool.request().input('oid', sql.BigInt, orderId)
+        .query("SELECT ISNULL(SUM(line_total),0) AS sub FROM order_lines WHERE order_id=@oid AND status<>'Cancelled'");
+      const newSub = (sumR.recordset[0] && sumR.recordset[0].sub) || 0;
+      await pool.request().input('oid', sql.BigInt, orderId).input('sub', sql.Decimal(12,2), newSub)
+        .query("UPDATE orders SET subtotal=@sub, total_amount=@sub + ISNULL(tax_amount,0) + ISNULL(shipping_cost,0), updated_at=GETDATE() WHERE id=@oid");
+      try {
+        const _noteR = 'Line ' + lineId + ' ' + action + (isAttached ? ' (had PO/shipment/invoice)' : '');
+        await pool.request().input('oid', sql.BigInt, orderId).input('n', sql.NVarChar(500), _noteR)
+          .query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@oid,'Line Removed',@n)");
+      } catch(_le) { console.error('remove-line log:', _le.message); }
+      try { await logAudit({ userType:'admin', userId:req.adminId, userEmail:req.adminEmail, action:'order_line_removed', entityType:'order_line', entityId:lineId, summary:'Line ' + lineId + ' ' + action, ipAddress:getIp(req) }); } catch(e) { console.error('audit order_line_removed:', e.message); }
+      res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=1');
+    } catch (err) {
+      console.error('Remove order line error:', err);
+      res.redirect('/admin/orders/' + req.params.id + '?tab=lines&error=' + encodeURIComponent(err.message));
+    }
+  });
+
   // ADD_ORDER_LINE_v1: add a new line to an existing order
   router.post('/orders/:id/lines/add', async (req, res) => {
     if (!requireAuth(req, res)) return;
