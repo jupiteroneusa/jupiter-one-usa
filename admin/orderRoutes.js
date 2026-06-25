@@ -171,7 +171,13 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const payments = await pool.request().input('idP', sql.BigInt, req.params.id).query('SELECT id, amount, payment_method, payment_reference, received_at, notes FROM payments WHERE order_id=@idP ORDER BY received_at DESC');
       const suppliers = await pool.request().query("SELECT id, company_name AS name, country FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
       const activeTab = req.query.tab || 'overview';
-      const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' : req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '';
+      /* WARN_BANNER_v1: show ?warn as a warning banner with a Generate Anyway button */
+      let _warnBanner = '';
+      if (req.query.warn) {
+        const _wTxt = decodeURIComponent(req.query.warn || '');
+        _warnBanner = '<div class="alert" style="margin-bottom:16px;background:rgba(224,160,80,0.12);border-left:3px solid #e0a050;color:#e0a050;">&#9888; ' + _wTxt + '<form method="POST" action="/admin/orders/' + req.params.id + '/generate-invoice" style="display:inline-block;margin-left:12px;"><input type="hidden" name="confirm" value="1"/><button type="submit" style="background:#e0a050;border:none;color:#0a1628;padding:5px 14px;cursor:pointer;border-radius:3px;font-weight:700;font-size:.78rem;">Generate Anyway</button></form></div>';
+      }
+      const successMsg = (req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' : req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">'+decodeURIComponent(req.query.error||'')+'</div>' : '') + _warnBanner;
       const lineRows = oLines.recordset.map(function(l) {
         return '<tr><td style="color:#7a8a9a;">'+l.line_number+'</td><td class="mono" style="color:#c8932a;">'+(l.nsn||l.part_number||'&mdash;')+'</td><td>'+(l.item_name||'&mdash;')+'</td><td>'+l.quantity_ordered+'</td><td style="color:#7a8a9a;">'+(l.condition_code||'&mdash;')+'</td><td style="font-weight:600;">$'+parseFloat(l.unit_price||0).toFixed(2)+'</td><td style="font-weight:600;">$'+parseFloat(l.line_total||0).toFixed(2)+'</td></tr>';
       }).join('');
