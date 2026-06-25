@@ -900,7 +900,8 @@ export async function buildAdminRouter() {
         <td>${statusBadge(l.condition_code||'—')}</td>
         <td>${l.target_price ? '$'+parseFloat(l.target_price).toFixed(2) : '—'}</td>
         <td style="color:#7a8a9a;font-size:.8rem;">${l.notes||'—'}</td>
-      </tr>`).join('');
+        <td style="text-align:center;">${lines.recordset.length > 1 ? `<form method="POST" action="/admin/rfqs/${rfq.id}/lines/${l.id}/remove" style="display:inline;" onsubmit="return confirm('Remove line ${l.line_number} (${(l.nsn||l.part_number||'item').replace(/'/g,"")})? This cannot be undone.');"><button type="submit" title="Remove line" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:3px 9px;cursor:pointer;border-radius:3px;font-size:.75rem;">&#10006;</button></form>` : `<span style="color:#3a4a5a;font-size:.7rem;" title="An RFQ must have at least one line">&mdash;</span>`}</td>
+      </tr>`).join(''); /* RFQ_REMOVE_LINE_v1 */
 
       const quoteLineInputs = lines.recordset.map(l => `<tr>
         <td style="color:#7a8a9a;">${l.line_number}</td>
@@ -961,7 +962,7 @@ export async function buildAdminRouter() {
         ${rfq.notes ? `<div class="card" style="margin-bottom:20px;"><div class="card-header">Notes from Customer</div><div class="card-body" style="color:#7a8a9a;">${rfq.notes}</div></div>` : ''}
         <div class="card">
           <div class="card-header">Line Items (${lines.recordset.length})</div>
-          <table><thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Target Price</th><th>Notes</th></tr></thead>
+          <table><thead><tr><th>#</th><th>NSN / Part</th><th>Description</th><th>Qty</th><th>Condition</th><th>Target Price</th><th>Notes</th><th style="text-align:center;">Actions</th></tr></thead> <!-- RFQ_REMOVE_LINE_v1 -->
           <tbody>${lineRows}</tbody></table>
         </div>
 
@@ -1355,6 +1356,29 @@ export async function buildAdminRouter() {
     /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote', */
 
   // RFQ Status Update
+  /* RFQ_REMOVE_LINE_v1: delete a single RFQ line + renumber remaining */
+  router.post('/rfqs/:id/lines/:lineId/remove', async (req, res) => {
+    try {
+      const pool = await getPool();
+      const _cnt = await pool.request().input('rid', sql.BigInt, req.params.id).query('SELECT COUNT(*) AS c FROM rfq_lines WHERE rfq_id=@rid');
+      if ((_cnt.recordset[0].c || 0) <= 1) {
+        return res.redirect('/admin/rfqs/' + req.params.id + '?error=' + encodeURIComponent('Cannot remove the last line. An RFQ must have at least one line item.'));
+      }
+      await pool.request().input('lid', sql.BigInt, req.params.lineId).input('rid', sql.BigInt, req.params.id).query('DELETE FROM rfq_lines WHERE id=@lid AND rfq_id=@rid');
+      const _rest = await pool.request().input('rid', sql.BigInt, req.params.id).query('SELECT id FROM rfq_lines WHERE rfq_id=@rid ORDER BY line_number ASC');
+      let _n = 1;
+      for (const _row of _rest.recordset) {
+        await pool.request().input('lid', sql.BigInt, _row.id).input('ln', sql.Int, _n).query('UPDATE rfq_lines SET line_number=@ln WHERE id=@lid');
+        _n++;
+      }
+      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'rfq_line_removed', entityType: 'rfq', entityId: req.params.id, summary: 'Removed RFQ line ' + req.params.lineId, ipAddress: getIp(req) }); } catch(e) { console.error('audit rfq_line_removed:', e.message); }
+      res.redirect('/admin/rfqs/' + req.params.id + '?saved=1');
+    } catch (err) {
+      console.error('RFQ remove line error:', err);
+      res.redirect('/admin/rfqs/' + req.params.id + '?error=' + encodeURIComponent(err.message));
+    }
+  });
+
   router.post('/rfqs/:id/status', async (req, res) => {
     if (!requireAuth(req, res)) return;
     const { status, note } = req.body;
