@@ -266,10 +266,17 @@ export async function generatePoPdf(poId) {
   doc.text('Shipping:', totalsX, y);
   doc.setTextColor(40, 40, 40);
   if (po.shipping_terms && String(po.shipping_terms).trim().length) {
-    // SHIP_TERMS_PDF_V1: prefer text when set
-    doc.setFontSize(8);
-    doc.text(String(po.shipping_terms).substring(0, 35), pageW - margin, y, { align: 'right' });
+    /* SHIP_TERMS_SPACING_v1: long terms text rendered smaller + left-aligned just right of the
+       'Shipping:' label, wrapped to fit, so it no longer crowds the label. */
+    doc.setFontSize(7);
+    var _shipTermsX = totalsX + 16; // start just right of the 'Shipping:' label
+    var _shipTermsW = (pageW - margin) - _shipTermsX; // available width to the right margin
+    var _shipLines = doc.splitTextToSize(String(po.shipping_terms).trim(), _shipTermsW).slice(0, 2);
+    for (var _si = 0; _si < _shipLines.length; _si++) {
+      doc.text(_shipLines[_si], _shipTermsX, y + (_si * 3.2));
+    }
     doc.setFontSize(9);
+    y += (_shipLines.length > 1 ? (_shipLines.length - 1) * 3.2 : 0);
   } else {
     doc.text(fmtMoney(po.shipping_cost), pageW - margin, y, { align: 'right' });
   }

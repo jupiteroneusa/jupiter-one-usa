@@ -777,6 +777,9 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       if (!poR.recordset.length) return res.redirect('/admin/supplier-pos/' + req.params.id + '?error=PO+not+found');
       const po = poR.recordset[0];
 
+      // PO_SEND_STATUS_FIRST_v1: mark Sent BEFORE generating the PDF so the PDF/email show 'Sent', not 'Draft'.
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE supplier_pos SET status='Sent', issued_at=ISNULL(issued_at, GETDATE()), updated_at=GETDATE() WHERE id=@id");
       // Generate PDF
       const pdfBuffer = await generatePoPdf(req.params.id);
 
