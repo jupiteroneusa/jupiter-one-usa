@@ -70,13 +70,14 @@ export async function renderLinesTab(o, oLines, suppliers) {
         html += '<div style="font-size:.7rem;color:#7a8a9a;margin-top:3px;">Profit: &mdash; not sourced</div>';
         return;
       }
-      var _rev = _price * _srcQty;
+      /* LINE_PROFIT_FIX_v2: revenue = price x ORDERED qty; cost = all sourced cost */
+      var _rev = _price * _ordQty;
       var _profit = _rev - _srcCost;
       var _pct = _rev > 0 ? (_profit / _rev) * 100 : 0;
       _ordSourcedRev += _rev; _ordSourcedCost += _srcCost;
-      var _partial = _srcQty < _ordQty;
-      var _col = _pct >= 0 ? '#4caf50' : '#e05050';
-      html += '<div style="font-size:.72rem;margin-top:3px;color:' + _col + ';font-weight:600;">Profit: ' + _pct.toFixed(1) + '%' + (_partial ? ' <span style="color:#e0a050;font-weight:400;">(' + _srcQty + '/' + _ordQty + ' sourced)</span>' : '') + ' <span style="color:#7a8a9a;font-weight:400;">&middot; ' + currency(_profit) + '</span></div>';
+      var _under = _srcQty < _ordQty;
+      var _col = _profit >= 0 ? '#4caf50' : '#e05050';
+      html += '<div style="font-size:.72rem;margin-top:3px;color:' + _col + ';font-weight:600;">Profit: ' + _pct.toFixed(1) + '%' + (_under ? ' <span style="color:#e0a050;font-weight:400;">(under-sourced ' + _srcQty + '/' + _ordQty + ')</span>' : '') + ' <span style="color:#7a8a9a;font-weight:400;">&middot; ' + currency(_profit) + '</span></div>';
     })();
     html += '</div></div>';
 
