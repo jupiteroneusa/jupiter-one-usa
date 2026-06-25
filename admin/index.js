@@ -1978,8 +1978,8 @@ export async function buildAdminRouter() {
     try {
       const pool = await getPool();
       const ir = await pool.request().input('id', sql.BigInt, req.params.id).query(`
-        SELECT i.*, o.order_number, o.id AS order_id,
-          c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone, c.id AS customer_id,
+        SELECT i.*, o.order_number, /* INVOICE_DOUBLE_ID_FIX_v1: i.* already has order_id */
+          c.first_name+' '+c.last_name AS customer_name, c.company, c.email, c.phone,
           c.billing_address1, c.billing_address2, c.billing_city, c.billing_state, c.billing_zip, c.billing_country
         FROM invoices i
         LEFT JOIN orders o ON o.id=i.order_id

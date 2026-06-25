@@ -30,7 +30,7 @@ export async function generateInvoicePdf(invoiceId, options) {
            o.ship_to_zip, o.ship_to_country,
            o.buyer_name, o.buyer_email, o.buyer_phone,
            o.bill_to_address1, o.bill_to_city, o.bill_to_state, o.bill_to_zip, o.bill_to_country,
-           o.customer_po_number,
+           o.customer_po AS customer_po_number, /* INVOICE_PO_COL_FIX_v1 */
            c.first_name, c.last_name, c.email, c.phone, c.company,
            c.billing_address1 AS c_billing_address1, c.billing_address2 AS c_billing_address2,
            c.billing_city AS c_billing_city, c.billing_state AS c_billing_state,
