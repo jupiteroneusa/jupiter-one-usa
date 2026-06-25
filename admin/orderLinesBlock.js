@@ -38,6 +38,8 @@ export async function renderLinesTab(o, oLines, suppliers) {
 
   html += '<div style="padding:16px;">';
 
+  /* LINE_PROFIT_v1: order-wide profit accumulators (sourced portions only) */
+  var _ordSourcedRev = 0, _ordSourcedCost = 0;
   oLines.recordset.forEach(function(l) {
     const lineSources = _sourcesMap[l.id] || [];
     const hasPending = lineSources.some(function(s) { return !s.supplier_po_line_id; });
@@ -57,6 +59,25 @@ export async function renderLinesTab(o, oLines, suppliers) {
     html += '<div style="font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#7a8a9a;">Qty × Price</div>';
     html += '<div style="font-size:.95rem;color:#eef1f5;margin-top:2px;">' + l.quantity_ordered + ' × ' + currency(l.unit_price) + '</div>';
     html += '<div style="font-size:1.1rem;font-weight:700;color:#c8932a;margin-top:2px;">' + currency(l.line_total) + '</div>';
+    /* LINE_PROFIT_v1: per-line margin from actual sources */
+    (function(){
+      if ((l.status || '') === 'Cancelled') { html += '<div style="font-size:.7rem;color:#7a8a9a;margin-top:3px;">Profit: &mdash; (cancelled)</div>'; return; }
+      var _srcQty = 0, _srcCost = 0;
+      lineSources.forEach(function(sx){ var q = parseFloat(sx.allocated_qty)||0; var c = parseFloat(sx.unit_cost)||0; _srcQty += q; _srcCost += q * c; });
+      var _price = parseFloat(l.unit_price)||0;
+      var _ordQty = parseFloat(l.quantity_ordered)||0;
+      if (_srcQty <= 0) {
+        html += '<div style="font-size:.7rem;color:#7a8a9a;margin-top:3px;">Profit: &mdash; not sourced</div>';
+        return;
+      }
+      var _rev = _price * _srcQty;
+      var _profit = _rev - _srcCost;
+      var _pct = _rev > 0 ? (_profit / _rev) * 100 : 0;
+      _ordSourcedRev += _rev; _ordSourcedCost += _srcCost;
+      var _partial = _srcQty < _ordQty;
+      var _col = _pct >= 0 ? '#4caf50' : '#e05050';
+      html += '<div style="font-size:.72rem;margin-top:3px;color:' + _col + ';font-weight:600;">Profit: ' + _pct.toFixed(1) + '%' + (_partial ? ' <span style="color:#e0a050;font-weight:400;">(' + _srcQty + '/' + _ordQty + ' sourced)</span>' : '') + ' <span style="color:#7a8a9a;font-weight:400;">&middot; ' + currency(_profit) + '</span></div>';
+    })();
     html += '</div></div>';
 
     // Sources sub-row
@@ -182,6 +203,18 @@ export async function renderLinesTab(o, oLines, suppliers) {
   html += '<span style="color:#7a8a9a;margin-right:16px;">Subtotal: <strong style="color:#eef1f5;">' + currency(o.subtotal) + '</strong></span>';
   if (o.shipping_cost) html += '<span style="color:#7a8a9a;margin-right:16px;">Shipping: <strong style="color:#eef1f5;">' + currency(o.shipping_cost) + '</strong></span>';
   html += '<span style="font-size:1.1rem;font-weight:700;">Total: <strong style="color:#c8932a;">' + currency(o.total_amount) + '</strong></span>';
+  /* LINE_PROFIT_v1: order-total profit (sourced portions only) */
+  (function(){
+    var _tProfit = _ordSourcedRev - _ordSourcedCost;
+    var _tPct = _ordSourcedRev > 0 ? (_tProfit / _ordSourcedRev) * 100 : null;
+    if (_tPct === null) {
+      html += '<div style="margin-top:8px;font-size:.78rem;color:#7a8a9a;">Profit: &mdash; (no lines sourced yet)</div>';
+      return;
+    }
+    var _col = _tProfit >= 0 ? '#4caf50' : '#e05050';
+    html += '<div style="margin-top:8px;font-size:.95rem;font-weight:700;color:' + _col + ';">Profit (sourced): ' + currency(_tProfit) + ' &middot; ' + _tPct.toFixed(1) + '%</div>';
+    html += '<div style="font-size:.68rem;color:#7a8a9a;margin-top:2px;">Based on sourced costs only; lines not yet sourced are excluded.</div>';
+  })();
   html += '</div></div>';
 
     // ORDER_SOURCES_ADDREMOVE_V2: inject combobox + add row script
