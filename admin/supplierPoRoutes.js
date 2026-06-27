@@ -615,6 +615,17 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const setIssued = (newStatus === 'Sent') ? ", issued_at=ISNULL(issued_at, GETDATE())" : '';
       const setReceived = (newStatus === 'Received') ? ", received_at=ISNULL(received_at, GETDATE())" : '';
 
+      /* PO_STATUS_NOTE_v1: persist the status-change note by appending to the PO notes field */
+      const _statusNote = (req.body.note || '').trim();
+      if (_statusNote) {
+        const _stamp = new Date().toLocaleDateString('en-US') + ' ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        const _entry = '[' + _stamp + ' - ' + newStatus + '] ' + _statusNote;
+        await pool.request()
+          .input('id', sql.BigInt, req.params.id)
+          .input('entry', sql.NVarChar(sql.MAX), _entry)
+          .query("UPDATE supplier_pos SET notes = CASE WHEN notes IS NULL OR LTRIM(RTRIM(notes))='' THEN @entry ELSE notes + CHAR(13)+CHAR(10) + @entry END WHERE id=@id");
+      }
+
       await pool.request()
         .input('id', sql.BigInt, req.params.id)
         .input('s', sql.NVarChar(30), newStatus)

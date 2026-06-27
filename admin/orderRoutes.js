@@ -309,7 +309,12 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query('SELECT id, supplier_po_line_id FROM order_line_sources WHERE order_line_id=@lineId');
       const existing = existR.recordset || [];
       // Real ids that are PO'd (protected) - these actually exist in the DB right now.
-      const protectedIds = new Set(existing.filter(function(row){ return row.supplier_po_line_id; }).map(function(row){ return row.id; }));
+      const protectedRows = existing.filter(function(row){ return row.supplier_po_line_id; });
+      const protectedIds = new Set(protectedRows.map(function(row){ return row.id; }));
+      /* SOURCES_DUP_FIX_v1: let a submitted protected row be claimed by id OR by supplier match (id lost in form). Each protected row claimed once. */
+      const _claimedProtected = new Set();
+      const _protBySupplier = {};
+      protectedRows.forEach(function(row){ if (!_protBySupplier[row.supplier_id]) _protBySupplier[row.supplier_id] = []; _protBySupplier[row.supplier_id].push(row.id); });
 
       let totalQty = 0, totalCost = 0;
       let nextSort = 0;
@@ -320,10 +325,19 @@ export function mountOrderRoutes(router, requireAuth, page) {
         totalQty += r.qty;
         totalCost += r.qty * r.cost;
         nextSort += 1;
-        if (r.id && protectedIds.has(r.id)) {
+        /* SOURCES_DUP_FIX_v1: resolve which protected row (if any) this submitted row maps to */
+        let _claimId = null;
+        if (r.id && protectedIds.has(r.id) && !_claimedProtected.has(r.id)) {
+          _claimId = r.id;
+        } else if (r.supplier_id && _protBySupplier[r.supplier_id]) {
+          const _avail = _protBySupplier[r.supplier_id].filter(function(pid){ return !_claimedProtected.has(pid); });
+          if (_avail.length) _claimId = _avail[0];
+        }
+        if (_claimId) {
+          _claimedProtected.add(_claimId);
           // This is a real, PO'd row - update in place (do not delete/recreate).
           await pool.request()
-            .input('id', sql.BigInt, r.id)
+            .input('id', sql.BigInt, _claimId)
             .input('sup', sql.BigInt, r.supplier_id)
             .input('qty', sql.Int, r.qty)
             .input('cost', sql.Decimal(10, 2), r.cost)
