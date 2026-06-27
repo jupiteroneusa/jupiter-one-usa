@@ -265,6 +265,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const b = req.body || {};
       const orderId = parseInt(req.params.id);
       const lineId = parseInt(req.params.lineId);
+      /* DEBUG_SRC_BODY_v1 */ try { const _dbgKeys = Object.keys(req.body||{}).filter(function(k){ return k.indexOf('src_')===0; }); console.log('=== DEBUG_SRC_BODY line ' + lineId + ' ==='); _dbgKeys.forEach(function(k){ console.log('  ' + k + ' = ' + JSON.stringify(req.body[k])); }); console.log('=== END DEBUG_SRC_BODY (' + _dbgKeys.length + ' src fields) ==='); } catch(_dbgE) { console.log('DEBUG_SRC_BODY err: ' + _dbgE.message); }
 
       // Scan submitted rows (no src_count needed). A row is "present" if
       // at minimum src_X_supplier_id is in the body (Add Source rows lack id).
