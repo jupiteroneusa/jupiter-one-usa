@@ -311,6 +311,9 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const linesR = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM supplier_po_lines WHERE supplier_po_id=@id ORDER BY line_number');
       const docsR = await pool.request().input('id', sql.BigInt, req.params.id).query("SELECT id, doc_type, file_name, file_url, uploaded_at, notes FROM documents WHERE related_to_type='supplier_po' AND related_to_id=@id ORDER BY uploaded_at DESC");
 
+      /* PO_STATUS_HISTORY_v1: load status-change history for this PO */
+      const statusLogR = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT old_status, new_status, note, created_by, created_at FROM supplier_po_status_log WHERE supplier_po_id=@id ORDER BY created_at DESC');
+
       const activeTab = req.query.tab || 'overview';
       const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">&#10004; Saved.</div>' :
         req.query.error ? '<div class="alert alert-error" style="margin-bottom:16px;">' + decodeURIComponent(req.query.error || '') + '</div>' : '';
@@ -377,6 +380,21 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         html += '<button type="submit" class="btn btn-gold">Update</button></form>';
         html += '<div style="font-size:.78rem;color:#7a8a9a;margin-top:10px;">Setting status to <strong>Received</strong> will mark all lines as fully received and update the linked order.</div>';
         html += '</div>';
+
+        /* PO_STATUS_HISTORY_v1: render status change history */
+        if (statusLogR.recordset.length) {
+          html += '<div style="margin-top:20px;border-top:1px solid #1e2d42;padding-top:16px;">';
+          html += '<div style="font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:#c8932a;margin-bottom:10px;">Status History</div>';
+          html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+          statusLogR.recordset.forEach(function(_h) {
+            const _when = shortDateTime(_h.created_at);
+            const _trans = (_h.old_status ? _h.old_status + ' \u2192 ' : '') + (_h.new_status || '');
+            const _noteHtml = _h.note ? '<div style="color:#cfd5dc;font-size:.82rem;margin-top:2px;">' + String(_h.note).replace(/</g,'&lt;') + '</div>' : '';
+            const _byHtml = _h.created_by ? '<span style="color:#7a8a9a;font-size:.7rem;margin-left:8px;">by ' + String(_h.created_by).replace(/</g,'&lt;') + '</span>' : '';
+            html += '<div style="padding:8px 12px;background:#0a1628;border-left:2px solid #c8932a;border-radius:3px;"><div style="font-size:.8rem;"><strong style="color:#c8932a;">' + _trans + '</strong><span style="color:#7a8a9a;font-size:.72rem;margin-left:8px;">' + _when + '</span>' + _byHtml + '</div>' + _noteHtml + '</div>';
+          });
+          html += '</div></div>';
+        }
 
         // Send PO button (Draft only)
         if (po.status === 'Draft') {
@@ -615,21 +633,25 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const setIssued = (newStatus === 'Sent') ? ", issued_at=ISNULL(issued_at, GETDATE())" : '';
       const setReceived = (newStatus === 'Received') ? ", received_at=ISNULL(received_at, GETDATE())" : '';
 
-      /* PO_STATUS_NOTE_v1: persist the status-change note by appending to the PO notes field */
-      const _statusNote = (req.body.note || '').trim();
-      if (_statusNote) {
-        const _stamp = new Date().toLocaleDateString('en-US') + ' ' + new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-        const _entry = '[' + _stamp + ' - ' + newStatus + '] ' + _statusNote;
-        await pool.request()
-          .input('id', sql.BigInt, req.params.id)
-          .input('entry', sql.NVarChar(sql.MAX), _entry)
-          .query("UPDATE supplier_pos SET notes = CASE WHEN notes IS NULL OR LTRIM(RTRIM(notes))='' THEN @entry ELSE notes + CHAR(13)+CHAR(10) + @entry END WHERE id=@id");
-      }
+      /* PO_STATUS_HISTORY_v1: capture old status before update for the log */
+      const _oldR = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT status FROM supplier_pos WHERE id=@id');
+      const _oldStatus = _oldR.recordset.length ? _oldR.recordset[0].status : null;
 
       await pool.request()
         .input('id', sql.BigInt, req.params.id)
         .input('s', sql.NVarChar(30), newStatus)
         .query("UPDATE supplier_pos SET status=@s" + setIssued + setReceived + ", updated_at=GETDATE() WHERE id=@id");
+
+      /* PO_STATUS_HISTORY_v1: write the change to the status log */
+      try {
+        await pool.request()
+          .input('pid', sql.BigInt, req.params.id)
+          .input('os', sql.NVarChar(30), _oldStatus)
+          .input('ns', sql.NVarChar(30), newStatus)
+          .input('note', sql.NVarChar(500), (req.body.note || '').trim() || null)
+          .input('by', sql.NVarChar(200), req.adminEmail || null)
+          .query('INSERT INTO supplier_po_status_log (supplier_po_id, old_status, new_status, note, created_by) VALUES (@pid, @os, @ns, @note, @by)');
+      } catch(_le) { console.error('PO status log:', _le.message); }
 
       // If marking Received, mark all lines as received-in-full and cascade to order_lines
       if (newStatus === 'Received') {
