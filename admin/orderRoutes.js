@@ -309,38 +309,43 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query('SELECT id, supplier_po_line_id FROM order_line_sources WHERE order_line_id=@lineId');
       const existing = existR.recordset || [];
       // Real ids that are PO'd (protected) - these actually exist in the DB right now.
-      const protectedRows = existing.filter(function(row){ return row.supplier_po_line_id; });
-      const protectedIds = new Set(protectedRows.map(function(row){ return row.id; }));
-      /* SOURCES_DUP_FIX_v1: let a submitted protected row be claimed by id OR by supplier match (id lost in form). Each protected row claimed once. */
-      const _claimedProtected = new Set();
-      const _seenSig = new Set(); /* SOURCES_DEDUP_v2: skip exact-duplicate submitted rows (supplier|qty|cost) */
-      const _protBySupplier = {};
-      protectedRows.forEach(function(row){ if (!_protBySupplier[row.supplier_id]) _protBySupplier[row.supplier_id] = []; _protBySupplier[row.supplier_id].push(row.id); });
+      const protectedIds = new Set(existing.filter(function(row){ return row.supplier_po_line_id; }).map(function(row){ return row.id; }));
 
       let totalQty = 0, totalCost = 0;
       let nextSort = 0;
 
-      // 1) UPDATE submitted rows that match a REAL protected (PO'd) id; INSERT everything else.
+      /* SOURCES_CLEAN_v1: delete-first, then claim protected by id-or-supplier. Duplication-proof. */
+      // 1) DELETE all non-protected rows FIRST (clean slate of editable rows).
+      for (let d = 0; d < existing.length; d++) {
+        if (!protectedIds.has(existing[d].id)) {
+          await pool.request()
+            .input('delId', sql.BigInt, existing[d].id)
+            .query('DELETE FROM order_line_sources WHERE id=@delId');
+        }
+      }
+
+      // 2) Build supplier -> [protected ids] map so a PO'd row whose id was lost in the form
+      //    can still be matched by supplier and UPDATED (never re-inserted).
+      const _protRows = existing.filter(function(row){ return row.supplier_po_line_id; });
+      const _claimed = new Set();
+      const _protBySup = {};
+      _protRows.forEach(function(row){ if (!_protBySup[row.supplier_id]) _protBySup[row.supplier_id] = []; _protBySup[row.supplier_id].push(row.id); });
+
+      // 3) Process submitted rows: UPDATE a claimed protected row, else INSERT fresh.
       for (let k = 0; k < validRows.length; k++) {
         const r = validRows[k];
-        /* SOURCES_DEDUP_v2: within this save, skip a row that exactly duplicates one already processed */
-        const _sig = r.supplier_id + '|' + r.qty + '|' + r.cost;
-        if (_seenSig.has(_sig)) { continue; }
-        _seenSig.add(_sig);
         totalQty += r.qty;
         totalCost += r.qty * r.cost;
         nextSort += 1;
-        /* SOURCES_DUP_FIX_v1: resolve which protected row (if any) this submitted row maps to */
         let _claimId = null;
-        if (r.id && protectedIds.has(r.id) && !_claimedProtected.has(r.id)) {
+        if (r.id && protectedIds.has(r.id) && !_claimed.has(r.id)) {
           _claimId = r.id;
-        } else if (r.supplier_id && _protBySupplier[r.supplier_id]) {
-          const _avail = _protBySupplier[r.supplier_id].filter(function(pid){ return !_claimedProtected.has(pid); });
+        } else if (r.supplier_id && _protBySup[r.supplier_id]) {
+          const _avail = _protBySup[r.supplier_id].filter(function(pid){ return !_claimed.has(pid); });
           if (_avail.length) _claimId = _avail[0];
         }
         if (_claimId) {
-          _claimedProtected.add(_claimId);
-          // This is a real, PO'd row - update in place (do not delete/recreate).
+          _claimed.add(_claimId);
           await pool.request()
             .input('id', sql.BigInt, _claimId)
             .input('sup', sql.BigInt, r.supplier_id)
@@ -353,7 +358,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
             .input('sortO', sql.Int, nextSort)
             .query("UPDATE order_line_sources SET supplier_id=@sup, allocated_qty=@qty, unit_cost=@cost, lead_time_text=@lead, has_8130_required=@h8, has_coc_required=@hc, has_trace_required=@ht, sort_order=@sortO, updated_at=GETDATE() WHERE id=@id");
         } else {
-          // New row, OR an edited row whose submitted id is stale/non-protected: insert fresh.
           await pool.request()
             .input('olId', sql.BigInt, lineId)
             .input('sup', sql.BigInt, r.supplier_id)
@@ -365,15 +369,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
             .input('ht', sql.Bit, r.ht)
             .input('sortO', sql.Int, nextSort)
             .query("INSERT INTO order_line_sources (order_line_id, supplier_id, allocated_qty, received_qty, unit_cost, lead_time_text, has_8130_required, has_8130_received, has_coc_required, has_coc_received, has_trace_required, has_trace_received, sort_order, created_at, updated_at) VALUES (@olId, @sup, @qty, 0, @cost, @lead, @h8, 0, @hc, 0, @ht, 0, @sortO, GETDATE(), GETDATE())");
-        }
-      }
-
-      // 2) DELETE every existing NON-protected row (clean slate; protected PO'd rows were updated above).
-      for (let d = 0; d < existing.length; d++) {
-        if (!protectedIds.has(existing[d].id)) {
-          await pool.request()
-            .input('delId', sql.BigInt, existing[d].id)
-            .query('DELETE FROM order_line_sources WHERE id=@delId');
         }
       }
 
