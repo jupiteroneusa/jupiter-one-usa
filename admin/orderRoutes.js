@@ -313,6 +313,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const protectedIds = new Set(protectedRows.map(function(row){ return row.id; }));
       /* SOURCES_DUP_FIX_v1: let a submitted protected row be claimed by id OR by supplier match (id lost in form). Each protected row claimed once. */
       const _claimedProtected = new Set();
+      const _seenSig = new Set(); /* SOURCES_DEDUP_v2: skip exact-duplicate submitted rows (supplier|qty|cost) */
       const _protBySupplier = {};
       protectedRows.forEach(function(row){ if (!_protBySupplier[row.supplier_id]) _protBySupplier[row.supplier_id] = []; _protBySupplier[row.supplier_id].push(row.id); });
 
@@ -322,6 +323,10 @@ export function mountOrderRoutes(router, requireAuth, page) {
       // 1) UPDATE submitted rows that match a REAL protected (PO'd) id; INSERT everything else.
       for (let k = 0; k < validRows.length; k++) {
         const r = validRows[k];
+        /* SOURCES_DEDUP_v2: within this save, skip a row that exactly duplicates one already processed */
+        const _sig = r.supplier_id + '|' + r.qty + '|' + r.cost;
+        if (_seenSig.has(_sig)) { continue; }
+        _seenSig.add(_sig);
         totalQty += r.qty;
         totalCost += r.qty * r.cost;
         nextSort += 1;
