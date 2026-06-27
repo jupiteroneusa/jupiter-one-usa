@@ -20,7 +20,7 @@ export async function generateProformaPdf(proformaId, previewPf /* PROFORMA_PREV
   if (previewPf) { /* PROFORMA_PREVIEW_v1: render from supplied data, no DB row */
     const pf = previewPf;
     const linesR = await pool.request().input('oid', sql.BigInt, pf.order_id)
-      .query('SELECT * FROM order_lines WHERE order_id=@oid ORDER BY line_number');
+      .query('SELECT ol.*, (SELECT TOP 1 s.lead_time_text FROM order_line_sources s WHERE s.order_line_id=ol.id ORDER BY CASE WHEN s.supplier_po_line_id IS NOT NULL THEN 0 ELSE 1 END, s.sort_order) AS lead_time_text FROM order_lines ol WHERE ol.order_id=@oid ORDER BY ol.line_number'); /* PROFORMA_LAYOUT_v1 */
     const lines = linesR.recordset;
     return _renderProformaDoc(pf, lines);
   }
@@ -44,7 +44,7 @@ export async function generateProformaPdf(proformaId, previewPf /* PROFORMA_PREV
   const pf = pfR.recordset[0];
 
   const linesR = await pool.request().input('oid', sql.BigInt, pf.order_id)
-    .query('SELECT * FROM order_lines WHERE order_id=@oid ORDER BY line_number');
+    .query('SELECT ol.*, (SELECT TOP 1 s.lead_time_text FROM order_line_sources s WHERE s.order_line_id=ol.id ORDER BY CASE WHEN s.supplier_po_line_id IS NOT NULL THEN 0 ELSE 1 END, s.sort_order) AS lead_time_text FROM order_lines ol WHERE ol.order_id=@oid ORDER BY ol.line_number'); /* PROFORMA_LAYOUT_v1 */
   const lines = linesR.recordset;
   return _renderProformaDoc(pf, lines); /* PROFORMA_PREVIEW_v1 */
 }
@@ -165,13 +165,21 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
 
   doc.setFont('helvetica', 'normal');
   let alt = false;
-  lines.forEach(function(l) {
-    if (y > 240) { doc.addPage(); y = 20; }
+  lines.forEach(function(l) { /* PROFORMA_LAYOUT_v1 */
+    var descW = colX.cond - colX.desc - 3;
+    var descLines = doc.splitTextToSize(String(l.item_name || '\u2014'), descW);
+    var leadVal = (l.lead_time_text && String(l.lead_time_text).trim()) ? String(l.lead_time_text).trim() : '';
+    var leadLines = leadVal ? doc.splitTextToSize('Lead time: ' + leadVal, descW) : [];
+    var textLineCount = descLines.length + leadLines.length;
+    if (textLineCount < 5) textLineCount = 5; /* >=5 line floor */
+    var rowH = textLineCount * 4 + 3;
+    if (y + rowH > 252) { doc.addPage(); y = 20; }
     if (alt) {
       doc.setFillColor(248, 248, 248);
-      doc.rect(margin, y - 4, contentW, 7, 'F');
+      doc.rect(margin, y - 4, contentW, rowH, 'F');
     }
     alt = !alt;
+    doc.setFontSize(8);
     doc.setTextColor(40, 40, 40);
     doc.text(String(l.line_number), colX.num, y);
     doc.setTextColor(...gold);
@@ -179,16 +187,24 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
     doc.text(String(l.nsn || l.part_number || '\u2014').substring(0, 18), colX.part, y);
     doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
-    doc.text(String(l.item_name || '\u2014').substring(0, 32), colX.desc, y);
+    doc.text(descLines, colX.desc, y);
+    if (leadLines.length) {
+      doc.setFontSize(7);
+      doc.setTextColor(120, 120, 120);
+      doc.text(leadLines, colX.desc, y + descLines.length * 4);
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 60);
+    }
     doc.text(String(l.condition_code || '\u2014'), colX.cond, y, { align: 'center' });
     doc.text(String(l.quantity_ordered || 0), colX.qty, y, { align: 'center' });
     doc.text(fmtMoney(l.unit_price), colX.cost + 15, y, { align: 'right' });
     doc.setFont('helvetica', 'bold');
     doc.text(fmtMoney(l.line_total), colX.total + 22, y, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
     doc.setDrawColor(220, 220, 220);
     doc.setLineWidth(0.1);
-    doc.line(margin, y + 2, pageW - margin, y + 2);
-    y += 7;
+    doc.line(margin, y + rowH - 5, pageW - margin, y + rowH - 5);
+    y += rowH;
   });
 
   y += 4;
@@ -250,21 +266,24 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
   payLines.forEach(function(line) { doc.text(line, margin, y); y += 4; });
   y += 4;
 
-  if (pf.notes) {
+  if (pf.notes) { /* PROFORMA_LAYOUT_v1 */
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    const noteLines = doc.splitTextToSize(String(pf.notes), contentW - 10);
+    var notesH = 8 + noteLines.length * 4;
+    if (y - 4 + notesH > 278) { doc.addPage(); y = 20; }
     doc.setFillColor(254, 249, 236);
-    doc.rect(margin, y - 4, contentW, 14, 'F');
+    doc.rect(margin, y - 4, contentW, notesH, 'F');
     doc.setDrawColor(...gold);
     doc.setLineWidth(1.5);
-    doc.line(margin, y - 4, margin, y + 10);
+    doc.line(margin, y - 4, margin, y - 4 + notesH);
     doc.setTextColor(...gold);
-    doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.text('Notes:', margin + 3, y);
     doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
-    const noteLines = doc.splitTextToSize(String(pf.notes), contentW - 10);
-    doc.text(noteLines.slice(0, 2), margin + 3, y + 4);
-    y += 18;
+    doc.text(noteLines, margin + 3, y + 4);
+    y += notesH + 4;
   }
 
   // === FOOTER ===
