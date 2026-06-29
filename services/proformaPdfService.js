@@ -50,6 +50,9 @@ export async function generateProformaPdf(proformaId, previewPf /* PROFORMA_PREV
 }
 
 function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted renderer */
+  /* PROFORMA_TEXTSAFE_v1: coerce anything to a printable string / string[] for jsPDF */
+  function _S(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function _SA(a) { return Array.isArray(a) ? a.map(function(x){ return _S(x); }) : [_S(a)]; }
   // Brand colors
   const gold = [200, 147, 42];
   const navy = [10, 22, 40];
@@ -167,9 +170,9 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
   let alt = false;
   lines.forEach(function(l) { /* PROFORMA_LAYOUT_v1 */
     var descW = colX.cond - colX.desc - 3;
-    var descLines = doc.splitTextToSize(String(l.item_name || '\u2014'), descW);
-    var leadVal = (l.lead_time_text && String(l.lead_time_text).trim()) ? String(l.lead_time_text).trim() : '';
-    var leadLines = leadVal ? doc.splitTextToSize('Lead time: ' + leadVal, descW) : [];
+    var descLines = _SA(doc.splitTextToSize(_S(l.item_name || '\u2014'), descW)); /* PROFORMA_TEXTSAFE_v1 */
+    var leadVal = (l.lead_time_text !== null && l.lead_time_text !== undefined && _S(l.lead_time_text).trim()) ? _S(l.lead_time_text).trim() : ''; /* PROFORMA_TEXTSAFE_v1 */
+    var leadLines = leadVal ? _SA(doc.splitTextToSize('Lead time: ' + _S(leadVal), descW)) : []; /* PROFORMA_TEXTSAFE_v1 */
     var textLineCount = descLines.length + leadLines.length;
     if (textLineCount < 5) textLineCount = 5; /* >=5 line floor */
     var rowH = textLineCount * 4 + 3;
@@ -187,11 +190,11 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
     doc.text(String(l.nsn || l.part_number || '\u2014').substring(0, 18), colX.part, y);
     doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
-    doc.text(descLines, colX.desc, y);
+    doc.text(_SA(descLines), colX.desc, y); /* PROFORMA_TEXTSAFE_v1 */
     if (leadLines.length) {
       doc.setFontSize(7);
       doc.setTextColor(120, 120, 120);
-      doc.text(leadLines, colX.desc, y + descLines.length * 4);
+      doc.text(_SA(leadLines), colX.desc, y + descLines.length * 4); /* PROFORMA_TEXTSAFE_v1 */
       doc.setFontSize(8);
       doc.setTextColor(60, 60, 60);
     }
@@ -269,7 +272,7 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
   if (pf.notes) { /* PROFORMA_LAYOUT_v1 */
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    const noteLines = doc.splitTextToSize(String(pf.notes), contentW - 10);
+    const noteLines = _SA(doc.splitTextToSize(_S(pf.notes), contentW - 10)); /* PROFORMA_TEXTSAFE_v1 */
     var notesH = 8 + noteLines.length * 4;
     if (y - 4 + notesH > 278) { doc.addPage(); y = 20; }
     doc.setFillColor(254, 249, 236);
@@ -282,7 +285,7 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
     doc.text('Notes:', margin + 3, y);
     doc.setTextColor(60, 60, 60);
     doc.setFont('helvetica', 'normal');
-    doc.text(noteLines, margin + 3, y + 4);
+    doc.text(_SA(noteLines), margin + 3, y + 4); /* PROFORMA_TEXTSAFE_v1 */
     y += notesH + 4;
   }
 
