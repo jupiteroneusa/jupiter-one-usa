@@ -11,3 +11,5 @@ tmp/
 dist/ 
 .vscode/ 
 *.bak2
+*.bak_* 
+admin/*.bak* 
