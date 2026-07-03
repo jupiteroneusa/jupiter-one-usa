@@ -425,7 +425,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       h += '<button type=' + QUOT + 'submit' + QUOT + ' name=' + QUOT + '_status' + QUOT + ' value=' + QUOT + 'Issued' + QUOT + ' class=' + QUOT + 'btn btn-gold' + QUOT + '>Save &amp; Mark Issued</button>';
       h += '</div>';
       h += '</div></div></form></div>';
-      res.send(page('CoC ' + v(c.coc_number), 'orders', h)); /* COC_PAGEFIX_v1 */
+      res.send(page('CoC ' + v(c.coc_number), h));
     } catch (err) {
       console.error('CoC edit error:', err);
       res.redirect('/admin/orders/' + req.params.id + '?tab=coc&error=' + encodeURIComponent(err.message));
