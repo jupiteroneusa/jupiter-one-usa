@@ -706,6 +706,10 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
         .input('q', sql.Int, qty)
         .query("UPDATE supplier_po_lines SET received_quantity = received_quantity + @q, received_at = CASE WHEN received_quantity + @q >= quantity THEN ISNULL(received_at, GETDATE()) ELSE received_at END WHERE id = @lid");
 
+      /* RECV_SYNC_SOURCE_v1: mirror the PO line's received qty onto the linked order_line_source so the Lines RECV column reflects reality. */
+      await pool.request().input('lidSync', sql.BigInt, req.params.lid)
+        .query('UPDATE ols SET ols.received_qty = pl.received_quantity, ols.received_at = pl.received_at, ols.updated_at = GETDATE() FROM order_line_sources ols INNER JOIN supplier_po_lines pl ON pl.id = ols.supplier_po_line_id WHERE pl.id = @lidSync');
+
       // If this line is now fully received, set order_lines.received_at
       await pool.request().input('lid', sql.BigInt, req.params.lid)
         .query("UPDATE ol SET ol.received_at = ISNULL(ol.received_at, GETDATE()) FROM order_lines ol INNER JOIN supplier_po_lines pl ON pl.order_line_id = ol.id WHERE pl.id = @lid AND pl.received_quantity >= pl.quantity");
