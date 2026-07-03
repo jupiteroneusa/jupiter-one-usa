@@ -318,43 +318,30 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query('SELECT * FROM order_lines WHERE id=@lid');
       const ln = lnR.recordset[0];
       if (!ln) return res.redirect('/admin/orders/' + orderId + '?tab=coc&error=Line+not+found');
-      /* COC_PER_RECEIVED_SOURCE_v1: one CoC per RECEIVED source (dedupe by order_line_source_id). MARKER COC_PER_RECEIVED_SOURCE_v1 */
-      const srcR = await pool.request().input('lid2', sql.BigInt, lineId)
-        .query('SELECT ols.id AS source_id, ols.allocated_qty, ols.received_qty, ols.supplier_id, ols.supplier_po_line_id, s.company_name AS supplier_name, pl.received_quantity AS po_received, pl.quantity AS po_qty, pl.part_number AS po_part, pl.item_name AS po_item, pl.condition_code AS po_cond, sp.po_number FROM order_line_sources ols LEFT JOIN suppliers s ON s.id = ols.supplier_id LEFT JOIN supplier_po_lines pl ON pl.id = ols.supplier_po_line_id LEFT JOIN supplier_pos sp ON sp.id = pl.supplier_po_id WHERE ols.order_line_id=@lid2 ORDER BY ols.sort_order, ols.id');
-      const allSources = srcR.recordset || [];
-      /* received = its PO line has received_quantity > 0 (fallback to source.received_qty if directly tracked) */
-      const receivedSources = allSources.filter(function(r){ return (r.po_received && r.po_received > 0) || (r.received_qty && r.received_qty > 0); });
-      if (!receivedSources.length) {
-        return res.redirect('/admin/orders/' + orderId + '?tab=coc&error=' + encodeURIComponent('No received sources on this line yet. Receive the supplier PO first.'));
+      /* COC_RECEIVED_PO_v1: one CoC per RECEIVED supplier PO line for this order line. MARKER COC_RECEIVED_PO_v1 */
+      const poR = await pool.request().input('lid2', sql.BigInt, lineId)
+        .query('SELECT pl.id AS po_line_id, pl.part_number, pl.nsn, pl.item_name, pl.condition_code, pl.quantity, pl.received_quantity, pl.received_at, sp.po_number, s.company_name AS supplier_name FROM supplier_po_lines pl INNER JOIN supplier_pos sp ON sp.id = pl.supplier_po_id LEFT JOIN suppliers s ON s.id = sp.supplier_id WHERE pl.order_line_id=@lid2 AND pl.received_quantity > 0 ORDER BY pl.id');
+      const poLines = poR.recordset || [];
+      if (!poLines.length) {
+        return res.redirect('/admin/orders/' + orderId + '?tab=coc&error=' + encodeURIComponent('No received PO lines on this line yet. Receive the supplier PO first.'));
       }
-      /* dedupe: skip sources that already have a CoC */
-      const existCocR = await pool.request().input('lid3', sql.BigInt, lineId)
-        .query('SELECT order_line_source_id FROM coc_certificates WHERE order_line_id=@lid3 AND order_line_source_id IS NOT NULL');
-      const haveCoc = new Set((existCocR.recordset || []).map(function(r){ return String(r.order_line_source_id); }));
-      const toMake = receivedSources.filter(function(r){ return !haveCoc.has(String(r.source_id)); });
       const statusMap = { NE:'New', NS:'New Surplus', OH:'Overhauled', RP:'Repaired', SV:'Serviceable', AR:'As Removed', SC:'Scrap' };
       let firstCocId = null;
-      if (!toMake.length) {
-        /* all received sources already have certs; go to the first existing cert for this line */
-        const firstR = await pool.request().input('lid4', sql.BigInt, lineId)
-          .query('SELECT TOP 1 id FROM coc_certificates WHERE order_line_id=@lid4 ORDER BY id');
-        if (firstR.recordset && firstR.recordset[0]) firstCocId = firstR.recordset[0].id;
-      }
-      for (let i = 0; i < toMake.length; i++) {
-        const src = toMake[i];
+      for (let i = 0; i < poLines.length; i++) {
+        const pl = poLines[i];
         const numR = await pool.request().query("SELECT MAX(TRY_CONVERT(int, REPLACE(coc_number,'COFC-',''))) AS mx FROM coc_certificates WHERE coc_number LIKE 'COFC-%'");
         const nextNum = ((numR.recordset[0] && numR.recordset[0].mx) || 0) + 1;
         const cocNumber = 'COFC-' + String(nextNum).padStart(5, '0');
-        const qty = (src.po_received && src.po_received > 0) ? src.po_received : (src.received_qty || src.allocated_qty || null);
+        const qty = pl.received_quantity || pl.quantity || null;
         const serialBatch = ln.lot_number || (ln.serial_numbers || null);
-        const condCode = src.po_cond || ln.condition_code || '';
+        const condCode = pl.condition_code || ln.condition_code || '';
         const statusCode = statusMap[(condCode || '').toUpperCase()] || (condCode || null);
-        const partPn = src.po_part || ln.part_number || null;
-        const descr = src.po_item || ln.item_name || null;
+        const partPn = pl.part_number || ln.part_number || null;
+        const descr = pl.item_name || ln.item_name || null;
         const ins = await pool.request()
           .input('order_id', sql.BigInt, orderId)
           .input('order_line_id', sql.BigInt, lineId)
-          .input('order_line_source_id', sql.BigInt, src.source_id)
+          .input('order_line_source_id', sql.BigInt, null)
           .input('coc_number', sql.VarChar(30), cocNumber)
           .input('reference_number', sql.NVarChar(50), o.order_number || null)
           .input('seller_contract_number', sql.NVarChar(50), o.contract_number || null)
@@ -366,14 +353,13 @@ export function mountOrderRoutes(router, requireAuth, page) {
           .input('quantity', sql.Int, qty)
           .input('serial_batch_number', sql.NVarChar(100), serialBatch)
           .input('status_code', sql.NVarChar(20), statusCode)
-          .input('remarks', sql.NVarChar(sql.MAX), src.po_number ? ('Supplier PO: ' + src.po_number) : null)
-          .input('obtained_from', sql.NVarChar(255), src.supplier_name || null)
+          .input('remarks', sql.NVarChar(sql.MAX), pl.po_number ? ('Supplier PO: ' + pl.po_number) : null)
+          .input('obtained_from', sql.NVarChar(255), pl.supplier_name || null)
           .input('last_certified_agency', sql.NVarChar(255), null)
           .input('st', sql.NVarChar(30), 'Draft')
           .query('INSERT INTO coc_certificates (order_id, order_line_id, order_line_source_id, coc_number, reference_number, seller_contract_number, buyer_contract_number, item_number, description, manufacturer_pn, eligibility, quantity, serial_batch_number, status_code, remarks, obtained_from, last_certified_agency, status, created_at, updated_at) OUTPUT INSERTED.id VALUES (@order_id, @order_line_id, @order_line_source_id, @coc_number, @reference_number, @seller_contract_number, @buyer_contract_number, @item_number, @description, @manufacturer_pn, @eligibility, @quantity, @serial_batch_number, @status_code, @remarks, @obtained_from, @last_certified_agency, @st, GETDATE(), GETDATE())');
         if (firstCocId === null) firstCocId = ins.recordset[0].id;
       }
-      if (!firstCocId) { return res.redirect('/admin/orders/' + orderId + '?tab=coc'); }
             return res.redirect('/admin/orders/' + orderId + '/coc/' + firstCocId + '/edit');
     } catch (err) {
       console.error('CoC generate error:', err);
