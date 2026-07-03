@@ -16,48 +16,6 @@ import { renderLinesTab } from './orderLinesBlock.js';
 import { logAudit, getIp } from '../middleware/audit.js'; /* AUDIT_ACTIONS_B_v1 */
 
 // ORDER_DOCS_TAB_v1: Documents tab renderer (uses /api/documents endpoints)
-/* COC_TAB_v1: Certificate of Conformance tab (ATA Spec 106) */
-function renderCocTab(o, oLines, certs) {
-  function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  var byLine = {};
-  (certs||[]).forEach(function(c){ if(!byLine[c.order_line_id]) byLine[c.order_line_id]=[]; byLine[c.order_line_id].push(c); });
-  var h = '<div style="padding:4px 0;">';
-  h += '<div style="font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#c8932a;font-weight:700;margin-bottom:6px;">Certificates of Conformance</div>';
-  h += '<div style="font-size:.8rem;color:#cfd5dc;margin-bottom:16px;">ATA Spec 106 cert per line. Add another for a split batch/lot.</div>';
-  (oLines.recordset||[]).forEach(function(l){
-    var partLabel = esc(l.part_number || l.nsn || ('Line ' + l.line_number));
-    h += '<div style="background:#0e1828;border:1px solid #1e2d42;border-radius:6px;padding:14px 16px;margin-bottom:14px;">';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">';
-    h += '<div style="font-weight:600;color:#eef1f5;font-size:.9rem;">Line ' + l.line_number + ' &mdash; ' + partLabel + ' <span style="color:#7a8a9a;font-weight:400;">(qty ' + l.quantity_ordered + ')</span></div>';
-    h += '<form method="POST" action="/admin/orders/' + o.id + '/lines/' + l.id + '/coc/generate" style="margin:0;"><button type="submit" class="btn btn-gold btn-sm" style="font-size:.75rem;">+ Generate CoC</button></form>';
-    h += '</div>';
-    var rows = byLine[l.id] || [];
-    if (!rows.length) {
-      h += '<div style="color:#7a8a9a;font-size:.8rem;padding:6px 0;">No certificate yet.</div>';
-    } else {
-      h += '<table style="width:100%;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #1e2d42;">';
-      h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">CoC #</th>';
-      h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Qty</th>';
-      h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Serial/Batch</th>';
-      h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Status</th>';
-      h += '<th></th></tr></thead><tbody>';
-      rows.forEach(function(c){
-        h += '<tr style="border-bottom:1px solid #14202f;">';
-        h += '<td style="padding:6px 8px;color:#c8932a;font-size:.82rem;">' + esc(c.coc_number) + '</td>';
-        h += '<td style="padding:6px 8px;font-size:.82rem;">' + esc(c.quantity) + '</td>';
-        h += '<td style="padding:6px 8px;font-size:.82rem;">' + esc(c.serial_batch_number) + '</td>';
-        h += '<td style="padding:6px 8px;font-size:.82rem;">' + esc(c.status) + '</td>';
-        h += '<td style="padding:6px 8px;text-align:right;"><a href="/admin/orders/' + o.id + '/coc/' + c.id + '/edit" class="btn btn-outline btn-sm" style="font-size:.72rem;">Edit</a></td>';
-        h += '</tr>';
-      });
-      h += '</tbody></table>';
-    }
-    h += '</div>';
-  });
-  h += '</div>';
-  return h;
-}
-
 function renderDocumentsTab(o) {
   var oid = o.id;
   var docTypes = ['8130 Cert','Certificate of Conformance (CoC)','Packing Slip','Supplier Quote','Supplier PO','Customer PO','Invoice','Trace Document','Other'];
@@ -239,7 +197,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       html += '<div><div class="page-title">'+o.order_number+'</div><div class="page-sub" style="margin-bottom:0;">'+o.customer_name+' &middot; '+(o.company||'')+'</div></div>';
       html += '<a href="/admin/orders" class="btn btn-outline btn-sm">&#8592; Back</a></div>';
       html += '<div style="border-bottom:1px solid #1e2d42;margin-bottom:24px;overflow-x:auto;white-space:nowrap;">';
-      html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping') + tabLink('proforma','&#129534; Proforma')+tabLink('payment','&#128179; Payment')+tabLink('documents','&#128206; Documents')+tabLink('coc','&#128203; CoC'); /* ORDER_DOCS_TAB_v1 COC_TAB_v1 */
+      html += tabLink('overview','&#128203; Overview')+tabLink('lines','&#128230; Lines')+tabLink('shipping','&#128666; Shipping') + tabLink('proforma','&#129534; Proforma')+tabLink('payment','&#128179; Payment')+tabLink('documents','&#128206; Documents'); /* ORDER_DOCS_TAB_v1 */
       html += '</div><div class="card"><div class="card-body">';
       if (activeTab === 'overview') {
         /* COMPLETION_GATE_v1: four-track completion checklist */
@@ -290,10 +248,6 @@ export function mountOrderRoutes(router, requireAuth, page) {
         html += renderPaymentTab(o, invoices, payments);
       } else if (activeTab === 'documents') {
         html += renderDocumentsTab(o);
-      } else if (activeTab === 'coc') { /* COC_TAB_v1 */
-        const _cocR = await pool.request().input('oidCoc', sql.BigInt, req.params.id)
-          .query('SELECT c.id, c.coc_number, c.status, c.quantity, c.serial_batch_number, c.order_line_id FROM coc_certificates c WHERE c.order_id=@oidCoc ORDER BY c.order_line_id, c.id');
-        html += renderCocTab(o, oLines, _cocR.recordset);
       }
       html += '</div></div>';
       res.send(page('Order '+o.order_number, 'orders', html));
