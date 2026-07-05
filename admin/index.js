@@ -1885,7 +1885,7 @@ export async function buildAdminRouter() {
           <div class="page-title">Quote ${q.quote_number}</div>
           <div style="display:flex;gap:8px;">
           
-          ''/* CLEANUP_AND_RESUME_FIX_v1: Edit & Resend button removed */
+          <!-- FIX_LEAKED_COMMENT_v1: removed stray JS comment fragment -->
           <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>

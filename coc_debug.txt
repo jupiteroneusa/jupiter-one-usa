@@ -1,0 +1,232 @@
+===== LINE 1884-1900 =====
+1884:         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+1885:           <div class="page-title">Quote ${q.quote_number}</div>
+1886:           <div style="display:flex;gap:8px;">
+1887:           
+1888:           ''/* CLEANUP_AND_RESUME_FIX_v1: Edit & Resend button removed */
+1889:           <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
+1890:           <a href="/admin/quotes" class="btn btn-outline btn-sm"> Back to Quotes</a>
+1891:         </div>
+1892:         </div>
+1893:         <div class="page-sub">Created ${new Date(q.created_at).toLocaleString()}</div>
+1894:         <div class="detail-grid">
+1895:           <div class="detail-item"><div class="detail-label">Customer</div><div class="detail-value"><a href="/admin/customers/${q.customer_id}" style="color:#c8932a;">${q.customer_name}</a></div></div>
+1896:           <div class="detail-item"><div class="detail-label">Company</div><div class="detail-value">${q.company||'-'}</div></div>
+1897:           <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value"><a href="mailto:${q.email}" style="color:#c8932a;">${q.email}</a></div></div>
+1898:           <div class="detail-item"><div class="detail-label">RFQ</div><div class="detail-value"><a href="/admin/rfqs/${q.rfq_header_id}" style="color:#c8932a;">${q.rfq_number}</a></div></div>
+1899:           <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}${(() => { if (q.status==='Sent' && q.valid_until) {  const days = Math.ceil((new Date(q.valid_until)-new Date())/86400000);  if (days < 0) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">EXPIRED '+Math.abs(days)+'d AGO</span>';  if (days <= 3) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  if (days <= 7) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  return ' <span style="color:#7a8a9a;font-size:.7rem;margin-left:6px;">'+days+'d left</span>'; } if (q.reissued_count > 0) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Reissued '+q.reissued_count+'x</span>'; return '';})()}</div></div>${q.status==='Rejected' ? `<div class="alert alert-error" style="grid-column:1/-1;">&#9888; Customer rejected${q.rejected_at ? ' on '+new Date(q.rejected_at).toLocaleDateString() : ''}${q.rejection_reason ? '. Reason: '+q.rejection_reason : ''}</div>` : ''}${q.status==='Expired' ? `<div class="alert" style="grid-column:1/-1;background:rgba(122,138,154,0.1);border-color:#7a8a9a;color:#7a8a9a;">&#9201; This quote expired${q.expired_at ? ' on '+new Date(q.expired_at).toLocaleDateString() : (q.valid_until ? ' on '+new Date(q.valid_until).toLocaleDateString() : '')}. Use Reissue or Revise to send a new one.</div>` : ''}
+1900:           <div class="detail-item"><div class="detail-label">Valid Until</div><div class="detail-value">${q.valid_until?new Date(q.valid_until).toLocaleDateString():'-'}</div></div>
+
+===== QUOTE SAVE/SEND ROUTES =====
+113:function statusBadge(s) {
+166:  router.get('/', (req, res) => {
+183:  router.post('/login', async (req, res) => { /* ADMIN_LOGIN_TABLE_FALLBACK_v1 */
+198:        .query("SELECT id, email, password_hash, role, status FROM admin_users WHERE LOWER(email)=@email");
+203:        if (ok && (u.status === 'Active' || u.status == null)) {
+219:  router.get('/logout', (req, res) => {
+225:  router.get('/dashboard', async (req, res) => {
+232:          (SELECT COUNT(*) FROM rfq_headers WHERE status='Submitted') AS new_rfqs,
+234:          (SELECT COUNT(*) FROM rfq_headers WHERE status='Sourcing') AS active_sourcing,
+235:          (SELECT COUNT(*) FROM contact_messages WHERE status='New') AS new_messages
+239:        SELECT TOP 20 h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
+245:        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,c.id,c.first_name,c.last_name,c.company
+254:        <td>${statusBadge(r.priority)}</td>
+255:        <td>${statusBadge(r.status)}</td>
+281:            <th class="sortable" onclick="sortTable(this,4)">Status</th>
+324:  router.get('/rfqs', async (req, res) => {
+326:    const status = req.query.status || '';
+339:      status: 'h.status',
+350:      if (status) { r.input('status', sql.NVarChar, status); whereClauses.push('h.status=@status'); }
+356:        .input('status2', sql.NVarChar, status || null)
+362:          ${status ? 'AND h.status=@status2' : ''}
+369:        SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at,
+376:        GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at,h.customer_ref,c.id,c.first_name,c.last_name,c.company,c.email
+381:      const statuses = ['','Submitted','Under Review','Sourcing','Quoted','Closed','Cancelled'];
+382:      const filters = statuses.map(s => `<a href="/admin/rfqs?status=${s}&pageSize=${pageSize}" class="btn btn-sm ${status===s?'btn-gold':'btn-outline'}">${s||'All'}</a>`).join('');
+388:        return `<th><a href="/admin/rfqs?status=${status}&sort=${col}&dir=${nextDir}&page=1&pageSize=${pageSize}" style="color:${sortCol===col?'#c8932a':'#7a8a9a'};text-decoration:none;font:inherit;letter-spacing:inherit;text-transform:inherit;">${label}${arrow}</a></th>`;
+397:        <td>${statusBadge(r.priority)}</td>
+398:        <td>${statusBadge(r.status)}</td>
+404:      const baseUrl = (p) => `/admin/rfqs?status=${status}&sort=${sortCol}&dir=${sortDir}&page=${p}&pageSize=${pageSize}${refFilter?'&ref='+encodeURIComponent(refFilter):''}`;
+430:          <select class="page-size-select" onchange="window.location='/admin/rfqs?status=${status}&sort=${sortCol}&dir=${sortDir}&page=1&pageSize='+this.value">
+450:            ${sortLink('status','Status')}
+463:  router.get('/rfqs/create', async (req, res) => {
+560:                  <div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Status</div>
+561:                  <select name="status" style="width:100%;">
+732:  router.post('/rfqs/create', async (req, res) => {
+736:      const { customer_type, customer_id, priority, status, source, notes, customer_ref,
+787:            INSERT INTO customers (first_name, last_name, email, phone, company, country, password_hash, status)
+826:        .input('status', sql.NVarChar(50), status || 'Submitted')
+832:          INSERT INTO rfq_headers (customer_id, rfq_number, status, priority, notes, customer_ref)
+834:          VALUES (@customerId, @rfqNumber, @status, @priority, @notes, @customerRef)
+860:      // Log initial status
+863:        .input('status', sql.NVarChar(50), status || 'Submitted')
+865:        .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, NULL, @status, @note)`);
+875:  router.get('/rfqs/:id', async (req, res) => {
+887:        .query(`SELECT * FROM rfq_status_log WHERE rfq_id=@id ORDER BY created_at ASC`);
+891:        .query("SELECT TOP 1 id FROM quotes WHERE rfq_id=@rfqIdDraft AND status<>'Accepted' ORDER BY id ASC"); /* CLEANUP_AND_RESUME_FIX_v1 */
+893:      const successMsg = req.query.created ? '<div class="alert alert-success">Manual RFQ created successfully!</div>' : req.query.quoted ? '<div class="alert alert-success">Quote created and sent to customer!</div>' : req.query.updated ? '<div class="alert alert-success">Status updated.</div>' : req.query.error ? '<div class="alert alert-error">An error occurred. Please try again.</div>' : '';
+900:        <td>${statusBadge(l.condition_code||'—')}</td>
+925:        .query("SELECT id, quote_number, status, total_amount, valid_until, created_at FROM quotes WHERE rfq_id=@rfqIdSQ AND quote_number NOT LIKE '%-D' ORDER BY created_at DESC");
+928:        : '<table><thead><tr><th>Quote #</th><th>Status</th><th>Total</th><th>Valid Until</th><th>Sent</th><th></th></tr></thead><tbody>' +
+930:            <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a> <span style="font-size:.68rem;background:#1e3a5f;color:#c8932a;border:1px solid #c8932a;padding:1px 7px;border-radius:10px;font-weight:700;margin-left:4px;vertical-align:middle;">${(()=>{const m=(q.quote_number||'').match(/-v(\d+)$/);return m?'v'+m[1]:(q.quote_number||'').endsWith('-D')?'DRAFT':''})()}</span></td>
+931:            <td>${statusBadge(q.status)}</td>
+939:        <td>${statusBadge(l.new_status)}</td>
+943:      const statuses = ['Submitted','Under Review','Sourcing','Quoted','Closed','Cancelled'];
+944:      const statusOptions = statuses.map(s => `<option value="${s}"${rfq.status===s?' selected':''}>${s}</option>`).join('');
+958:          <div class="detail-item"><div class="detail-label">Priority</div><div class="detail-value">${statusBadge(rfq.priority)}</div></div>
+959:          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(rfq.status)}</div></div>
+980:          <div class="card-header">Update Status</div>
+982:            <form method="POST" action="/admin/rfqs/${rfq.id}/status" style="display:inline;margin-bottom:12px;" onsubmit="return confirm('Close this RFQ? It will be marked Closed.');">
+983:              <input type="hidden" name="status" value="Closed"/>
+988:            <form method="POST" action="/admin/rfqs/${rfq.id}/status" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+989:              <div><div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">New Status</div><select name="status">${statusOptions}</select></div>
+991:              <button type="submit" class="btn btn-gold">Update Status</button>
+1000:          <div class="card-header">Status History</div>
+1001:          <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
+1010:  router.get('/rfqs/:id/quote-review-draft', async (req, res) => {
+1088:    router.post('/rfqs/:id/quote-draft', async (req, res) => {
+1183:          .query(`INSERT INTO quotes (rfq_id,customer_id,quote_number,subtotal,total_amount,total_cost,total_margin,valid_until,payment_terms,notes,personal_message,status) OUTPUT INSERTED.id VALUES (@rfqId,@customerId,@quoteNumber,@subtotal,@totalAmount,@totalCost,@totalMargin,@validUntil,@paymentTerms,@notes,@personalMessage,'Draft')`);
+1215:  /* MOVED to admin/quoteBuilder.js: router.get('/rfqs/:id/quote-review', */
+1217:  /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote-review', */
+1220:  router.get('/rfqs/:id/quote-pdf/:quoteId', async (req, res) => {
+1227:      if (!qr.recordset.length) return res.status(404).send('Quote not found');
+1266:              <tr><td style="padding:2px 8px 2px 0;border:none;color:#888;font-size:12px;">Status</td><td style="padding:2px;border:none;">QUOTED</td></tr>
+1308:      res.status(500).send('PDF generation failed: ' + err.message);
+1313:  router.get('/quotes/:quoteId/pdf-view', async (req, res) => {
+1320:      if (!qr.recordset.length) return res.status(404).send('Quote not found');
+1324:      if (!pdfRaw) return res.status(500).send('PDF generation failed');
+1333:      res.status(500).send('PDF generation failed: ' + err.message);
+1338:  router.get('/invoices/:id/pdf', async (req, res) => {
+1343:      if (!pdfRaw) return res.status(500).send('PDF generation failed');
+1352:      res.status(500).send('PDF generation failed: ' + err.message);
+1356:    /* MOVED to admin/quoteBuilder.js: router.post('/rfqs/:id/quote', */
+1358:  // RFQ Status Update
+1360:  router.post('/rfqs/:id/lines/:lineId/remove', async (req, res) => {
+1382:  router.post('/rfqs/:id/status', async (req, res) => {
+1384:    const { status, note } = req.body;
+1388:        .query(`SELECT status FROM rfq_headers WHERE id=@id`);
+1389:      const oldStatus = current.recordset[0]?.status;
+1390:      await pool.request().input('id', sql.BigInt, req.params.id).input('status', sql.NVarChar, status)
+1391:        .query(`UPDATE rfq_headers SET status=@status, updated_at=GETDATE() WHERE id=@id`);
+1394:        .input('oldStatus', sql.NVarChar, oldStatus)
+1395:        .input('newStatus', sql.NVarChar, status)
+1397:        .query(`INSERT INTO rfq_status_log (rfq_id, old_status, new_status, note) VALUES (@rfqId, @oldStatus, @newStatus, @note)`);
+1398:      try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'rfq_status_changed', entityType: 'rfq', entityId: req.params.id, summary: 'RFQ status: ' + (oldStatus || '?') + ' -> ' + status, ipAddress: getIp(req) }); } catch(e) { console.error('audit rfq_status:', e.message); } /* AUDIT_ACTIONS_A_v1 */
+1406:  router.get('/customers', async (req, res) => {
+1412:          c.status, c.created_at, c.last_login_at, COUNT(h.id) AS rfq_count
+1415:        GROUP BY c.id,c.first_name,c.last_name,c.company,c.email,c.phone,c.status,c.created_at,c.last_login_at
+1424:        <td>${statusBadge(c.status)}</td>
+1433:          <table><thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>RFQs</th><th>Status</th><th>Joined</th><th>Login</th><th></th></tr></thead>
+1441:  router.get('/customers/:id', async (req, res) => {
+1452:        .query('SELECT h.id, h.rfq_number, h.status, h.priority, h.submitted_at, COUNT(l.id) AS line_count FROM rfq_headers h LEFT JOIN rfq_lines l ON l.rfq_id=h.id WHERE h.customer_id=@id GROUP BY h.id,h.rfq_number,h.status,h.priority,h.submitted_at ORDER BY h.submitted_at DESC');
+1456:        .query("SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at, q.rejected_at, q.rejection_reason, q.expired_at, q.parent_quote_id, q.reissued_count, h.rfq_number FROM quotes q JOIN rfq_headers h ON h.id=q.rfq_id WHERE q.customer_id=@id AND q.quote_number NOT LIKE '%-D' ORDER BY q.created_at DESC");
+1467:        <td>${statusBadge(r.priority)}</td>
+1468:        <td>${statusBadge(r.status)}</td>
+1474:        <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a></td>
+1476:        <td>${statusBadge(q.status)}</td>
+1513:              <span style="font-size:.78rem;color:#7a8a9a;">Status: ${statusBadge(cust.status)}</span>
+1577:            <table><thead><tr><th>RFQ #</th><th>Lines</th><th>Priority</th><th>Status</th><th>Date</th><th></th></tr></thead>
+1582:            <table><thead><tr><th>Quote #</th><th>RFQ</th><th>Status</th><th>Total</th><th>Valid Until</th><th>Sent</th></tr></thead>
+1636:  router.post('/customers/:id/update', async (req, res) => {
+1712:  router.post('/customers/:id/send-setup', async (req, res) => {
+1739:  router.post('/customers/:id/send-reset', async (req, res) => {
+1766:  router.get('/quotes', async (req, res) => {
+1771:        SELECT q.id, q.quote_number, q.status, q.total_amount, q.valid_until, q.created_at,
+1780:        <td class="mono text-gold"><a href="/admin/quotes/${q.id}" style="color:#c8932a;">${q.quote_number}</a> <span style="font-size:.68rem;background:#1e3a5f;color:#c8932a;border:1px solid #c8932a;padding:1px 7px;border-radius:10px;font-weight:700;margin-left:4px;vertical-align:middle;">${(()=>{const m=(q.quote_number||'').match(/-v(\d+)$/);return m?'v'+m[1]:(q.quote_number||'').endsWith('-D')?'DRAFT':''})()}</span></td>
+1785:        <td>${statusBadge(q.status)}</td>
+1800:            <th class="sortable" onclick="sortTable(this,5)">Status</th>
+1812:  router.get('/quotes/:id', async (req, res) => {
+1862:        .query('SELECT * FROM rfq_status_log WHERE rfq_id=@rfqIdLog ORDER BY created_at ASC');
+1868:        <td>${statusBadge(l.new_status)}</td>
+1889:          <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
+1899:          <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">${statusBadge(q.status)}${(() => { if (q.status==='Sent' && q.valid_until) {  const days = Math.ceil((new Date(q.valid_until)-new Date())/86400000);  if (days < 0) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">EXPIRED '+Math.abs(days)+'d AGO</span>';  if (days <= 3) return ' <span style="color:#e05050;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  if (days <= 7) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Expires in '+days+'d</span>';  return ' <span style="color:#7a8a9a;font-size:.7rem;margin-left:6px;">'+days+'d left</span>'; } if (q.reissued_count > 0) return ' <span style="color:#c8932a;font-size:.7rem;margin-left:6px;">Reissued '+q.reissued_count+'x</span>'; return '';})()}</div></div>${q.status==='Rejected' ? `<div class="alert alert-error" style="grid-column:1/-1;">&#9888; Customer rejected${q.rejected_at ? ' on '+new Date(q.rejected_at).toLocaleDateString() : ''}${q.rejection_reason ? '. Reason: '+q.rejection_reason : ''}</div>` : ''}${q.status==='Expired' ? `<div class="alert" style="grid-column:1/-1;background:rgba(122,138,154,0.1);border-color:#7a8a9a;color:#7a8a9a;">&#9201; This quote expired${q.expired_at ? ' on '+new Date(q.expired_at).toLocaleDateString() : (q.valid_until ? ' on '+new Date(q.valid_until).toLocaleDateString() : '')}. Use Reissue or Revise to send a new one.</div>` : ''}
+1924:          <div class="card-header">RFQ Status History</div>
+1925:          <table><thead><tr><th>Date</th><th>Status</th><th>Note</th></tr></thead>
+1938:  router.get('/orders', async (req, res) => {
+1943:        SELECT o.id, o.order_number, o.status, o.total_amount, o.confirmed_at,
+1953:        <td>${statusBadge(o.status)}</td>
+1960:          <table><thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+1969:  router.get('/invoices', async (req, res) => {
+1974:        SELECT i.id, i.invoice_number, i.status, i.total_amount, i.balance_due, i.due_date, i.created_at,
+1985:        <td>${statusBadge(i.status)}</td>
+1992:          <table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Balance Due</th><th>Status</th><th>Due Date</th></tr></thead>
+2000:  router.get('/invoices/:id', async (req, res) => {
+2018:      const isPaid = inv.status === 'Paid';
+2056:      html += '<div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + statusBadge(inv.status) + '</div></div>';
+2105:  router.get('/suppliers', async (req, res) => {
+2111:      if (filterMode === 'active') whereClause = "WHERE status='Active'";
+2112:      else if (filterMode === 'preferred') whereClause = "WHERE status='Active' AND is_preferred=1";
+2113:      else if (filterMode === 'cert8130') whereClause = "WHERE status='Active' AND is_certified_8130=1";
+2114:      else if (filterMode === 'inactive') whereClause = "WHERE status<>'Active'";
+2116:        SELECT id, company_name AS name, contact_name, email, phone, country, status, is_preferred, is_certified_8130, created_at
+2125:        <td>${statusBadge(s.status)}</td>
+2132:          <table id="suppliersTable"><thead><tr><th data-sort="0" style="cursor:pointer;user-select:none;">Company &#x25B2;&#x25BC;</th><th data-sort="1" style="cursor:pointer;user-select:none;">Contact &#x25B2;&#x25BC;</th><th>Email</th><th>Phone</th><th data-sort="4" style="cursor:pointer;user-select:none;">Country &#x25B2;&#x25BC;</th><th data-sort="5" style="cursor:pointer;user-select:none;">Status &#x25B2;&#x25BC;</th></tr></thead>
+2170:  router.get('/messages', async (req, res) => {
+2175:        SELECT id, name, email, phone, company, subject, message, status, submitted_at
+2185:        <td>${statusBadge(m.status||'New')}</td>
+2188:          <form method="POST" action="/admin/messages/${m.id}/status" style="display:inline;">
+2189:            <select name="status" onchange="this.form.submit()" style="font-size:.7rem;padding:4px 8px;">
+2190:              <option value="New"${m.status==='New'?' selected':''}>New</option>
+2191:              <option value="Read"${m.status==='Read'?' selected':''}>Read</option>
+2192:              <option value="Responded"${m.status==='Responded'?' selected':''}>Responded</option>
+2201:          <table><thead><tr><th>From</th><th>Email</th><th>Phone</th><th>Subject</th><th>Message</th><th>Status</th><th>Date</th><th>Action</th></tr></thead>
+2209:  router.post('/messages/:id/status', async (req, res) => {
+2215:        .input('status', sql.NVarChar, req.body.status)
+2216:        .query(`UPDATE contact_messages SET status=@status WHERE id=@id`);
+2224:  router.get('/api/customer-search', async (req, res) => {
+2251:  // GET /admin/quotes/:id/edit  — show pre-filled edit form for an existing quote
+2252:  router.get('/quotes/:id/edit', async (req, res) => {
+2259:      if (q.status === 'Accepted') {
+2260:        return res.send(page('Edit Quote', 'quotes', '<div class="alert alert-error">Cannot edit an accepted quote. To fix typos on accepted quotes, use the order page Lines tab.</div><div style="margin-top:12px;"><a href="/admin/quotes/' + q.id + '" class="btn btn-outline">&larr; Back to Quote</a></div>'));
+2267:      const _suppliersR = await pool.request().query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
+2272:      html += '<form method="POST" action="/admin/quotes/' + q.id + '/edit-save">';
+2334:      html += '<a href="/admin/quotes/' + q.id + '" class="btn btn-outline">Cancel</a>';
+2406:  // POST /admin/quotes/:id/edit-save — snapshot old version, update current, optionally email
+2407:  router.post('/quotes/:id/edit-save', async (req, res) => {
+2414:      if (!qCur.recordset.length) return res.redirect('/admin/quotes/' + qid + '?error=Quote+not+found');
+2416:      if (q.status === 'Accepted') return res.redirect('/admin/quotes/' + qid + '?error=Cannot+edit+accepted+quote');
+2433:        .input('sent', sql.Bit, q.status === 'Sent' ? 1 : 0)
+2443:        .query("UPDATE quotes SET version=@ver, valid_until=@vu, payment_terms=@pt, status='Sent', rejected_at=NULL, rejection_reason=NULL, expired_at=NULL, updated_at=GETDATE() WHERE id=@id");
+2574:      res.redirect('/admin/quotes/' + qid + '?saved=1&new_version=' + newVer);
+2575:    } catch (err) { console.error('Quote edit-save error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
+2579:  router.post('/quotes/:id/reissue', async (req, res) => {
+2588:        .query("UPDATE quotes SET status='Sent', valid_until=@vu, expired_at=NULL, rejected_at=NULL, rejection_reason=NULL, reissued_count=ISNULL(reissued_count,0)+1, updated_at=GETDATE() WHERE id=@id");
+2589:      res.redirect('/admin/quotes/'+req.params.id+'?reissued=1');
+2590:    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+2594:  router.post('/quotes/:id/revise', async (req, res) => {
+2603:        .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
+2606:    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+2611:  router.post('/quotes/:id/revise', async (req, res) => {
+2620:        .query("UPDATE quotes SET status='Superseded', updated_at=GETDATE() WHERE id=@id");
+2623:    } catch(err) { res.redirect('/admin/quotes/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
+
+===== SAVE FAILED SOURCE =====
+378:        OFFSET @off ROWS FETCH NEXT @lim ROWS ONLY
+659:            fetch('/admin/api/customer-search?q=' + encodeURIComponent(val))
+1049:      const draftScript = 'let isDirty=false;document.querySelectorAll("input,textarea").forEach(function(el){el.addEventListener("input",function(){isDirty=true;});});window.addEventListener("beforeunload",function(e){if(isDirty){e.preventDefault();e.returnValue="";}});function saveDraft(){isDirty=false;const form=document.querySelector("form");const fd=new URLSearchParams(new FormData(form));fetch("/admin/rfqs/'+rfq.id+'/quote-draft",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:fd.toString()}).then(function(r){return r.json();}).then(function(d){const btn=document.getElementById("save-draft-btn");if(btn){btn.textContent=d.ok?"Draft Saved \u2713":"Save Failed";btn.style.color=d.ok?"#4caf50":"#e05050";}setTimeout(function(){if(btn&&d.ok){btn.textContent="Save Draft";btn.style.color="";}},3000);}).catch(function(){isDirty=true;});}';
+1051:      html += '<div class="alert" style="background:rgba(76,175,80,0.1);border-color:#4caf50;color:#4caf50;margin-bottom:16px;">Resuming saved draft — '+draft.quote_number+'</div>';
+1079:      html += '<button type="button" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>';
+1206:        return res.json({ ok: true, message: 'Draft saved' });
+1209:      console.error('Draft save error:', err);
+1308:      res.status(500).send('PDF generation failed: ' + err.message);
+1324:      if (!pdfRaw) return res.status(500).send('PDF generation failed');
+1333:      res.status(500).send('PDF generation failed: ' + err.message);
+1343:      if (!pdfRaw) return res.status(500).send('PDF generation failed');
+1352:      res.status(500).send('PDF generation failed: ' + err.message);
+1375:      res.redirect('/admin/rfqs/' + req.params.id + '?saved=1');
+1459:      const successMsg = req.query.saved ? '<div class="alert alert-success" style="margin-bottom:16px;">✔ Customer updated successfully.</div>' :
+1512:              <button type="submit" class="btn btn-gold">Save Changes</button>
+1530:            <button type="submit" class="btn btn-gold" style="margin-top:8px;">Save Changes</button>
+1556:            <button type="submit" class="btn btn-gold" style="margin-top:16px;">Save Changes</button>
+1571:            <button type="submit" class="btn btn-gold">Save Changes</button>
+1593:            <button type="submit" class="btn btn-gold">Save Notes</button>
+1635:  // Save customer updates
+1641:      /* CUSTOMER_UPDATE_MERGE_v1: fetch existing customer and preserve fields not submitted */
+1704:      res.redirect('/admin/customers/' + req.params.id + '?tab=' + (b.tab||'overview') + '&saved=1');
+2272:      html += '<form method="POST" action="/admin/quotes/' + q.id + '/edit-save">';
+2335:      html += '<button type="submit" class="btn btn-gold">Save & Resend</button>';
+2406:  // POST /admin/quotes/:id/edit-save — snapshot old version, update current, optionally email
+2407:  router.post('/quotes/:id/edit-save', async (req, res) => {
+2567:              console.warn('Sending quote email WITHOUT PDF attachment (generation failed)');
+2574:      res.redirect('/admin/quotes/' + qid + '?saved=1&new_version=' + newVer);
+2575:    } catch (err) { console.error('Quote edit-save error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
