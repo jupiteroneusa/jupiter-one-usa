@@ -44,6 +44,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
       const ctx = await loadContext(req.params.id);
       if (!ctx) return res.redirect('/admin/rfqs');
       const errMsg = req.query.error ? '<div class="alert alert-error" style="margin-bottom:14px;">' + decodeURIComponent(req.query.error) + '</div>' : '';
+      if (ctx.existingOrder) { /* RFQ_ORDERED_GUARD_v1 */ var _on = ctx.existingOrder.order_number || ('#' + ctx.existingOrder.id); var ordBanner = '<div class="alert alert-error" style="margin-bottom:16px;">This RFQ has already been converted to Order <strong>' + _on + '</strong>. It can no longer be re-quoted. <a href="/admin/orders/' + ctx.existingOrder.id + '" style="color:#c8932a;text-decoration:underline;">Open the order &rarr;</a></div>'; return res.send(page('RFQ Already Ordered', 'rfqs', ordBanner + '<div style="padding:20px;"><a href="/admin/orders/' + ctx.existingOrder.id + '" class="btn btn-gold">Go to Order ' + _on + '</a> <a href="/admin/rfqs" class="btn btn-outline">Back to RFQs</a></div>')); }
       res.send(page('New Quote', 'rfqs', errMsg + renderForm(ctx, null)));
     } catch (err) {
       console.error('quote-review GET error:', err);
@@ -75,6 +76,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
   router.post('/rfqs/:id/quote', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
+      /* RFQ_ORDERED_GUARD_v1 */ const _ordChk = await (await getPool()).request().input('rid', sql.BigInt, req.params.id).query('SELECT TOP 1 order_number FROM orders WHERE rfq_id=@rid'); if (_ordChk.recordset.length) { return res.redirect('/admin/rfqs/' + req.params.id + '/quote-review?error=' + encodeURIComponent('This RFQ is already an order (' + (_ordChk.recordset[0].order_number || '') + ') and cannot be re-quoted.')); }
       const result = await saveQuote(req.params.id, req.body, req.adminId);
       try { await logAudit({ userType: 'admin', userId: req.adminId, userEmail: req.adminEmail, action: 'quote_sent', entityType: 'quote', entityId: result.quote_id, summary: 'Quote ' + (result.quote_number || result.quote_id) + ' saved/sent', ipAddress: getIp(req) }); } catch(e) { console.error('audit quote_sent:', e.message); }
       res.redirect('/admin/quotes/' + result.quote_id + '?saved=1');
@@ -91,6 +93,7 @@ export function mountQuoteBuilder(router, requireAuth, page) {
   router.post('/rfqs/:id/quote-draft-full', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
+      /* RFQ_ORDERED_GUARD_v1 */ const _ordChk2 = await (await getPool()).request().input('rid2', sql.BigInt, req.params.id).query('SELECT TOP 1 order_number FROM orders WHERE rfq_id=@rid2'); if (_ordChk2.recordset.length) { return res.json({ ok: false, error: 'This RFQ is already an order (' + (_ordChk2.recordset[0].order_number || '') + ') and cannot be re-quoted or edited.' }); }
       const result = await saveQuoteDraftFull(req.params.id, req.body);
       res.json({ ok: true, quote_id: result.quote_id, quote_number: result.quote_number });
     } catch (err) {
@@ -153,7 +156,8 @@ async function loadContext(rfqId) {
   const sup = await pool.request()
     .query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
 
-  return { rfq, rfqLines: dbLines.recordset, suppliers: sup.recordset };
+  /* RFQ_ORDERED_GUARD_v1 */ const ordR = await pool.request().input('idOrd', sql.BigInt, rfqId).query('SELECT TOP 1 id, order_number FROM orders WHERE rfq_id=@idOrd ORDER BY id ASC'); const existingOrder = ordR.recordset.length ? ordR.recordset[0] : null;
+  return { rfq, rfqLines: dbLines.recordset, suppliers: sup.recordset, existingOrder: existingOrder };
 }
 
 // ============================================================================
