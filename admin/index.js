@@ -2271,7 +2271,7 @@ export async function buildAdminRouter() {
       const _suppliersR = await pool.request().query("SELECT id, company_name FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
       const _supplierOptions = _suppliersR.recordset.map(function(s2) { return '<option value="' + s2.id + '">' + (s2.company_name || ('Supplier ' + s2.id)).replace(/</g,'&lt;') + '</option>'; }).join('');
       var html = '';
-      html += '<div class="page-title">Edit Quote ' + q.quote_number + ' &mdash; v' + (q.version || 1) + ' \u2192 v' + ((q.version || 1) + 1) + '</div>';
+      html += '<div class="page-title">Edit Quote ' + q.quote_number + '</div>'; /* QUOTE_EDIT_FIXES_v1 */
       html += '<div class="page-sub">Editing creates a new version. Customer will receive an email with the revised PDF.</div>';
       html += '<form method="POST" action="/admin/quotes/' + q.id + '/edit-save">';
       html += '<div class="card"><div class="card-body">';
@@ -2332,11 +2332,12 @@ html += '<div style="margin-bottom:10px;">';
 html += '<div style="font-size:.7rem;color:#7a8a9a;margin-bottom:4px;">Additional Recipients <span style="color:#555;">(comma-separated, optional)</span></div>';
 html += '<input type="text" name="cc_emails" placeholder="e.g. john@co.com, jane@co.com" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/>';
 html += '</div>';
-      html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" name="email_customer" value="1" checked/> Email customer the revised quote PDF</label>';
+      html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" name="email_customer" value="1"/> Email customer the revised quote PDF (or use the Save &amp; Resend button)</label>';
       html += '</div></div>';
       html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">';
       html += '<a href="/admin/quotes/' + q.id + '" class="btn btn-outline">Cancel</a>';
-      html += '<button type="submit" class="btn btn-gold">Save & Resend</button>';
+      html += '<button type="submit" name="_do_email" value="0" class="btn btn-outline" onclick="var e=document.querySelector(\'[name=email_customer]\'); if(e) e.checked=false;">Save (no email)</button>';
+      html += '<button type="submit" name="_do_email" value="1" class="btn btn-gold" onclick="var e=document.querySelector(\'[name=email_customer]\'); if(e) e.checked=true;">Save &amp; Resend</button>'; /* QUOTE_EDIT_FIXES_v1 */
       // SOURCES_FULL_EDIT_V1 - JS for adding new source rows
       html += '<script>';
       html += 'window.__SUPPLIERS = ' + JSON.stringify(_suppliersR.recordset) + ';';
@@ -2557,13 +2558,13 @@ html += '</div>';
             const mailOptions = {
               from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
               to: q.email,
-              subject: 'Revised Quote ' + q.quote_number + ' (v' + newVer + ')',
+              subject: 'Revised Quote ' + q.quote_number + ' (Revised)',
               html: body
             };
             if (ccList.length > 0) mailOptions.cc = ccList;
             if (pdfBuf) {
               mailOptions.attachments = [{
-                filename: 'Quote_' + q.quote_number + '_v' + newVer + '.pdf',
+                filename: 'Quote_' + q.quote_number + '.pdf',
                 content: pdfBuf,
                 contentType: 'application/pdf'
               }];
