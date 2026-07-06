@@ -2280,7 +2280,7 @@ export async function buildAdminRouter() {
       html += '<div><div class="detail-label">Payment Terms</div><input type="text" name="payment_terms" value="' + (q.payment_terms || '').replace(/"/g, '&quot;') + '" style="width:100%;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:8px 12px;"/></div>';
       html += '</div>';
       html += '</div></div>';
-      html += '<div class="card" style="margin-top:14px;"><div class="card-header">Line Items</div><div class="card-body">';
+      html += '<div class="card" style="margin-top:14px;"><div class="card-header">Line Items <button type="button" class="btn btn-outline btn-sm" onclick="addEditLine()">+ Add Line</button></div><div class="card-body" id="edit-lines-body">'; /* QUOTE_EDIT_ADDLINE_v1 */
       linesR.recordset.forEach(function(l, idx) {
         html += '<div style="margin-bottom:14px;padding:12px;background:#0a1628;border:1px solid #1e2d42;border-radius:4px;">';
         html += '<input type="hidden" name="lines[' + idx + '][id]" value="' + l.id + '"/>';
@@ -2338,6 +2338,23 @@ html += '</div>';
       html += '<a href="/admin/quotes/' + q.id + '" class="btn btn-outline">Cancel</a>';
       html += '<button type="submit" name="_do_email" value="0" class="btn btn-outline" onclick="var e=document.querySelector(\'[name=email_customer]\'); if(e) e.checked=false;">Save (no email)</button>';
       html += '<button type="submit" name="_do_email" value="1" class="btn btn-gold" onclick="var e=document.querySelector(\'[name=email_customer]\'); if(e) e.checked=true;">Save &amp; Resend</button>'; /* QUOTE_EDIT_FIXES_v1 */
+      /* QUOTE_EDIT_ADDLINE_v1: append blank line */
+      html += '<script>(function(){';
+      html += 'var Q=String.fromCharCode(34);';
+      html += 'window.__eli=1000;';
+      html += 'window.addEditLine=function(){';
+      html += 'var i=window.__eli++;';
+      html += 'var body=document.getElementById(Q.length?"edit-lines-body":"edit-lines-body");';
+      html += 'if(!body)return;';
+      html += 'var d=document.createElement("div");';
+      html += 'd.style.cssText="margin-bottom:14px;padding:12px;background:#0a1628;border:1px solid #1e2d42;border-radius:4px;";';
+      html += 'function F(label,name,val,type){return "<div><div class="+Q+"detail-label"+Q+">"+label+"</div><input type="+Q+(type||"text")+Q+" name="+Q+"lines["+i+"]["+name+"]"+Q+" value="+Q+(val||"")+Q+" style="+Q+"width:100%;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;"+Q+"/></div>";}';
+      html += 'var g1="<div style="+Q+"display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;margin-bottom:8px;"+Q+">"+F("NSN","nsn","")+F("Part Number","part_number","")+F("Item Name","item_name","")+"</div>";';
+      html += 'var g2="<div style="+Q+"display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;"+Q+">"+F("Condition","condition_code","NE")+F("Qty","quantity","1","number")+F("Unit Cost","unit_cost","0.00","number")+F("Unit Price","unit_price","0.00","number")+"</div>";';
+      html += 'var rm="<div style="+Q+"text-align:right;margin-top:6px;"+Q+"><button type="+Q+"button"+Q+" onclick="+Q+"this.parentElement.parentElement.remove();"+Q+" style="+Q+"background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:4px 10px;cursor:pointer;border-radius:3px;font-size:.75rem;"+Q+">Remove</button></div>";';
+      html += 'd.innerHTML=g1+g2+rm;body.appendChild(d);';
+      html += '};';
+      html += '})();</scr'+'ipt>';
       // SOURCES_FULL_EDIT_V1 - JS for adding new source rows
       html += '<script>';
       html += 'window.__SUPPLIERS = ' + JSON.stringify(_suppliersR.recordset) + ';';
@@ -2471,7 +2488,20 @@ html += '</div>';
         });
       });
       for (const ln of editLines) {
-        const lid = parseInt(ln.id);
+        /* QUOTE_EDIT_ADDLINE_v1 */
+        let lid = (ln.id !== undefined && ln.id !== null && ln.id !== '') ? parseInt(ln.id) : null;
+        if (!lid) {
+          const _newLn = await pool.request()
+            .input('qid', sql.BigInt, qid)
+            .input('nsn', sql.NVarChar(20), ln.nsn || null)
+            .input('pn', sql.NVarChar(100), ln.part_number || null)
+            .input('iname', sql.NVarChar(255), ln.item_name || null)
+            .input('cond', sql.NVarChar(5), ln.condition_code || 'NE')
+            .input('qty', sql.Int, parseInt(ln.quantity) || 1)
+            .query("INSERT INTO quote_lines (quote_id, line_number, nsn, part_number, item_name, condition_code, quantity, unit_cost, unit_price, line_total, line_cost, line_margin, margin_pct, markup_pct) OUTPUT INSERTED.id VALUES (@qid, 999, @nsn, @pn, @iname, @cond, @qty, 0, 0, 0, 0, 0, 0, 0)");
+          lid = _newLn.recordset[0].id;
+          ln.id = String(lid);
+        }
         const qty = parseInt(ln.quantity) || 0;
         var uc = parseFloat(ln.unit_cost) || 0;
         // SOURCES_FULL_EDIT_V1: recompute uc from sources if any submitted
