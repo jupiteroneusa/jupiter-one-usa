@@ -51,7 +51,7 @@ export async function generateProformaPdf(proformaId, previewPf /* PROFORMA_PREV
 
 function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted renderer */
   /* PROFORMA_TEXTSAFE_v1: coerce anything to a printable string / string[] for jsPDF */
-  function _S(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function _S(v) { return (v === null || v === undefined) ? '' : String(v); } /* PROFORMA_TEXTSAFE_v2 */
   function _SA(a) { return Array.isArray(a) ? a.map(function(x){ return _S(x); }) : [_S(a)]; }
   // Brand colors
   const gold = [200, 147, 42];
@@ -92,7 +92,7 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(...gold);
-  doc.text(pf.proforma_number, pageW - margin, 19, { align: 'right' });
+  doc.text(_S(pf.proforma_number), pageW - margin, 19, { align: 'right' });
 
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
@@ -101,7 +101,7 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
   doc.text('Date: ' + fmtDate(pf.sent_at || new Date()), pageW - margin, metaY, { align: 'right' }); metaY += 4;
   if (pf.order_number) { doc.text('Order: ' + pf.order_number, pageW - margin, metaY, { align: 'right' }); metaY += 4; }
   if (pf.quote_number) { doc.text('Quote: ' + pf.quote_number, pageW - margin, metaY, { align: 'right' }); metaY += 4; }
-  doc.text('Payment: ' + pf.payment_method, pageW - margin, metaY, { align: 'right' });
+  doc.text('Payment: ' + _S(pf.payment_method), pageW - margin, metaY, { align: 'right' });
 
   y = 42;
   doc.setDrawColor(...gold);
@@ -119,19 +119,19 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
   doc.setFontSize(10);
   doc.setTextColor(...navy);
   /* BILL_TO_BUYER_v2: prefer buyer over customer when set */
-  doc.text((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : (pf.company || (pf.first_name + ' ' + pf.last_name)), margin, y);
+  doc.text(_S((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : (pf.company || ((pf.first_name||'') + ' ' + (pf.last_name||'')))), margin, y);
   y += 5;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(60, 60, 60);
   /* BILL_TO_BUYER_v2: attn line uses buyer name when set */
-  if (pf.company) { doc.text('Attn: ' + ((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : (pf.first_name + ' ' + pf.last_name)), margin, y); y += 4; }
-  if ((pf.bill_to_address1 || pf.bill_address1) /* BILL_TO_BUYER_v2 */) { doc.text((pf.bill_to_address1 || pf.bill_address1), margin, y); y += 4; /* BILL_TO_BUYER_v2 */ }
+  if (pf.company) { doc.text('Attn: ' + _S((pf.buyer_name && String(pf.buyer_name).trim()) ? String(pf.buyer_name).trim() : ((pf.first_name||'') + ' ' + (pf.last_name||''))), margin, y); y += 4; }
+  if ((pf.bill_to_address1 || pf.bill_address1) /* BILL_TO_BUYER_v2 */) { doc.text(_S(pf.bill_to_address1 || pf.bill_address1), margin, y); y += 4; /* BILL_TO_BUYER_v2 */ }
   const cityLine = [(pf.bill_to_city || pf.bill_city) /* BILL_TO_BUYER_v2 */, (pf.bill_to_state || pf.bill_state) /* BILL_TO_BUYER_v2 */, (pf.bill_to_zip || pf.bill_zip) /* BILL_TO_BUYER_v2 */].filter(Boolean).join(', ');
-  if (cityLine) { doc.text(cityLine, margin, y); y += 4; }
-  if ((pf.bill_to_country || pf.bill_country) /* BILL_TO_BUYER_v2 */) { doc.text((pf.bill_to_country || pf.bill_country), margin, y); y += 4; /* BILL_TO_BUYER_v2 */ }
-  if (pf.buyer_email || pf.email) { doc.text(pf.buyer_email || pf.email, margin, y); y += 4; } /* BILL_TO_BUYER_v2 */
-  if (pf.buyer_phone || pf.phone) { doc.text(pf.buyer_phone || pf.phone, margin, y); y += 4; } /* BILL_TO_BUYER_v2 */
+  if (cityLine) { doc.text(_S(cityLine), margin, y); y += 4; }
+  if ((pf.bill_to_country || pf.bill_country) /* BILL_TO_BUYER_v2 */) { doc.text(_S(pf.bill_to_country || pf.bill_country), margin, y); y += 4; /* BILL_TO_BUYER_v2 */ }
+  if (pf.buyer_email || pf.email) { doc.text(_S(pf.buyer_email || pf.email), margin, y); y += 4; } /* BILL_TO_BUYER_v2 */
+  if (pf.buyer_phone || pf.phone) { doc.text(_S(pf.buyer_phone || pf.phone), margin, y); y += 4; } /* BILL_TO_BUYER_v2 */
 
   y += 4;
 
@@ -230,7 +230,7 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
 
   if (parseFloat(pf.cc_fee_amount || 0) > 0) {
     doc.setTextColor(60, 60, 60);
-    doc.text('CC Convenience Fee (' + pf.cc_fee_percent + '%):', totalsX, y);
+    doc.text('CC Convenience Fee (' + _S(pf.cc_fee_percent) + '%):', totalsX, y);
     doc.setTextColor(40, 40, 40);
     doc.text(fmtMoney(pf.cc_fee_amount), pageW - margin, y, { align: 'right' });
     y += 5;
@@ -266,7 +266,7 @@ function _renderProformaDoc(pf, lines) { /* PROFORMA_PREVIEW_v1: extracted rende
     payText = pf.payment_method + ': Payment terms apply. Reference Proforma ' + pf.proforma_number + ' on all correspondence.';
   }
   const payLines = doc.splitTextToSize(payText, contentW);
-  payLines.forEach(function(line) { doc.text(line, margin, y); y += 4; });
+  payLines.forEach(function(line) { doc.text(_S(line), margin, y); y += 4; });
   y += 4;
 
   if (pf.notes) { /* PROFORMA_LAYOUT_v1 */
