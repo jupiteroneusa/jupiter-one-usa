@@ -2466,7 +2466,10 @@ html += '</div>';
 
       // Apply line edits + recompute totals
       let newSubtotal = 0, newTotalCost = 0, newTotalMargin = 0;
-      const editLines = b.lines || [];
+      /* ADDLINE_DENSE_FIX_v1: b.lines may be a sparse array or object (new lines use high indexes) - densify it */
+      let editLines = [];
+      if (Array.isArray(b.lines)) { editLines = b.lines.filter(function(x){ return x && typeof x === 'object'; }); }
+      else if (b.lines && typeof b.lines === 'object') { editLines = Object.keys(b.lines).map(function(k){ return b.lines[k]; }).filter(function(x){ return x && typeof x === 'object'; }); }
       // SOURCES_FULL_EDIT_V1: collect submitted sources keyed by line id
       const _srcsByLine = {};
       Object.keys(b).forEach(function(k) {
