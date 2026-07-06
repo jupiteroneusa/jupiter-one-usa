@@ -33,6 +33,29 @@ import { generateQuotePdf } from '../services/pdfService.js';
 import { logAudit, getIp } from '../middleware/audit.js'; /* AUDIT_ACTIONS_B_v1 */
 
 export function mountQuoteBuilder(router, requireAuth, page) {
+  /* QUOTE_ACCEPT_CONVERT_ROUTES_v1 */
+  router.post('/quotes/:id/accept', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("UPDATE quotes SET status='Accepted', updated_at=GETDATE() WHERE id=@id");
+      res.redirect('/admin/quotes/' + req.params.id + '?accepted=1');
+    } catch (err) { console.error('quote accept error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
+  });
+  router.post('/quotes/:id/convert-to-order', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qChk = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT status FROM quotes WHERE id=@id');
+      if (!qChk.recordset.length) return res.redirect('/admin/quotes?error=Quote+not+found');
+      if (qChk.recordset[0].status !== 'Accepted') { return res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent('Quote must be Accepted before converting to an order.')); }
+      const existingOrd = await pool.request().input('qid', sql.BigInt, req.params.id).query('SELECT TOP 1 id FROM orders WHERE quote_id=@qid');
+      if (existingOrd.recordset.length) { return res.redirect('/admin/orders/' + existingOrd.recordset[0].id + '?already=1'); }
+      const result = await createOrderFromQuote(parseInt(req.params.id), req.adminId);
+      res.redirect('/admin/orders/' + result.order_id);
+    } catch (err) { console.error('convert-to-order error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
+  });
 
   // ==========================================================================
   // GET /rfqs/:id/quote-review

@@ -1887,6 +1887,8 @@ export async function buildAdminRouter() {
           
           <!-- FIX_LEAKED_COMMENT_v1: removed stray JS comment fragment -->
           <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
+          ${q.status==='Sent' ? `<form method="POST" action="/admin/quotes/${q.id}/accept" style="display:inline;" onsubmit="return confirm('Mark this quote as Accepted?');"><button type="submit" class="btn btn-sm" style="background:#4caf50;color:#0a1628;border:none;">&#10003; Mark Accepted</button></form>` : ''} /* QUOTE_ACCEPT_CONVERT_v1 */
+          ${q.status==='Accepted' ? `<form method="POST" action="/admin/quotes/${q.id}/convert-to-order" style="display:inline;" onsubmit="return confirm('Convert this accepted quote into a sales order?');"><button type="submit" class="btn btn-gold btn-sm">&#128230; Convert to Order &rarr;</button></form>` : ''}
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
         </div>
