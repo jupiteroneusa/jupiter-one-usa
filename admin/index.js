@@ -11,7 +11,7 @@ import { mountSupplierRoutes } from './supplierRoutes.js';
 import { mountSupplierPoRoutes } from './supplierPoRoutes.js';
 import { mountAdminDocRoutes } from './adminDocRoutes.js';
 import { mountQuoteBuilder } from './quoteBuilder.js';
-import jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken'; /* QUOTE_PAGE_CLEANUP_v1 */
 import { getPool, sql } from '../db/connect.js';
 import { logAudit, getIp } from '../middleware/audit.js'; /* ADMIN_AUDIT_FOUNDATION_v1 */
 
@@ -1887,7 +1887,9 @@ export async function buildAdminRouter() {
           
           <!-- FIX_LEAKED_COMMENT_v1: removed stray JS comment fragment -->
           <a href="/admin/quotes/${q.id}/pdf-view" target="_blank" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#128196; Preview PDF</a>
-          ${q.status==='Sent' ? `<form method="POST" action="/admin/quotes/${q.id}/accept" style="display:inline;" onsubmit="return confirm('Mark this quote as Accepted?');"><button type="submit" class="btn btn-sm" style="background:#4caf50;color:#0a1628;border:none;">&#10003; Mark Accepted</button></form>` : ''} /* QUOTE_ACCEPT_CONVERT_v1 */
+          ${q.status!=='Accepted' ? `<a href="/admin/quotes/${q.id}/edit" class="btn btn-outline btn-sm" style="border-color:#5ab4e8;color:#5ab4e8;">&#9998; Edit / Requote</a>` : ''}
+          ${q.status==='Sent' ? `<form method="POST" action="/admin/quotes/${q.id}/resend" style="display:inline;" onsubmit="return confirm('Resend this quote email to the customer?');"><button type="submit" class="btn btn-outline btn-sm" style="border-color:#c8932a;color:#c8932a;">&#9993; Resend</button></form>` : ''}
+          ${q.status==='Sent' ? `<form method="POST" action="/admin/quotes/${q.id}/accept" style="display:inline;" onsubmit="return confirm('Mark this quote as Accepted?');"><button type="submit" class="btn btn-sm" style="background:#4caf50;color:#0a1628;border:none;">&#10003; Mark Accepted</button></form>` : ''}
           ${q.status==='Accepted' ? `<form method="POST" action="/admin/quotes/${q.id}/convert-to-order" style="display:inline;" onsubmit="return confirm('Convert this accepted quote into a sales order?');"><button type="submit" class="btn btn-gold btn-sm">&#128230; Convert to Order &rarr;</button></form>` : ''}
           <a href="/admin/quotes" class="btn btn-outline btn-sm">← Back to Quotes</a>
         </div>
@@ -2578,6 +2580,26 @@ html += '</div>';
   });
 
   // Phase B3: Reissue an expired/rejected quote (extends valid_until, marks Sent again)
+  /* QUOTE_PAGE_CLEANUP_v1: resend the current quote email */
+  router.post('/quotes/:id/resend', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const qr = await pool.request().input('id', sql.BigInt, req.params.id)
+        .query("SELECT q.*, c.first_name+' '+c.last_name AS customer_name, c.email, c.company FROM quotes q JOIN customers c ON c.id=q.customer_id WHERE q.id=@id");
+      if (!qr.recordset.length) return res.redirect('/admin/quotes?error=Quote+not+found');
+      const q = qr.recordset[0];
+      const lr = await pool.request().input('qid', sql.BigInt, req.params.id)
+        .query('SELECT * FROM quote_lines WHERE quote_id=@qid ORDER BY line_number');
+      try {
+        const mailer = await import('../services/mailer.js');
+        const rfqR = await pool.request().input('rid', sql.BigInt, q.rfq_id).query('SELECT * FROM rfq_headers WHERE id=@rid');
+        await mailer.sendQuoteToCustomer({ customer: { first_name: q.customer_name, email: q.email, company: q.company, id: q.customer_id }, quote: q, lines: lr.recordset, rfq: rfqR.recordset[0] || {}, attachPdf: true });
+      } catch (mailErr) { console.error('quote resend mail error:', mailErr.message); return res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent('Resend failed: ' + mailErr.message)); }
+      res.redirect('/admin/quotes/' + req.params.id + '?resent=1');
+    } catch (err) { console.error('quote resend error:', err); res.redirect('/admin/quotes/' + req.params.id + '?error=' + encodeURIComponent(err.message)); }
+  });
+
   router.post('/quotes/:id/reissue', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
