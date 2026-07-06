@@ -360,7 +360,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           .input('coc_number', sql.VarChar(30), cocNumber)
           .input('reference_number', sql.NVarChar(50), o.order_number || null)
           .input('seller_contract_number', sql.NVarChar(50), (src.po_number || o.contract_number) || null) /* COC_REMARKS_CLEANUP_v1 */
-          .input('buyer_contract_number', sql.NVarChar(50), o.customer_po || null)
+          .input('buyer_contract_number', sql.NVarChar(50), (o.contract_number || o.customer_po) || null) /* COC_5B_CONTRACT_v1 */
           .input('item_number', sql.Int, ln.line_number || null)
           .input('description', sql.NVarChar(255), descr)
           .input('manufacturer_pn', sql.NVarChar(150), partPn)
