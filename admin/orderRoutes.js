@@ -359,7 +359,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           .input('order_line_source_id', sql.BigInt, src.source_id)
           .input('coc_number', sql.VarChar(30), cocNumber)
           .input('reference_number', sql.NVarChar(50), o.order_number || null)
-          .input('seller_contract_number', sql.NVarChar(50), o.contract_number || null)
+          .input('seller_contract_number', sql.NVarChar(50), (src.po_number || o.contract_number) || null) /* COC_REMARKS_CLEANUP_v1 */
           .input('buyer_contract_number', sql.NVarChar(50), o.customer_po || null)
           .input('item_number', sql.Int, ln.line_number || null)
           .input('description', sql.NVarChar(255), descr)
@@ -368,7 +368,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           .input('quantity', sql.Int, qty)
           .input('serial_batch_number', sql.NVarChar(100), serialBatch)
           .input('status_code', sql.NVarChar(20), statusCode)
-          .input('remarks', sql.NVarChar(sql.MAX), src.po_number ? ('Supplier PO: ' + src.po_number) : null)
+          .input('remarks', sql.NVarChar(sql.MAX), null) /* COC_REMARKS_CLEANUP_v1: PO moved to seller_contract_number (field 5a) */
           .input('obtained_from', sql.NVarChar(255), src.supplier_name || null)
           .input('last_certified_agency', sql.NVarChar(255), null)
           .input('st', sql.NVarChar(30), 'Draft')
