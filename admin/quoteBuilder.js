@@ -322,7 +322,7 @@ function renderForm(ctx, submitted) {
   html += '<div style="display:flex;gap:10px;">';
   html += '<button type="submit" formnovalidate class="btn btn-gold" style="padding:12px 28px;">Save &amp; Send Quote &rarr;</button>';
   html += '<button type="button" id="save-draft-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#4caf50;color:#4caf50;" onclick="saveDraftFull()">Save</button>';
-  html += '<button type="button" id="initiate-order-btn" class="btn" style="padding:12px 22px;background:#1d9e75;color:#fff;border:none;" onclick="initiateOrder()">Initiate Sales Order &rarr;</button>';
+  /* REMOVE_INITIATE_BTN_v1: Initiate button moved to Quote page (Accept -> Convert to Order) */
   html += '<button type="button" id="preview-pdf-btn" class="btn btn-outline" style="padding:12px 20px;border-color:#c8932a;color:#c8932a;" onclick="previewQuotePdf()">Preview PDF</button>';
   html += '<a href="/admin/rfqs/' + rfq.id + '" class="btn btn-outline" style="padding:12px 20px;">Cancel</a>';
   html += '</div>';
