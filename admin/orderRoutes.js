@@ -7,6 +7,7 @@ import { renderOverviewTab } from './orderOverviewBlock.js';
 import { renderShippingTab } from './orderShippingBlock.js';
 import { renderProformaTab } from './orderProformaBlock.js';
 import { generateProformaPdf } from '../services/proformaPdfService.js';
+import { generatePackingSlipPdf } from '../services/packingSlipPdfService.js'; /* PACKING_v1 */
 import { generateCcAuthPdf } from '../services/ccAuthPdfService.js';
 import { generateInvoicePdf } from '../services/invoicePdfService.js'; // INVOICE_REDESIGN_v1 // CC_AUTH_PDF_v1
 import crypto from 'crypto';
@@ -17,6 +18,63 @@ import { logAudit, getIp } from '../middleware/audit.js'; /* AUDIT_ACTIONS_B_v1 
 
 // ORDER_DOCS_TAB_v1: Documents tab renderer (uses /api/documents endpoints)
 /* COC_TAB_v1: Certificate of Conformance tab (ATA Spec 106) */
+/* PACKING_v1: box-assignment UI per shipment */
+function renderPackingSection(o, ships, oLines, boxes, boxLines) {
+  function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  var shipRows = (ships.recordset||[]);
+  var linesArr = (oLines.recordset||[]);
+  var boxesByShip = {}; (boxes||[]).forEach(function(b){ if(!boxesByShip[b.shipment_id]) boxesByShip[b.shipment_id]=[]; boxesByShip[b.shipment_id].push(b); });
+  var linesByBox = {}; (boxLines||[]).forEach(function(l){ if(!linesByBox[l.box_id]) linesByBox[l.box_id]=[]; linesByBox[l.box_id].push(l); });
+  var h = '<div class="card" style="margin-top:20px;"><div class="card-header">Packing &amp; Boxes</div><div class="card-body">';
+  if (!shipRows.length) { h += '<div style="color:#7a8a9a;font-size:.85rem;">Add a shipment above first, then pack it into boxes here.</div></div></div>'; return h; }
+  shipRows.forEach(function(sh){
+    h += '<div style="border:1px solid #1e2d42;border-radius:6px;padding:14px;margin-bottom:16px;background:#0e1828;">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px;">';
+    h += '<div style="font-weight:600;color:#eef1f5;">Shipment ' + esc(sh.shipment_number||sh.id) + ' <span style="color:#7a8a9a;font-weight:400;font-size:.8rem;">' + esc(sh.carrier||'') + '</span></div>';
+    h += '<a href="/admin/orders/' + o.id + '/shipments/' + sh.id + '/packing-slip" target="_blank" class="btn btn-gold btn-sm">&#128196; Print Packing Slip</a>';
+    h += '</div>';
+    var myBoxes = boxesByShip[sh.id] || [];
+    myBoxes.forEach(function(box){
+      h += '<div style="border:1px solid #24374f;border-radius:5px;padding:10px 12px;margin-bottom:10px;background:#0a1628;">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+      var bmeta = []; if(box.weight_lbs) bmeta.push(box.weight_lbs+' lbs'); if(box.dimensions) bmeta.push(esc(box.dimensions)); if(box.tracking_number) bmeta.push('Trk: '+esc(box.tracking_number));
+      h += '<div style="font-weight:600;color:#c8932a;">Box ' + box.box_number + ' <span style="color:#7a8a9a;font-weight:400;font-size:.75rem;">' + bmeta.join(' | ') + '</span></div>';
+      h += '<form method="POST" action="/admin/orders/' + o.id + '/boxes/' + box.id + '/remove" onsubmit="return confirm(&quot;Remove this box and its contents?&quot;);" style="margin:0;"><button type="submit" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:3px 9px;cursor:pointer;border-radius:3px;font-size:.7rem;">Remove Box</button></form>';
+      h += '</div>';
+      var rows = linesByBox[box.id] || [];
+      if (rows.length) {
+        h += '<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">';
+        rows.forEach(function(r){
+          h += '<tr style="border-bottom:1px solid #14202f;">';
+          h += '<td style="padding:4px 6px;font-size:.8rem;color:#cfd5dc;">Line ' + r.line_number + ' &mdash; ' + esc(r.part_number||r.nsn||r.item_name||'') + '</td>';
+          h += '<td style="padding:4px 6px;font-size:.8rem;text-align:right;">Qty ' + r.quantity + '</td>';
+          h += '<td style="padding:4px 6px;text-align:right;"><form method="POST" action="/admin/orders/' + o.id + '/boxlines/' + r.id + '/remove" style="margin:0;display:inline;"><button type="submit" style="background:none;border:none;color:#e05050;cursor:pointer;font-size:.75rem;">&#10006;</button></form></td>';
+          h += '</tr>';
+        });
+        h += '</table>';
+      } else { h += '<div style="color:#7a8a9a;font-size:.78rem;margin-bottom:8px;">Empty box &mdash; add lines below.</div>'; }
+      /* add line to box form */
+      h += '<form method="POST" action="/admin/orders/' + o.id + '/boxes/' + box.id + '/lines/add" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">';
+      h += '<div><div style="font-size:.62rem;color:#7a8a9a;margin-bottom:2px;">Line</div><select name="order_line_id" style="background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.8rem;">';
+      linesArr.forEach(function(l){ h += '<option value="' + l.id + '">Line ' + l.line_number + ' - ' + esc(l.part_number||l.nsn||l.item_name||'') + ' (ord ' + l.quantity_ordered + ')</option>'; });
+      h += '</select></div>';
+      h += '<div><div style="font-size:.62rem;color:#7a8a9a;margin-bottom:2px;">Qty</div><input type="number" min="1" name="quantity" value="1" style="width:70px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.8rem;"/></div>';
+      h += '<button type="submit" class="btn btn-outline btn-sm" style="font-size:.75rem;">+ Add to Box</button>';
+      h += '</form></div>';
+    });
+    /* add box form */
+    h += '<form method="POST" action="/admin/orders/' + o.id + '/shipments/' + sh.id + '/boxes/add" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:6px;">';
+    h += '<div><div style="font-size:.62rem;color:#7a8a9a;margin-bottom:2px;">Weight (lbs)</div><input type="number" step="0.01" name="weight_lbs" style="width:90px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.8rem;"/></div>';
+    h += '<div><div style="font-size:.62rem;color:#7a8a9a;margin-bottom:2px;">Dimensions</div><input type="text" name="dimensions" placeholder="12x8x6" style="width:110px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.8rem;"/></div>';
+    h += '<div><div style="font-size:.62rem;color:#7a8a9a;margin-bottom:2px;">Box Tracking (opt)</div><input type="text" name="tracking_number" style="width:140px;background:#0e1828;border:1px solid #1e2d42;color:#eef1f5;padding:5px 8px;font-size:.8rem;"/></div>';
+    h += '<button type="submit" class="btn btn-gold btn-sm" style="font-size:.75rem;">+ Add Box</button>';
+    h += '</form>';
+    h += '</div>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
 function renderCocTab(o, oLines, certs) {
   function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   var byLine = {};
@@ -282,6 +340,12 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } else if (activeTab === 'shipping') {
         const missingCertsR = await pool.request().input('idMc', sql.BigInt, req.params.id).query("SELECT line_number, COALESCE(NULLIF(part_number,''), nsn) AS part_number, nsn, cert_8130_required, cert_8130_received, coc_required, coc_received FROM order_lines WHERE order_id=@idMc AND ((cert_8130_required=1 AND cert_8130_received=0) OR (coc_required=1 AND coc_received=0))");
         html += renderShippingTab(o, ships, missingCertsR.recordset);
+        /* PACKING_v1: load boxes + box lines and render packing UI */
+        try {
+          const _boxesR = await pool.request().input('oidBx', sql.BigInt, req.params.id).query('SELECT bx.* FROM shipment_boxes bx INNER JOIN shipments sh ON sh.id=bx.shipment_id WHERE sh.order_id=@oidBx ORDER BY bx.shipment_id, bx.box_number');
+          const _boxLinesR = await pool.request().input('oidBl', sql.BigInt, req.params.id).query('SELECT bl.*, ol.line_number, ol.nsn, ol.part_number, ol.item_name FROM shipment_box_lines bl INNER JOIN shipment_boxes bx ON bx.id=bl.box_id INNER JOIN shipments sh ON sh.id=bx.shipment_id INNER JOIN order_lines ol ON ol.id=bl.order_line_id WHERE sh.order_id=@oidBl');
+          html += renderPackingSection(o, ships, oLines, _boxesR.recordset, _boxLinesR.recordset);
+        } catch (_pkErr) { html += '<div class="alert alert-error">Packing load error: ' + _pkErr.message + '</div>'; }
       } else if (activeTab === 'proforma') {
         const pfR = await pool.request().input('oid', sql.BigInt, req.params.id)
           .query('SELECT * FROM proformas WHERE order_id=@oid ORDER BY id DESC');
@@ -454,6 +518,67 @@ export function mountOrderRoutes(router, requireAuth, page) {
     }
   });
 
+  /* PACKING_v1: box management + packing slip PDF */
+  router.post('/orders/:id/shipments/:sid/boxes/add', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const sid = parseInt(req.params.sid);
+      const maxR = await pool.request().input('sid', sql.BigInt, sid).query('SELECT ISNULL(MAX(box_number),0) AS mx FROM shipment_boxes WHERE shipment_id=@sid');
+      const nextBox = (maxR.recordset[0].mx || 0) + 1;
+      await pool.request()
+        .input('sid', sql.BigInt, sid)
+        .input('bn', sql.Int, nextBox)
+        .input('w', sql.Decimal(10,2), req.body.weight_lbs ? parseFloat(req.body.weight_lbs) : null)
+        .input('d', sql.NVarChar(50), req.body.dimensions || null)
+        .input('t', sql.NVarChar(100), req.body.tracking_number || null)
+        .query('INSERT INTO shipment_boxes (shipment_id, box_number, weight_lbs, dimensions, tracking_number) VALUES (@sid, @bn, @w, @d, @t)');
+      res.redirect('/admin/orders/' + req.params.id + '?tab=shipping');
+    } catch (err) { console.error('box add error:', err); res.redirect('/admin/orders/' + req.params.id + '?tab=shipping&error=' + encodeURIComponent(err.message)); }
+  });
+  router.post('/orders/:id/boxes/:boxId/lines/add', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const boxId = parseInt(req.params.boxId);
+      const olid = parseInt(req.body.order_line_id);
+      const qty = parseInt(req.body.quantity) || 0;
+      if (!olid || qty <= 0) return res.redirect('/admin/orders/' + req.params.id + '?tab=shipping&error=Invalid+line+or+qty');
+      await pool.request().input('bid', sql.BigInt, boxId).input('olid', sql.BigInt, olid).input('q', sql.Int, qty)
+        .query('INSERT INTO shipment_box_lines (box_id, order_line_id, quantity) VALUES (@bid, @olid, @q)');
+      res.redirect('/admin/orders/' + req.params.id + '?tab=shipping');
+    } catch (err) { console.error('box line add error:', err); res.redirect('/admin/orders/' + req.params.id + '?tab=shipping&error=' + encodeURIComponent(err.message)); }
+  });
+  router.post('/orders/:id/boxlines/:blId/remove', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request().input('id', sql.BigInt, parseInt(req.params.blId)).query('DELETE FROM shipment_box_lines WHERE id=@id');
+      res.redirect('/admin/orders/' + req.params.id + '?tab=shipping');
+    } catch (err) { res.redirect('/admin/orders/' + req.params.id + '?tab=shipping'); }
+  });
+  router.post('/orders/:id/boxes/:boxId/remove', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      await pool.request().input('bid', sql.BigInt, parseInt(req.params.boxId)).query('DELETE FROM shipment_box_lines WHERE box_id=@bid');
+      await pool.request().input('bid2', sql.BigInt, parseInt(req.params.boxId)).query('DELETE FROM shipment_boxes WHERE id=@bid2');
+      res.redirect('/admin/orders/' + req.params.id + '?tab=shipping');
+    } catch (err) { res.redirect('/admin/orders/' + req.params.id + '?tab=shipping'); }
+  });
+  router.get('/orders/:id/shipments/:sid/packing-slip', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pdfRaw = await generatePackingSlipPdf(parseInt(req.params.sid));
+      if (!pdfRaw) return res.status(404).send('Shipment not found');
+      const pdfBuffer = Buffer.isBuffer(pdfRaw) ? pdfRaw : Buffer.from(pdfRaw);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="packing-slip-' + req.params.sid + '.pdf"');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(pdfBuffer);
+    } catch (err) { console.error('packing slip error:', err); res.status(500).send('Packing slip failed: ' + err.message); }
+  });
   /* COC_PDF_v1: inline ATA-106 PDF view/print */
   router.get('/orders/:id/coc/:cocId/pdf', async (req, res) => {
     if (!requireAuth(req, res)) return;
