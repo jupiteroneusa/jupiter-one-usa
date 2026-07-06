@@ -39,6 +39,7 @@ function renderCocTab(o, oLines, certs) {
       h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">CoC #</th>';
       h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Qty</th>';
       h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Serial/Batch</th>';
+      h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Supplier</th>'; /* COC_PDF_v1 */
       h += '<th style="text-align:left;padding:5px 8px;font-size:.66rem;color:#7a8a9a;text-transform:uppercase;">Status</th>';
       h += '<th></th></tr></thead><tbody>';
       rows.forEach(function(c){
@@ -46,8 +47,9 @@ function renderCocTab(o, oLines, certs) {
         h += '<td style="padding:6px 8px;color:#c8932a;font-size:.82rem;">' + esc(c.coc_number) + '</td>';
         h += '<td style="padding:6px 8px;font-size:.82rem;">' + esc(c.quantity) + '</td>';
         h += '<td style="padding:6px 8px;font-size:.82rem;">' + esc(c.serial_batch_number) + '</td>';
+        h += '<td style="padding:6px 8px;font-size:.82rem;color:#cfd5dc;">' + esc(c.obtained_from || '\u2014') + '</td>'; /* COC_PDF_v1 */
         h += '<td style="padding:6px 8px;font-size:.82rem;">' + esc(c.status) + '</td>';
-        h += '<td style="padding:6px 8px;text-align:right;"><a href="/admin/orders/' + o.id + '/coc/' + c.id + '/edit" class="btn btn-outline btn-sm" style="font-size:.72rem;">Edit</a></td>';
+        h += '<td style="padding:6px 8px;text-align:right;white-space:nowrap;"><a href="/admin/orders/' + o.id + '/coc/' + c.id + '/pdf" target="_blank" class="btn btn-gold btn-sm" style="font-size:.72rem;margin-right:4px;">&#128196; Print</a><a href="/admin/orders/' + o.id + '/coc/' + c.id + '/edit" class="btn btn-outline btn-sm" style="font-size:.72rem;">Edit</a></td>'; /* COC_PDF_v1 */
         h += '</tr>';
       });
       h += '</tbody></table>';
@@ -449,6 +451,25 @@ export function mountOrderRoutes(router, requireAuth, page) {
     } catch (err) {
       console.error('CoC edit error:', err);
       res.redirect('/admin/orders/' + req.params.id + '?tab=coc&error=' + encodeURIComponent(err.message));
+    }
+  });
+
+  /* COC_PDF_v1: inline ATA-106 PDF view/print */
+  router.get('/orders/:id/coc/:cocId/pdf', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const { generateCocPdf } = await import('../services/cocPdfService.js');
+      const pdfRaw = await generateCocPdf(parseInt(req.params.cocId), {});
+      if (!pdfRaw) return res.status(404).send('CoC not found');
+      const pdfBuffer = Buffer.isBuffer(pdfRaw) ? pdfRaw : Buffer.from(pdfRaw);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.setHeader('Content-Disposition', 'inline; filename="coc-' + req.params.cocId + '.pdf"');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(pdfBuffer);
+    } catch (err) {
+      console.error('CoC PDF error:', err);
+      res.status(500).send('CoC PDF generation failed: ' + err.message);
     }
   });
 
