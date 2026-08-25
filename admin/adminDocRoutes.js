@@ -20,7 +20,7 @@ async function uploadBlob(buffer, originalName, mimeType) {
   }
   const client = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
   const container = client.getContainerClient(process.env.AZURE_STORAGE_CONTAINER || 'jupiter-one-docs');
-  await container.createIfNotExists({ access: 'blob' });
+  await container.createIfNotExists(); /* BLOB_PRIVATE_v1: private container, no public access */
   const blob = container.getBlockBlobClient(fileName);
   await blob.uploadData(buffer, { blobHTTPHeaders: { blobContentType: mimeType } });
   return { url: blob.url };
