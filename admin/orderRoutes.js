@@ -139,14 +139,14 @@ function renderDocumentsTab(o) { /* ORDER_DOCS_AUTH_v1: upload/delete use /admin
   var js = '';
   js += 'function fmtSize(b){ if(b==null) return ""; if(b<1024) return b+" B"; if(b<1048576) return (b/1024).toFixed(0)+" KB"; return (b/1048576).toFixed(1)+" MB"; }';
   js += 'window.loadOrderDocs=function(oid){';
-  js += '  fetch("/api/documents/order/"+oid,{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(list){';
+  js += '  fetch("/admin/api/documents/order/"+oid,{credentials:"same-origin"}) /* ADMIN_DOC_LIST_DL_v1 */.then(function(r){return r.json();}).then(function(list){';
   js += '    var box=document.getElementById("doc-list"); if(!box) return;';
   js += '    if(!Array.isArray(list)||!list.length){ box.innerHTML="<div style=\\"color:#7a8a9a;font-size:.82rem;padding:10px;\\">No documents uploaded yet.</div>"; return; }';
   js += '    var rows=list.map(function(d){';
   js += '      var when = d.uploaded_at ? new Date(d.uploaded_at).toLocaleString() : (d.created_at ? new Date(d.created_at).toLocaleString() : "");';
   js += '      var vis = d.is_customer_visible ? "<span style=\\"color:#4caf50;font-size:.68rem;\\">customer-visible</span>" : "<span style=\\"color:#7a8a9a;font-size:.68rem;\\">internal</span>";';
   js += '      return "<tr>"+';
-  js += '        "<td style=\\"padding:6px 10px;\\"><a href=\\"/api/documents/"+d.id+"/download\\" target=\\"_blank\\" style=\\"color:#c8932a;\\">"+(d.file_name||"file")+"</a></td>"+';
+  js += '        "<td style=\\"padding:6px 10px;\\"><a href=\\"/admin/api/documents/"+d.id+"/download\\" target=\\"_blank\\" style=\\"color:#c8932a;\\">"+(d.file_name||"file")+"</a></td>"+';
   js += '        "<td style=\\"padding:6px 10px;color:#cfd5dc;font-size:.8rem;\\">"+(d.doc_type||"")+"</td>"+';
   js += '        "<td style=\\"padding:6px 10px;color:#7a8a9a;font-size:.78rem;\\">"+fmtSize(d.file_size_bytes)+"</td>"+';
   js += '        "<td style=\\"padding:6px 10px;\\">"+vis+"</td>"+';

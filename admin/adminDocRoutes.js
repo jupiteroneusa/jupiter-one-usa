@@ -4,7 +4,7 @@
 // Mounted by admin/index.js via mountAdminDocRoutes(router, requireAuth).
 
 import multer from 'multer';
-import { BlobServiceClient } from '@azure/storage-blob';
+import { BlobServiceClient, StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions } from '@azure/storage-blob';
 import { getPool, sql } from '../db/connect.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -27,6 +27,55 @@ async function uploadBlob(buffer, originalName, mimeType) {
 }
 
 export function mountAdminDocRoutes(router, requireAuth) {
+  /* ADMIN_DOC_LIST_DL_v1: cookie-auth download (SAS) + list routes for admin pages.
+     Download MUST be defined before the generic :entityType/:entityId route. */
+  router.get('/api/documents/:id/download', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const r = await pool.request().input('id', sql.BigInt, parseInt(req.params.id))
+        .query('SELECT file_url, file_name FROM documents WHERE id=@id');
+      if (!r.recordset.length) return res.status(404).send('Document not found.');
+      const doc = r.recordset[0];
+      const fileUrl = doc.file_url;
+      const m = /^https?:\/\/([^.]+)\.blob\.core\.windows\.net\/([^/]+)\/(.+)$/.exec(fileUrl || '');
+      const conn = process.env.AZURE_STORAGE_CONNECTION_STRING || '';
+      const keyMatch = /AccountKey=([^;]+)/.exec(conn);
+      const nameMatch = /AccountName=([^;]+)/.exec(conn);
+      if (m && keyMatch && nameMatch) {
+        const cred = new StorageSharedKeyCredential(nameMatch[1], keyMatch[1]);
+        const sas = generateBlobSASQueryParameters({
+          containerName: m[2],
+          blobName: decodeURIComponent(m[3]),
+          permissions: BlobSASPermissions.parse('r'),
+          startsOn: new Date(Date.now() - 60 * 1000),
+          expiresOn: new Date(Date.now() + 10 * 60 * 1000),
+          contentDisposition: 'attachment; filename="' + (doc.file_name || 'document').replace(/"/g, '') + '"'
+        }, cred).toString();
+        return res.redirect(fileUrl + '?' + sas);
+      }
+      if (!fileUrl) return res.status(404).send('No file URL on record.');
+      return res.redirect(fileUrl);
+    } catch (err) {
+      console.error('Admin doc download error:', err);
+      return res.status(500).send('Download failed: ' + err.message);
+    }
+  });
+
+  router.get('/api/documents/:entityType/:entityId', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const result = await pool.request()
+        .input('type', sql.NVarChar(50), req.params.entityType)
+        .input('id', sql.BigInt, req.params.entityId)
+        .query('SELECT * FROM documents WHERE related_to_type = @type AND related_to_id = @id ORDER BY uploaded_at DESC');
+      res.json(result.recordset);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to load documents.' });
+    }
+  });
+
   router.post('/api/documents/upload', upload.single('file'), async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
