@@ -118,7 +118,7 @@ function renderCocTab(o, oLines, certs) {
   return h;
 }
 
-function renderDocumentsTab(o) {
+function renderDocumentsTab(o) { /* ORDER_DOCS_AUTH_v1: upload/delete use /admin/api cookie-auth routes */
   var oid = o.id;
   var docTypes = ['8130 Cert','Certificate of Conformance (CoC)','Packing Slip','Supplier Quote','Supplier PO','Customer PO','Invoice','Trace Document','Other'];
   var opts = docTypes.map(function(t){ return '<option value="'+t+'">'+t+'</option>'; }).join('');
@@ -164,7 +164,7 @@ function renderDocumentsTab(o) {
   js += '  fd.append("doc_type",document.getElementById("doc-type").value); fd.append("notes",document.getElementById("doc-notes").value);';
   js += '  fd.append("is_customer_visible", document.getElementById("doc-custvis").checked ? "true":"false");';
   js += '  if(btn){btn.disabled=true;btn.textContent="Uploading...";} if(msg){msg.style.color="#7a8a9a";msg.textContent="";}';
-  js += '  fetch("/api/documents/upload",{method:"POST",credentials:"same-origin",body:fd}).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(res){';
+  js += '  fetch("/admin/api/documents/upload",{method:"POST",credentials:"same-origin",body:fd}).then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});}).then(function(res){';
   js += '    if(btn){btn.disabled=false;btn.textContent="Upload";}';
   js += '    if(res.ok){ if(msg){msg.style.color="#4caf50";msg.textContent="Uploaded.";} f.value=""; document.getElementById("doc-notes").value=""; document.getElementById("doc-custvis").checked=false; window.loadOrderDocs(oid); }';
   js += '    else { if(msg){msg.style.color="#e05050";msg.textContent=(res.j&&res.j.error)?res.j.error:"Upload failed.";} }';
@@ -172,7 +172,7 @@ function renderDocumentsTab(o) {
   js += '};';
   js += 'window.deleteOrderDoc=function(id,oid){';
   js += '  if(!confirm("Delete this document? This cannot be undone.")) return;';
-  js += '  fetch("/api/documents/"+id,{method:"DELETE",credentials:"same-origin"}).then(function(r){ if(r.ok){ window.loadOrderDocs(oid); } else { alert("Delete failed."); } }).catch(function(){ alert("Network error."); });';
+  js += '  fetch("/admin/api/documents/"+id+"/delete",{method:"POST",credentials:"same-origin"}).then(function(r){ if(r.ok){ window.loadOrderDocs(oid); } else { alert("Delete failed."); } }).catch(function(){ alert("Network error."); });';
   js += '};';
   js += 'window.loadOrderDocs('+oid+');';
   h += '<scr'+'ipt>(function(){' + js + '})();<\/scr'+'ipt>';
