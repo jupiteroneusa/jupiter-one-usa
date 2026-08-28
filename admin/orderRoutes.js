@@ -21,7 +21,7 @@ import { generateInvoicePdf } from '../services/invoicePdfService.js'; // INVOIC
 async function syncInvoicePayments(pool, invoiceId) {
   if (!invoiceId) return;
   const r = await pool.request().input('id', sql.BigInt, invoiceId).query(
-    'SELECT total_amount, status, ISNULL((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=@id),0) AS paid FROM invoices WHERE id=@id');
+    'SELECT total_amount, status, ISNULL((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=@id AND p.voided_at IS NULL),0) AS paid FROM invoices WHERE id=@id');
   if (!r.recordset.length) return;
   const row = r.recordset[0];
   if (row.status === 'Cancelled') return;   // a voided invoice stays voided
@@ -47,12 +47,12 @@ async function syncOrderInvoices(pool, orderId) {
 async function adoptOrderPayments(pool, orderId, invoiceId) {
   if (!invoiceId) return;
   const inv = await pool.request().input('id', sql.BigInt, invoiceId).query(
-    'SELECT total_amount, ISNULL((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=@id),0) AS applied FROM invoices WHERE id=@id');
+    'SELECT total_amount, ISNULL((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=@id AND p.voided_at IS NULL),0) AS applied FROM invoices WHERE id=@id');
   if (!inv.recordset.length) return;
   let room = Number(inv.recordset[0].total_amount || 0) - Number(inv.recordset[0].applied || 0);
   if (room <= 0.009) return;
   const orphans = await pool.request().input('oid', sql.BigInt, orderId).query(
-    'SELECT id, amount FROM payments WHERE order_id=@oid AND invoice_id IS NULL ORDER BY received_at, id');
+    'SELECT id, amount FROM payments WHERE order_id=@oid AND invoice_id IS NULL AND voided_at IS NULL ORDER BY received_at, id');
   for (const p of orphans.recordset) {
     const amt = Number(p.amount || 0);
     if (amt <= 0 || amt > room + 0.009) continue;   // leave it for the next invoice
@@ -322,7 +322,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       const ships = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM shipments WHERE order_id=@id ORDER BY created_at DESC');
       const sLog = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM order_status_log WHERE order_id=@id ORDER BY created_at ASC');
       const invoices = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT id, invoice_number, status, total_amount, due_date FROM invoices WHERE order_id=@id ORDER BY created_at DESC');
-      const payments = await pool.request().input('idP', sql.BigInt, req.params.id).query('SELECT id, amount, payment_method, payment_reference, received_at, notes FROM payments WHERE order_id=@idP ORDER BY received_at DESC');
+      const payments = await pool.request().input('idP', sql.BigInt, req.params.id).query('SELECT id, amount, payment_method, payment_reference, received_at, notes, voided_at, void_reason FROM payments WHERE order_id=@idP ORDER BY received_at DESC');
       const suppliers = await pool.request().query("SELECT id, company_name AS name, country FROM suppliers WHERE status='Active' ORDER BY company_name ASC");
       const activeTab = req.query.tab || 'overview';
       /* WARN_BANNER_v1: show ?warn as a warning banner with a Generate Anyway button */
@@ -1103,7 +1103,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
       await syncInvoicePayments(pool, iid);
       // Recalculate paid total
-      const sumR = await pool.request().input('idS', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS');
+      const sumR = await pool.request().input('idS', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS AND voided_at IS NULL');
       const totalPaid = parseFloat(sumR.recordset[0].total_paid || 0);
       const isPaid = totalPaid >= orderTotal - 0.01;
       const newStatus = isPaid ? 'Paid' : 'Partially Paid';
@@ -1346,7 +1346,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         // The order may already carry the payment; adopt it rather than recording it twice.
         await adoptOrderPayments(pool, req.params.id, invoiceId);
         const already = await pool.request().input('iid', sql.BigInt, invoiceId)
-          .query('SELECT ISNULL(SUM(amount),0) AS paid FROM payments WHERE invoice_id=@iid');
+          .query('SELECT ISNULL(SUM(amount),0) AS paid FROM payments WHERE invoice_id=@iid AND voided_at IS NULL');
         const covered = Number(already.recordset[0].paid || 0) >= fullAmt - 0.009;
         if (!covered) await pool.request()
           .input('oid', sql.BigInt, req.params.id)
@@ -1946,7 +1946,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
 
       // 4) Recalculate order totals + cascade status
       const sumR = await pool.request().input('idS', sql.BigInt, orderId)
-        .query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS');
+        .query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS AND voided_at IS NULL');
       const totalPaid = parseFloat(sumR.recordset[0].total_paid || 0);
       const isPaid = totalPaid >= orderTotal - 0.01;
       const newStatus = isPaid ? 'Paid' : 'Partially Paid';

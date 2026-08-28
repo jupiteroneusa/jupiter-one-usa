@@ -5,7 +5,8 @@ import { currency, shortDate, shortDateTime, statusBadge } from './uiHelpers.js'
 
 export function renderPaymentTab(o, invoices, payments) {
   const totalAmount = parseFloat(o.total_amount || 0);
-  const totalPaid = payments.recordset.reduce(function(s, p) { return s + parseFloat(p.amount || 0); }, 0);
+  // Voided rows stay visible for audit but must never count toward the total.
+  const totalPaid = payments.recordset.reduce(function(s, p) { return p.voided_at ? s : s + parseFloat(p.amount || 0); }, 0);
   const balance = Math.max(0, totalAmount - totalPaid);
   const isPaid = balance < 0.01;
   const isPartial = totalPaid > 0 && !isPaid;
@@ -46,12 +47,13 @@ export function renderPaymentTab(o, invoices, payments) {
     html += '<tr><td colspan="5" style="text-align:center;color:#7a8a9a;padding:16px;">No payments recorded yet</td></tr>';
   } else {
     payments.recordset.forEach(function(p) {
-      html += '<tr>';
-      html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.received_at) + '</td>';
+      var isVoid = !!p.voided_at;
+      html += isVoid ? '<tr style="opacity:.55;">' : '<tr>';
+      html += '<td style="color:#7a8a9a;font-size:.78rem;">' + shortDate(p.received_at) + (isVoid ? ' <span style="color:#e05050;border:1px solid #e05050;padding:1px 5px;font-size:.6rem;letter-spacing:.06em;">VOIDED</span>' : '') + '</td>';
       html += '<td>' + (p.payment_method || '&mdash;') + '</td>';
       html += '<td style="color:#7a8a9a;font-family:monospace;font-size:.78rem;">' + (p.payment_reference || '&mdash;') + '</td>';
-      html += '<td style="color:#7a8a9a;font-size:.78rem;">' + (p.notes || '&mdash;') + '</td>';
-      html += '<td style="text-align:right;font-weight:600;color:#4caf50;">' + currency(p.amount) + '</td>';
+      html += '<td style="color:#7a8a9a;font-size:.78rem;">' + (isVoid ? (p.void_reason || 'Voided') : (p.notes || '&mdash;')) + '</td>';
+      html += '<td style="text-align:right;font-weight:600;color:' + (isVoid ? '#7a8a9a;text-decoration:line-through' : '#4caf50') + ';">' + currency(p.amount) + '</td>';
       html += '</tr>';
     });
     html += '<tr><td colspan="4" style="text-align:right;font-weight:700;border-top:2px solid #1e2d42;">Total Paid:</td><td style="text-align:right;font-weight:700;color:#4caf50;border-top:2px solid #1e2d42;">' + currency(totalPaid) + '</td></tr>';
