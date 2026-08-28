@@ -45,7 +45,9 @@ async function logEmail({ to, subject, type, entityType, entityId, success, erro
 
 async function send({ to, bcc, cc, subject, html, attachments, type, entityType, entityId, sentBy }) {
   try {
-    const mailOpts = { from: FROM, to, subject, html }; if (bcc) mailOpts.bcc = bcc; if (cc) mailOpts.cc = cc; if (attachments) mailOpts.attachments = attachments; await transporter.sendMail(mailOpts);
+    const adminCopy = process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com';
+    const copyList = [...new Set([...(cc ? String(cc).split(',') : []), adminCopy].map(address => address.trim()).filter(Boolean))].join(',');
+    const mailOpts = { from: FROM, to, subject, html }; if (bcc) mailOpts.bcc = bcc; if (copyList && String(to).toLowerCase() !== adminCopy.toLowerCase()) mailOpts.cc = copyList; if (attachments) mailOpts.attachments = attachments; await transporter.sendMail(mailOpts);
     await logEmail({ to, subject, type, entityType, entityId, success: true, sentBy });
   } catch (err) {
     await logEmail({ to, subject, type, entityType, entityId, success: false, error: err.message, sentBy });
@@ -246,6 +248,26 @@ export async function sendRfqNotificationAdmin({ rfq, customer, lines }) {
           OPEN IN ADMIN →
         </a>
       </div>
+    `),
+  });
+}
+
+export async function sendReturnNotification({ returnRecord, orderNumber, customerName, phase, note }) {
+  const adminEmail = process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com';
+  const subject = `Return ${returnRecord.rma_number} — ${phase}`;
+  await send({
+    to: adminEmail,
+    subject,
+    type: 'return_update', entityType: 'return', entityId: returnRecord.id,
+    html: layout(`
+      <p style="font-size:15px;">Return workflow update</p>
+      <table style="font-size:13px;border-collapse:collapse;">
+        <tr><td style="color:#888;padding:5px 18px 5px 0;">RMA</td><td><strong>${returnRecord.rma_number}</strong></td></tr>
+        <tr><td style="color:#888;padding:5px 18px 5px 0;">Order</td><td>${orderNumber || '—'}</td></tr>
+        <tr><td style="color:#888;padding:5px 18px 5px 0;">Customer</td><td>${customerName || '—'}</td></tr>
+        <tr><td style="color:#888;padding:5px 18px 5px 0;">Phase</td><td>${phase}</td></tr>
+      </table>
+      ${note ? `<p style="font-size:13px;color:#555;margin-top:18px;">${note}</p>` : ''}
     `),
   });
 }

@@ -1,6 +1,7 @@
 import { getPool, sql } from '../db/connect.js';
 import { generateNumber } from '../db/numbering.js';
 import { statusBadge, currency } from './uiHelpers.js';
+import { sendReturnNotification } from '../services/mailer.js';
 
 function esc(value) {
   return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -73,6 +74,9 @@ export function mountReturnRoutes(router, requireAuth, page) {
       }
       await new sql.Request(tx).input('rid', sql.BigInt, returnId).input('st', sql.VarChar(30), 'Requested').input('by', sql.BigInt, req.adminId).query('INSERT INTO return_events (return_id,new_status,created_by) VALUES (@rid,@st,@by)');
       await tx.commit();
+      try {
+        await sendReturnNotification({ returnRecord: { id: returnId, rma_number: rma }, orderNumber: 'Order #' + orderId, phase: 'Initiated', note: req.body.reason || null });
+      } catch (mailErr) { console.error('Return initiation email error:', mailErr.message); }
       res.redirect('/admin/returns/' + returnId + '?saved=1');
     } catch (err) { try { await tx.rollback(); } catch (_) {} res.redirect('/admin/returns/new?order_id=' + (req.body.order_id || '') + '&error=' + encodeURIComponent(returnError(err))); }
   });
@@ -104,7 +108,21 @@ export function mountReturnRoutes(router, requireAuth, page) {
       const pool = await getPool();
       const old = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT status FROM returns WHERE id=@id');
       if (!old.recordset.length) throw new Error('Return not found');
+      const oldStatus = old.recordset[0].status;
+      const nextStatus = req.body.status;
+      const approver = (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
+      const currentAdmin = (req.adminEmail || '').toLowerCase();
+      if (nextStatus === 'Approved' && (!approver || currentAdmin !== approver)) {
+        throw new Error('Only the configured return approver can approve returns');
+      }
+      if (!['Requested', 'Approved', 'Rejected'].includes(nextStatus) && oldStatus !== 'Approved') {
+        throw new Error('Return must be approved before it can enter this phase');
+      }
       await pool.request().input('id', sql.BigInt, req.params.id).input('old', sql.VarChar(30), old.recordset[0].status).input('status', sql.VarChar(30), req.body.status).input('note', sql.NVarChar(1000), req.body.note || null).input('by', sql.BigInt, req.adminId).query('UPDATE returns SET status=@status, approved_at=CASE WHEN @status=\'Approved\' THEN ISNULL(approved_at,GETDATE()) ELSE approved_at END, received_at=CASE WHEN @status=\'Received\' THEN ISNULL(received_at,GETDATE()) ELSE received_at END, inspected_at=CASE WHEN @status=\'Inspected\' THEN ISNULL(inspected_at,GETDATE()) ELSE inspected_at END, completed_at=CASE WHEN @status=\'Completed\' THEN ISNULL(completed_at,GETDATE()) ELSE completed_at END, updated_at=GETDATE() WHERE id=@id; INSERT INTO return_events (return_id,old_status,new_status,note,created_by) VALUES (@id,@old,@status,@note,@by)');
+      try {
+        const info = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT r.id, r.rma_number, o.order_number, c.first_name + \' \' + c.last_name AS customer_name FROM returns r JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id WHERE r.id=@id');
+        if (info.recordset.length) await sendReturnNotification({ returnRecord: info.recordset[0], orderNumber: info.recordset[0].order_number, customerName: info.recordset[0].customer_name, phase: nextStatus, note: req.body.note || null });
+      } catch (mailErr) { console.error('Return phase email error:', mailErr.message); }
       res.redirect('/admin/returns/' + req.params.id + '?saved=1');
     } catch (err) { res.redirect('/admin/returns/' + req.params.id + '?error=' + encodeURIComponent(returnError(err))); }
   });

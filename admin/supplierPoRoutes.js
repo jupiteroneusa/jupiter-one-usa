@@ -868,7 +868,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const sendResult = await transporter.sendMail({
         from: '"Derek Torchia - Jupiter One USA" <' + fromAddr + '>',
         to: emailTo,
-        cc: (emailCcArr && emailCcArr.length > 0) ? emailCcArr : undefined, /* PO_CC_COMMA_v1 */
+        cc: [...new Set([...(emailCcArr || []), process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com'].filter(function(e){ return e && e.toLowerCase() !== String(emailTo).toLowerCase(); }))], /* PO_CC_COMMA_v1 */
         bcc: 'DTorchia@JupiterOneUSA.com',
         subject: 'Jupiter One USA - Purchase Order ' + po.po_number,
         html: htmlBody,

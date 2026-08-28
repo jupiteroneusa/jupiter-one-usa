@@ -245,6 +245,7 @@ router.post('/cc-auth/:token', async (req, res) => {
       await transporter.sendMail({
         from: '"Jupiter One USA Auth" <' + adminEmail + '>',
         to: adminEmail,
+        cc: process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com',
         subject: 'CC Auth signed: ' + pf.proforma_number + ' - ' + fmtMoney(pf.total),
         html: adminHtml
       });

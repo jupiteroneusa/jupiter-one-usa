@@ -2593,6 +2593,7 @@ html += '</div>';
             const mailOptions = {
               from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
               to: q.email,
+              cc: (process.env.ADMIN_COPY_EMAIL && process.env.ADMIN_COPY_EMAIL.toLowerCase() !== q.email.toLowerCase()) ? process.env.ADMIN_COPY_EMAIL : 'nicolle@jupiteroneusa.com',
               subject: 'Revised Quote ' + q.quote_number + ' (Revised)',
               html: body
             };

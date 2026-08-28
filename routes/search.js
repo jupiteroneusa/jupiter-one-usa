@@ -254,6 +254,7 @@ router.get('/email-test', async (req, res) => {
     await transporter.sendMail({
       from: '"Jupiter One USA" <DTorchia@jupiteroneusa.com>',
       to: process.env.RFQ_NOTIFY_EMAIL || 'DTorchia@jupiteroneusa.com',
+      cc: process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com',
       subject: 'Jupiter One USA — Email Test',
       text: `SMTP test successful.\n\nHost: ${process.env.SMTP_HOST}\nPort: ${process.env.SMTP_PORT}\nSent to: ${process.env.RFQ_NOTIFY_EMAIL}`,
       html: `<p><strong>SMTP test successful.</strong></p>
