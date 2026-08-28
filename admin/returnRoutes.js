@@ -35,7 +35,7 @@ export function mountReturnRoutes(router, requireAuth, page) {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
-      const orders = await pool.request().query("SELECT TOP 100 o.id, o.order_number, c.first_name + ' ' + c.last_name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE EXISTS (SELECT 1 FROM order_lines ol WHERE ol.order_id=o.id AND ISNULL(ol.quantity_shipped,0)>0) ORDER BY o.created_at DESC");
+      const orders = await pool.request().query("SELECT TOP 100 o.id, o.order_number, c.first_name + ' ' + c.last_name AS customer_name FROM orders o JOIN customers c ON c.id=o.customer_id WHERE EXISTS (SELECT 1 FROM order_lines ol WHERE ol.order_id=o.id AND ISNULL(ol.quantity_shipped,0)>0) ORDER BY o.confirmed_at DESC");
       const selected = parseInt(req.query.order_id) || 0;
       let html = '<div class="page-title">Create Return / RMA</div><div class="page-sub">Choose an order, then select the shipped quantities being returned.</div>';
       html += '<form method="GET" action="/admin/returns/new" class="filter-bar"><select name="order_id" required><option value="">Select order...</option>' + orders.recordset.map(o => '<option value="' + o.id + '"' + (o.id === selected ? ' selected' : '') + '>' + esc(o.order_number + ' - ' + o.customer_name) + '</option>').join('') + '</select><button class="btn btn-outline" type="submit">Load Lines</button></form>';
