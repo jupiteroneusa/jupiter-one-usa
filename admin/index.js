@@ -10,6 +10,7 @@ import { mountOrderRoutes } from './orderRoutes.js';
 import { mountSupplierRoutes } from './supplierRoutes.js';
 import { mountSupplierPoRoutes } from './supplierPoRoutes.js';
 import { mountAdminDocRoutes } from './adminDocRoutes.js';
+import { mountReturnRoutes } from './returnRoutes.js';
 import { mountQuoteBuilder } from './quoteBuilder.js';
 import jwt from 'jsonwebtoken'; /* QUOTE_PAGE_CLEANUP_v1 */
 import { getPool, sql } from '../db/connect.js';
@@ -96,6 +97,7 @@ function adminNav(active) {
     <a href="/admin/orders" class="${active==='orders'?'active':''}">📦 Orders</a>
     <a href="/admin/suppliers" class="${active==='suppliers'?'active':''}">🏭 Suppliers</a>
     <a href="/admin/supplier-pos" class="${active==='supplier-pos'?'active':''}">📝 Supplier POs</a>
+    <a href="/admin/returns" class="${active==='returns'?'active':''}">↩ Returns / RMAs</a>
     <a href="/admin/invoices" class="${active==='invoices'?'active':''}">🧾 Invoices</a>
     <a href="/admin/messages" class="${active==='messages'?'active':''}">✉️ Messages</a>
   </div>`;
@@ -2682,6 +2684,7 @@ html += '</div>';
   });
 
   mountSupplierPoRoutes(router, requireAuth, page);
+  mountReturnRoutes(router, requireAuth, page);
 mountAdminDocRoutes(router, requireAuth);
   mountQuoteBuilder(router, requireAuth, page);
   return { admin: { options: { rootPath: '/admin' } }, adminRouter: router };

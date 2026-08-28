@@ -129,7 +129,7 @@ export async function renderLinesTab(o, oLines, suppliers) {
       lineSources.forEach(function(src, idx) {
         const poBadge = src.supplier_po_line_id ? '<span style="display:inline-block;padding:1px 6px;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:2px;font-size:.6rem;margin-left:6px;">&#10003; PO' + String.fromCharCode(39) + 'd</span>' : '';
         const removeOnclick = src.supplier_po_line_id
-          ? 'if (!confirm(&quot;This source has been PO' + String.fromCharCode(39) + 'd. Remove anyway?&quot;)) return false; this.closest(&quot;[data-srcrow]&quot;).remove();'
+          ? 'alert(&quot;This source is linked to a supplier PO and cannot be removed. Update its actual cost instead.&quot;); return false;'
           : 'this.closest(&quot;[data-srcrow]&quot;).remove();';
         const supEsc = (src.supplier_name || '').replace(/"/g, '&quot;');
         const leadEsc = (src.lead_time_text || '').toString().replace(/"/g, '&quot;');
@@ -146,7 +146,7 @@ export async function renderLinesTab(o, oLines, suppliers) {
         html += '<div><div style="font-size:.6rem;color:#7a8a9a;">8130</div><input type="checkbox" name="src_' + idx + '_8130" value="1"' + (src.has_8130_required ? ' checked' : '') + '/></div>';
         html += '<div><div style="font-size:.6rem;color:#7a8a9a;">CoC</div><input type="checkbox" name="src_' + idx + '_coc" value="1"' + (src.has_coc_required ? ' checked' : '') + '/></div>';
         html += '<div><div style="font-size:.6rem;color:#7a8a9a;">Trace</div><input type="checkbox" name="src_' + idx + '_trace" value="1"' + (src.has_trace_required ? ' checked' : '') + '/></div>';
-        html += '<div><button type="button" onclick="' + removeOnclick + '" style="background:#3b1d1d;border:1px solid #5a2828;color:#e05050;padding:4px 8px;cursor:pointer;border-radius:3px;">&#10006;</button></div>';
+        html += '<div><button type="button" onclick="' + removeOnclick + '" title="' + (src.supplier_po_line_id ? 'PO-linked source cannot be removed' : 'Remove source') + '" style="background:' + (src.supplier_po_line_id ? '#1e2d42' : '#3b1d1d') + ';border:1px solid ' + (src.supplier_po_line_id ? '#7a8a9a' : '#5a2828') + ';color:' + (src.supplier_po_line_id ? '#7a8a9a' : '#e05050') + ';padding:4px 8px;cursor:pointer;border-radius:3px;">&#10006;</button></div>';
         html += '</div>';
       });
       html += '</div>';

@@ -1058,6 +1058,8 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
 ('company_email',    'DTorchia@jupiteroneusa.com', 'Company email'),
 ('quote_footer_text','This quotation is valid for 30 days from the date of issue. Prices are subject to availability at time of order confirmation.', 'Quote PDF footer text');
 
+-- Returns / RMAs are added by db/returns.sql so existing installations can be migrated safely.
+
 GO
 
 PRINT '============================================================';
