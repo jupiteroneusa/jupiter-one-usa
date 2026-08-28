@@ -31,7 +31,7 @@ export function priorityBadge(p) {
 
 export function statusBadge(s) {
   const map = {
-    'Submitted':'blue','Under Review':'blue','Sourcing':'gold','Quoted':'gold',
+    'Submitted':'blue','Pending Approval':'gold','Under Review':'blue','Sourcing':'gold','Quoted':'gold',
     'Closed':'green','Cancelled':'red','Active':'green','New':'blue','Sent':'blue',
     'Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green',
     'Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green',
