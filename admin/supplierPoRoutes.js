@@ -507,8 +507,9 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
                 } else if (linesR.recordset.length === 0) {
           html += '<div style="text-align:center;color:#7a8a9a;padding:24px;">No lines on this PO yet.</div>';
         } else {
+          html += '<div style="background:rgba(200,147,42,0.06);border:1px solid rgba(200,147,42,0.3);padding:12px 14px;margin-bottom:14px;font-size:.78rem;color:#c8932a;">Actual supplier cost can be updated after the supplier invoice arrives. This changes supplier cost and PO totals only; customer pricing is unchanged.</div>';
           html += '<table><thead><tr>' +
-            '<th>#</th><th>NSN/Part</th><th>Item</th><th>Cond</th><th>Qty</th><th>Received</th><th>Unit Cost</th><th>Line Total</th><th>Receive</th>' +
+            '<th>#</th><th>NSN/Part</th><th>Item</th><th>Cond</th><th>Qty</th><th>Received</th><th>Actual Unit Cost</th><th>Line Total</th><th>Receive</th>' +
             '</tr></thead><tbody>';
           linesR.recordset.forEach(function(l) {
             const remaining = (l.quantity || 0) - (l.received_quantity || 0);
@@ -520,7 +521,9 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
               '<td>' + (l.condition_code || '&mdash;') + '</td>' +
               '<td style="font-weight:600;">' + l.quantity + '</td>' +
               '<td>' + (l.received_quantity || 0) + ' / ' + l.quantity + (fullReceived ? ' <span style="color:#4caf50;">&#10004;</span>' : '') + '</td>' +
-              '<td>' + currency(l.unit_cost) + '</td>' +
+              '<td><form method="POST" action="/admin/supplier-pos/' + po.id + '/lines/' + l.id + '/actual-cost" style="display:flex;gap:4px;align-items:center;">' +
+                '<span>$</span><input type="number" name="unit_cost" step="0.01" min="0" required value="' + parseFloat(l.unit_cost || 0).toFixed(2) + '" style="width:95px;background:#0a1628;border:1px solid #1e2d42;color:#eef1f5;padding:4px 6px;font-size:.8rem;"/>' +
+                '<button type="submit" class="btn btn-outline btn-sm" style="font-size:.68rem;padding:5px 8px;">Save</button></form></td>' +
               '<td style="font-weight:600;">' + currency(l.line_total) + '</td>' +
               '<td>';
             if (!fullReceived) {
@@ -899,6 +902,78 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
   // PODETAILS_SCOPE_FIX_V3: moved out of maybeMarkOrderReadyToShip helper into setup scope
     // ==========================================================================
     // ==========================================================================
+  // ACTUAL_SUPPLIER_COST_v1: update final invoiced supplier cost after the PO
+  // was sent/received. Customer order pricing remains unchanged.
+  router.post('/supplier-pos/:id/lines/:lid/actual-cost', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    const poId = parseInt(req.params.id);
+    const lineId = parseInt(req.params.lid);
+    const actualCost = parseFloat(req.body.unit_cost);
+    if (!Number.isFinite(actualCost) || actualCost < 0) {
+      return res.redirect('/admin/supplier-pos/' + poId + '?tab=lines&error=Invalid+actual+supplier+cost');
+    }
+
+    const pool = await getPool();
+    const tx = pool.transaction();
+    try {
+      await tx.begin();
+      const lineR = await new sql.Request(tx)
+        .input('id', sql.BigInt, lineId)
+        .input('pid', sql.BigInt, poId)
+        .query('SELECT id, order_line_id, quantity FROM supplier_po_lines WHERE id=@id AND supplier_po_id=@pid');
+      if (!lineR.recordset.length) {
+        await tx.rollback();
+        return res.redirect('/admin/supplier-pos/' + poId + '?tab=lines&error=PO+line+not+found');
+      }
+
+      const line = lineR.recordset[0];
+      const lineTotal = (parseFloat(line.quantity) || 0) * actualCost;
+      await new sql.Request(tx)
+        .input('id', sql.BigInt, lineId)
+        .input('cost', sql.Decimal(10, 2), actualCost)
+        .input('total', sql.Decimal(12, 2), lineTotal)
+        .query('UPDATE supplier_po_lines SET unit_cost=@cost, line_total=@total WHERE id=@id');
+
+      if (line.order_line_id) {
+        await new sql.Request(tx)
+          .input('lineId', sql.BigInt, lineId)
+          .input('cost', sql.Decimal(10, 2), actualCost)
+          .query('UPDATE order_line_sources SET unit_cost=@cost, updated_at=GETDATE() WHERE supplier_po_line_id=@lineId');
+        await new sql.Request(tx)
+          .input('orderLineId', sql.BigInt, line.order_line_id)
+          .query(`
+            UPDATE ol SET supplier_cost = costs.weighted_cost
+            FROM order_lines ol
+            CROSS APPLY (
+              SELECT CAST(CASE WHEN SUM(allocated_qty) > 0
+                THEN SUM(allocated_qty * unit_cost) / SUM(allocated_qty) ELSE 0 END AS DECIMAL(10,2)) AS weighted_cost
+              FROM order_line_sources WHERE order_line_id = @orderLineId
+            ) costs
+            WHERE ol.id = @orderLineId
+          `);
+      }
+
+      await new sql.Request(tx)
+        .input('pid', sql.BigInt, poId)
+        .query(`
+          UPDATE p SET subtotal = totals.subtotal,
+                       total = totals.subtotal + ISNULL(p.shipping_cost, 0),
+                       updated_at = GETDATE()
+          FROM supplier_pos p
+          CROSS APPLY (SELECT CAST(ISNULL(SUM(line_total), 0) AS DECIMAL(12,2)) AS subtotal
+                       FROM supplier_po_lines WHERE supplier_po_id = @pid) totals
+          WHERE p.id = @pid
+        `);
+
+      await tx.commit();
+      res.redirect('/admin/supplier-pos/' + poId + '?tab=lines&saved=Actual+supplier+cost+updated');
+    } catch (err) {
+      try { await tx.rollback(); } catch (rollbackErr) {}
+      console.error('Actual supplier cost update error:', err);
+      res.redirect('/admin/supplier-pos/' + poId + '?tab=lines&error=' + encodeURIComponent(err.message));
+    }
+  });
+
   // PO_EDIT_LINES_v1: POST /supplier-pos/:id/lines-update
   // Update/insert/delete PO lines based on submitted form fields.
   // Supports ad-hoc lines (NULL order_line_id) for fees/surcharges.
