@@ -110,7 +110,7 @@ export function mountReturnRoutes(router, requireAuth, page) {
     } catch (err) { res.send(page('Create Return / RMA', 'returns', '<div class="alert alert-error">' + esc(returnError(err)) + '</div>')); }
   });
 
-  router.post('/returns/preview', returnUpload.none(), async (req, res) => {
+  router.post('/returns/preview', returnUpload.any(), async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
