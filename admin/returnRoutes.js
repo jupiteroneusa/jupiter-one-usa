@@ -138,7 +138,7 @@ export function mountReturnRoutes(router, requireAuth, page) {
       const orderId = parseInt(req.body.order_id);
       const workflowAction = req.body.workflow_action === 'draft' ? 'draft' : 'submit';
       const existingReturnId = parseInt(req.body.return_id) || 0;
-      const orderR = await pool.request().input('id', sql.BigInt, orderId).query('SELECT id, customer_id FROM orders WHERE id=@id');
+      const orderR = await pool.request().input('id', sql.BigInt, orderId).query('SELECT id, customer_id, order_number FROM orders WHERE id=@id');
       if (!orderR.recordset.length) throw new Error('Order not found');
       const selected = Object.keys(req.body).filter(k => /^line_\d+_selected$/.test(k));
       if (!selected.length) throw new Error('Select at least one shipped line');
@@ -150,7 +150,7 @@ export function mountReturnRoutes(router, requireAuth, page) {
         if (!existingR.recordset.length) throw new Error('Draft return not found');
         returnId = existingR.recordset[0].id;
         rma = existingR.recordset[0].rma_number;
-        await new sql.Request(tx).input('id', sql.BigInt, returnId).input('reason', sql.VarChar(100), req.body.reason || null).input('notes', sql.NVarChar(sql.MAX), req.body.notes || null).query('UPDATE returns SET reason=@reason, notes=@notes, updated_at=GETDATE() WHERE id=@id');
+        await new sql.Request(tx).input('id', sql.BigInt, returnId).input('status', sql.VarChar(30), workflowAction === 'draft' ? 'Draft' : 'Pending Approval').input('reason', sql.VarChar(100), req.body.reason || null).input('notes', sql.NVarChar(sql.MAX), req.body.notes || null).query('UPDATE returns SET status=@status, reason=@reason, notes=@notes, updated_at=GETDATE() WHERE id=@id');
         await new sql.Request(tx).input('id', sql.BigInt, returnId).query('DELETE FROM return_lines WHERE return_id=@id');
       } else {
         rma = await generateNumber('RMA');
@@ -174,7 +174,7 @@ export function mountReturnRoutes(router, requireAuth, page) {
       }
       if (workflowAction === 'submit') {
         try {
-          await sendReturnNotification({ returnRecord: { id: returnId, rma_number: rma }, orderNumber: 'Order #' + orderId, phase: 'Initiated', note: req.body.reason || null });
+          await sendReturnNotification({ returnRecord: { id: returnId, rma_number: rma }, orderNumber: orderR.recordset[0].order_number, phase: 'Pending Approval', note: req.body.reason || null });
         } catch (mailErr) { console.error('Return initiation email error:', mailErr.message); }
       }
       res.redirect('/admin/returns/' + returnId + '?saved=1');
@@ -200,6 +200,11 @@ export function mountReturnRoutes(router, requireAuth, page) {
       html += '<div class="card"><div class="card-header">Return Lines</div><table><thead><tr><th>Line</th><th>Part</th><th>Requested</th><th>Received</th><th>Approved</th><th>Unit Price</th><th>Extended Price</th><th>Condition</th><th>Disposition</th></tr></thead><tbody>';
       html += lines.recordset.map(l => '<tr><td>' + l.line_number + '</td><td>' + esc(l.nsn || l.part_number || l.item_name) + '</td><td>' + l.quantity_requested + '</td><td>' + l.quantity_received + '</td><td>' + l.quantity_approved + '</td><td>' + currency(l.unit_price) + '</td><td style="font-weight:600;">' + currency(l.quantity_requested * l.unit_price) + '</td><td>' + esc(l.condition_received) + '</td><td>' + esc(l.disposition) + '</td></tr>').join('');
       html += '</tbody></table><div style="display:flex;justify-content:flex-end;gap:24px;padding:14px 18px;border-top:1px solid #1e2d42;"><span style="color:#7a8a9a;">Requested Return: <strong style="color:#eef1f5;">' + currency(requestedTotal) + '</strong></span><span style="color:#7a8a9a;">Approved Credit: <strong style="color:#c8932a;">' + currency(approvedTotal) + '</strong></span></div></div>';
+      if (ret.status === 'Received' || ret.status === 'Inspected') {
+        html += '<div class="card"><div class="card-header">Inspection &amp; Disposition</div><div class="card-body"><form method="POST" action="/admin/returns/' + ret.id + '/inspection"><table><thead><tr><th>Line</th><th>Received Qty</th><th>Approved Qty</th><th>Condition</th><th>Disposition</th><th>Notes</th></tr></thead><tbody>';
+        html += lines.recordset.map(l => '<tr><td>' + l.line_number + ' - ' + esc(l.nsn || l.part_number || l.item_name) + '<input type="hidden" name="line_' + l.id + '_id" value="' + l.id + '"/></td><td><input type="number" name="line_' + l.id + '_received" min="0" max="' + l.quantity_requested + '" value="' + l.quantity_received + '" style="width:80px;"/></td><td><input type="number" name="line_' + l.id + '_approved" min="0" max="' + l.quantity_requested + '" value="' + l.quantity_approved + '" style="width:80px;"/></td><td><select name="line_' + l.id + '_condition"><option value=""' + (!l.condition_received ? ' selected' : '') + '>Select...</option><option' + (l.condition_received === 'New' ? ' selected' : '') + '>New</option><option' + (l.condition_received === 'Used' ? ' selected' : '') + '>Used</option><option' + (l.condition_received === 'Damaged' ? ' selected' : '') + '>Damaged</option><option' + (l.condition_received === 'Not as described' ? ' selected' : '') + '>Not as described</option></select></td><td><select name="line_' + l.id + '_disposition"><option value=""' + (!l.disposition ? ' selected' : '') + '>Select...</option><option' + (l.disposition === 'Restock' ? ' selected' : '') + '>Restock</option><option' + (l.disposition === 'Return to supplier' ? ' selected' : '') + '>Return to supplier</option><option' + (l.disposition === 'Scrap' ? ' selected' : '') + '>Scrap</option><option' + (l.disposition === 'Customer keeps' ? ' selected' : '') + '>Customer keeps</option></select></td><td><input type="text" name="line_' + l.id + '_notes" value="' + esc(l.notes) + '" style="width:150px;"/></td></tr>').join('');
+        html += '</tbody></table><button class="btn btn-gold" style="margin-top:14px;">Save Inspection</button></form></div></div>';
+      }
       const isApprover = (req.adminEmail || '').toLowerCase() === (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
       if ((ret.status === 'Pending Approval' || ret.status === 'Requested') && isApprover) html += '<div class="alert" style="background:rgba(200,147,42,0.1);border-color:#c8932a;color:#c8932a;"><strong>Approval task:</strong> review the PDF, lines, and documents, then <form method="POST" action="/admin/returns/' + ret.id + '/status" style="display:inline;margin-left:8px;"><input type="hidden" name="status" value="Approved"/><button class="btn btn-gold btn-sm">Approve Return</button></form><form method="POST" action="/admin/returns/' + ret.id + '/status" style="display:inline;margin-left:6px;"><input type="hidden" name="status" value="Rejected"/><input type="hidden" name="note" value="Rejected by owner"/><button class="btn btn-outline btn-sm">Reject</button></form></div>';
       html += '<div class="card"><div class="card-header">Workflow</div><div class="card-body">' + (ret.status === 'Requested' && isApprover ? '<form method="POST" action="/admin/returns/' + ret.id + '/status" style="margin-bottom:12px;"><input type="hidden" name="status" value="Approved"/><input type="text" name="note" placeholder="Approval note (optional)"/><button class="btn btn-gold">Approve Return</button></form>' : '') + (ret.status !== 'Draft' && ret.status !== 'Requested' && ret.status !== 'Approved' || (ret.status === 'Approved' && isApprover) ? '<form method="POST" action="/admin/returns/' + ret.id + '/status" class="filter-bar"><select name="status">' + ['Received','Inspected','Completed','Rejected'].map(s => '<option value="' + s + '">' + s + '</option>').join('') + '</select><input type="text" name="note" placeholder="Status note..."/><button class="btn btn-outline">Save Phase</button></form>' : '') + (!isApprover && ret.status === 'Requested' ? '<div style="color:#e0a050;font-size:.8rem;">Awaiting Nicolle’s approval before processing can continue.</div>' : '') + '<div style="color:#7a8a9a;font-size:.8rem;">Approval is restricted to the designated Owner account.</div></div></div>';
@@ -235,12 +240,39 @@ export function mountReturnRoutes(router, requireAuth, page) {
     } catch (err) { res.redirect('/admin/returns/' + req.params.id + '?error=' + encodeURIComponent(returnError(err))); }
   });
 
+  router.post('/returns/:id/inspection', async (req, res) => {
+    if (!requireAuth(req, res)) return;
+    try {
+      const pool = await getPool();
+      const ret = await pool.request().input('id', sql.BigInt, req.params.id).query("SELECT id, status FROM returns WHERE id=@id AND status IN ('Received','Inspected')");
+      if (!ret.recordset.length) throw new Error('Return must be in Received or Inspected status');
+      const lineIds = Object.keys(req.body).filter(key => /^line_\d+_id$/.test(key)).map(key => parseInt(req.body[key]));
+      for (const lineId of lineIds) {
+        const received = parseInt(req.body['line_' + lineId + '_received']) || 0;
+        const approved = parseInt(req.body['line_' + lineId + '_approved']) || 0;
+        const line = await pool.request().input('id', sql.BigInt, lineId).input('returnId', sql.BigInt, req.params.id).query('SELECT quantity_requested FROM return_lines WHERE id=@id AND return_id=@returnId');
+        if (!line.recordset.length || approved > received || received > line.recordset[0].quantity_requested) throw new Error('Invalid inspection quantity');
+        await pool.request().input('id', sql.BigInt, lineId).input('received', sql.Int, received).input('approved', sql.Int, approved).input('condition', sql.VarChar(30), req.body['line_' + lineId + '_condition'] || null).input('disposition', sql.VarChar(30), req.body['line_' + lineId + '_disposition'] || null).input('notes', sql.NVarChar(sql.MAX), req.body['line_' + lineId + '_notes'] || null).query('UPDATE return_lines SET quantity_received=@received, quantity_approved=@approved, condition_received=@condition, disposition=@disposition, notes=@notes, updated_at=GETDATE() WHERE id=@id');
+      }
+      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE returns SET status='Inspected', inspected_at=ISNULL(inspected_at,GETDATE()), updated_at=GETDATE() WHERE id=@id");
+      try {
+        const info = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT r.id, r.rma_number, o.order_number, c.first_name + \' \' + c.last_name AS customer_name FROM returns r JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id WHERE r.id=@id');
+        if (info.recordset.length) await sendReturnNotification({ returnRecord: info.recordset[0], orderNumber: info.recordset[0].order_number, customerName: info.recordset[0].customer_name, phase: 'Inspected', note: 'Inspection and disposition saved.' });
+      } catch (mailErr) { console.error('Return inspection email error:', mailErr.message); }
+      res.redirect('/admin/returns/' + req.params.id + '?saved=1');
+    } catch (err) { res.redirect('/admin/returns/' + req.params.id + '?error=' + encodeURIComponent(returnError(err))); }
+  });
+
   router.post('/returns/:id/credit-memo', async (req, res) => {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
+      const approver = (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
+      if ((req.adminEmail || '').toLowerCase() !== approver) throw new Error('Only the return approver can create a credit memo');
       const ret = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT return_id=id, customer_id, order_id FROM returns WHERE id=@id');
       if (!ret.recordset.length) throw new Error('Return not found');
+      const inspected = await pool.request().input('id', sql.BigInt, req.params.id).query("SELECT status FROM returns WHERE id=@id AND status='Inspected'");
+      if (!inspected.recordset.length) throw new Error('Return must be inspected before creating a credit memo');
       const amount = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(quantity_approved * unit_price),0) AS amount FROM return_lines WHERE return_id=@id');
       const memo = await generateNumber('CM');
       await pool.request().input('rid', sql.BigInt, req.params.id).input('cid', sql.BigInt, ret.recordset[0].customer_id).input('memo', sql.VarChar(30), memo).input('amount', sql.Decimal(12,2), amount.recordset[0].amount).input('by', sql.BigInt, req.adminId).query('INSERT INTO credit_memos (return_id,customer_id,memo_number,amount,created_by) VALUES (@rid,@cid,@memo,@amount,@by)');
