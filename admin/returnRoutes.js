@@ -47,6 +47,102 @@ const RETURN_NEXT = {
 
 const APPROVED_OR_LATER = ['Approved', 'Received', 'Inspected', 'Completed'];
 
+// Visible progress track. 'Requested' is the legacy name for 'Pending Approval'.
+const RETURN_FLOW = ['Pending Approval', 'Approved', 'Received', 'Inspected', 'Completed'];
+const FLOW_LABEL = {
+  'Pending Approval': 'Submitted',
+  'Approved':         'Approved',
+  'Received':         'Goods In',
+  'Inspected':        'Inspected',
+  'Completed':        'Closed',
+};
+
+// Plain-language guidance shown to whoever opens the RMA.
+const STEP_GUIDE = {
+  'Draft': { title: 'Finish and submit this return',
+    body: 'This RMA is still a draft \u2014 nothing has been sent for approval yet. Open the draft, confirm the lines and quantities, then submit it.',
+    who: 'Sales rep' },
+  'Pending Approval': { title: 'Waiting for owner approval',
+    body: 'Submitted. An owner has to approve this before any goods are received or any credit is issued.',
+    who: 'Owner' },
+  'Approved': { title: 'Waiting on the returned goods',
+    body: 'Approved. Send the return slip to the customer, and once the parts physically arrive, mark them received.',
+    who: 'Sales rep' },
+  'Received': { title: 'Inspect the returned goods',
+    body: 'The parts are logged in. Record the received quantity, condition and disposition on each line below, then save the inspection.',
+    who: 'Sales rep' },
+  'Inspected': { title: 'Credit the customer, then close it out',
+    body: 'Inspection is recorded. Create the draft credit memo for the approved quantities, then mark the return complete.',
+    who: 'Sales rep, reviewed by owner' },
+  'Completed': { title: 'This return is closed',
+    body: 'Nothing further is required. The return slip and any credit memo stay on file.', who: null },
+  'Rejected': { title: 'This return was rejected',
+    body: 'No goods should be accepted and no credit issued against this RMA.', who: null },
+};
+
+// One clear forward action per phase. null = the work happens in a form on the page.
+const PRIMARY_NEXT = {
+  'Pending Approval': 'Approved',
+  'Requested':        'Approved',
+  'Approved':         'Received',
+  'Received':         null,
+  'Inspected':        'Completed',
+};
+const ACTION_LABEL = {
+  'Pending Approval': 'Submit for Approval',
+  'Approved':  'Approve Return',
+  'Received':  'Mark Goods Received',
+  'Inspected': 'Mark Inspected',
+  'Completed': 'Complete Return',
+  'Rejected':  'Reject Return',
+};
+
+function flowStatus(s) { return s === 'Requested' ? 'Pending Approval' : s; }
+
+// Horizontal progress track so anyone can see the phase at a glance.
+function stepperHtml(status) {
+  const cur = flowStatus(status);
+  const wrap = h => '<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 16px;">' + h + '</div>';
+  if (cur === 'Draft') return wrap('<span style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border:1px solid #7a8a9a;color:#7a8a9a;">Draft \u2014 not yet submitted</span>');
+  if (cur === 'Rejected') return wrap('<span style="font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border:1px solid #e05050;color:#e05050;background:rgba(224,80,80,0.1);">Rejected</span>');
+  const idx = RETURN_FLOW.indexOf(cur);
+  return wrap(RETURN_FLOW.map((s, i) => {
+    const done = idx > -1 && i < idx, now = i === idx;
+    const color = now ? '#c8932a' : (done ? '#4caf50' : '#54637a');
+    const style = 'font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;padding:5px 12px;border:1px solid ' + color + ';color:' + color + (now ? ';background:rgba(200,147,42,0.12);font-weight:700' : '');
+    const arrow = i < RETURN_FLOW.length - 1 ? '<span style="color:#2b3b52;">\u2192</span>' : '';
+    return '<span style="' + style + '">' + (done ? '\u2713 ' : '') + FLOW_LABEL[s] + '</span>' + arrow;
+  }).join(''));
+}
+
+// 'What happens next, and who does it' panel that replaces the raw status dropdown.
+function nextStepHtml(ret, isApprover, nextOptions) {
+  const guide = STEP_GUIDE[flowStatus(ret.status)] || STEP_GUIDE[ret.status] || { title: ret.status, body: '', who: null };
+  const primary = PRIMARY_NEXT[ret.status];
+  const post = '/admin/returns/' + ret.id + '/status';
+  let actions = '';
+  if (ret.status === 'Draft') {
+    actions = '<a href="/admin/returns/new?order_id=' + ret.order_id + '&draft_id=' + ret.id + '" class="btn btn-gold">Open Draft to Finish &amp; Submit</a>';
+  } else if (primary && nextOptions.includes(primary)) {
+    actions = '<form method="POST" action="' + post + '" style="display:inline;"><input type="hidden" name="status" value="' + primary + '"/><button class="btn btn-gold">' + (ACTION_LABEL[primary] || primary) + '</button></form>';
+  } else if (primary && !nextOptions.includes(primary)) {
+    actions = '<div style="color:#e0a050;font-size:.8rem;">Only the owner can do this step. You will see the return move on once they act.</div>';
+  } else if (ret.status === 'Received') {
+    actions = '<a href="#inspection" class="btn btn-gold">Go to Inspection Form</a>';
+  }
+  // Anything else that is legal from here (reject, skipping receipt, etc.) stays available but out of the way.
+  const others = nextOptions.filter(s => s !== primary);
+  const otherHtml = others.length
+    ? '<details style="margin-top:14px;"><summary style="cursor:pointer;color:#7a8a9a;font-size:.78rem;">Other actions</summary><form method="POST" action="' + post + '" class="filter-bar" style="margin-top:10px;"><select name="status">' + others.map(s => '<option value="' + s + '">' + (ACTION_LABEL[s] || s) + '</option>').join('') + '</select><input type="text" name="note" placeholder="Reason / note..."/><button class="btn btn-outline">Apply</button></form></details>'
+    : '';
+  const whoChip = guide.who ? '<span style="font-size:.65rem;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border:1px solid #54637a;color:#7a8a9a;margin-left:10px;">' + esc(guide.who) + '</span>' : '';
+  return '<div class="card"><div class="card-header">Next Step</div><div class="card-body">'
+    + stepperHtml(ret.status)
+    + '<div style="font-size:1rem;color:#eef1f5;font-weight:600;">' + esc(guide.title) + whoChip + '</div>'
+    + '<div style="color:#7a8a9a;font-size:.85rem;margin:6px 0 14px;max-width:70ch;">' + esc(guide.body) + '</div>'
+    + actions + otherHtml + '</div></div>';
+}
+
 function alertBanner(req) {
   let out = '';
   if (req.query.saved) out += '<div class="alert alert-success">Saved.</div>';
@@ -185,12 +281,15 @@ export function mountReturnRoutes(router, requireAuth, page) {
       const r = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT r.*, o.order_number, o.id AS order_id, c.first_name + \' \' + c.last_name AS customer_name FROM returns r JOIN orders o ON o.id=r.order_id JOIN customers c ON c.id=r.customer_id WHERE r.id=@id');
       if (!r.recordset.length) return res.send(page('Return', 'returns', '<div class="alert alert-error">Return not found.</div>'));
       const ret = r.recordset[0];
+      const isApprover = (req.adminEmail || '').toLowerCase() === (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
+      const nextOptions = (RETURN_NEXT[ret.status] || []).filter(s => (s === 'Approved' || s === 'Rejected') ? isApprover : true);
       const lines = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT rl.*, ol.line_number, ol.nsn, ol.part_number, ol.item_name FROM return_lines rl JOIN order_lines ol ON ol.id=rl.order_line_id WHERE rl.return_id=@id ORDER BY ol.line_number');
       const memos = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM credit_memos WHERE return_id=@id ORDER BY created_at DESC');
       let html = '<div class="page-title">' + esc(ret.rma_number) + '</div><div class="page-sub">Order <a class="text-gold" href="/admin/orders/' + ret.order_id + '">' + esc(ret.order_number) + '</a> &middot; ' + esc(ret.customer_name) + '</div>';
       html += alertBanner(req);
       if (ret.status === 'Draft') html += '<div style="margin-bottom:16px;"><a href="/admin/returns/new?order_id=' + ret.order_id + '&draft_id=' + ret.id + '" class="btn btn-gold">Edit Draft Return</a></div>';
       if (APPROVED_OR_LATER.includes(ret.status)) html += '<div style="margin-bottom:16px;"><a href="/admin/returns/' + ret.id + '/pdf" target="_blank" class="btn btn-outline">Print Return Slip (PDF)</a></div>';
+      html += nextStepHtml(ret, isApprover, nextOptions);
       html += '<div class="detail-grid"><div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + statusBadge(ret.status) + '</div></div><div class="detail-item"><div class="detail-label">Reason</div><div class="detail-value">' + esc(ret.reason) + '</div></div></div>';
       const requestedTotal = lines.recordset.reduce((sum, l) => sum + (Number(l.quantity_requested || 0) * Number(l.unit_price || 0)), 0);
       const approvedTotal = lines.recordset.reduce((sum, l) => sum + (Number(l.quantity_approved || 0) * Number(l.unit_price || 0)), 0);
@@ -198,22 +297,59 @@ export function mountReturnRoutes(router, requireAuth, page) {
       html += lines.recordset.map(l => '<tr><td>' + l.line_number + '</td><td>' + esc(l.nsn || l.part_number || l.item_name) + '</td><td>' + l.quantity_requested + '</td><td>' + l.quantity_received + '</td><td>' + l.quantity_approved + '</td><td>' + currency(l.unit_price) + '</td><td style="font-weight:600;">' + currency(l.quantity_requested * l.unit_price) + '</td><td>' + esc(l.condition_received) + '</td><td>' + esc(l.disposition) + '</td></tr>').join('');
       html += '</tbody></table><div style="display:flex;justify-content:flex-end;gap:24px;padding:14px 18px;border-top:1px solid #1e2d42;"><span style="color:#7a8a9a;">Requested Return: <strong style="color:#eef1f5;">' + currency(requestedTotal) + '</strong></span><span style="color:#7a8a9a;">Approved Credit: <strong style="color:#c8932a;">' + currency(approvedTotal) + '</strong></span></div></div>';
       if (ret.status === 'Received' || ret.status === 'Inspected') {
-        html += '<div class="card"><div class="card-header">Inspection &amp; Disposition</div><div class="card-body"><form method="POST" action="/admin/returns/' + ret.id + '/inspection"><table><thead><tr><th>Line</th><th>Received Qty</th><th>Approved Qty</th><th>Condition</th><th>Disposition</th><th>Notes</th></tr></thead><tbody>';
+        html += '<div class="card" id="inspection"><div class="card-header">Inspection &amp; Disposition</div><div class="card-body"><form method="POST" action="/admin/returns/' + ret.id + '/inspection"><table><thead><tr><th>Line</th><th>Received Qty</th><th>Approved Qty</th><th>Condition</th><th>Disposition</th><th>Notes</th></tr></thead><tbody>';
         html += lines.recordset.map(l => '<tr><td>' + l.line_number + ' - ' + esc(l.nsn || l.part_number || l.item_name) + '<input type="hidden" name="line_' + l.id + '_id" value="' + l.id + '"/></td><td><input type="number" name="line_' + l.id + '_received" min="0" max="' + l.quantity_requested + '" value="' + l.quantity_received + '" style="width:80px;"/></td><td><input type="number" name="line_' + l.id + '_approved" min="0" max="' + l.quantity_requested + '" value="' + l.quantity_approved + '" style="width:80px;"/></td><td><select name="line_' + l.id + '_condition"><option value=""' + (!l.condition_received ? ' selected' : '') + '>Select...</option><option' + (l.condition_received === 'New' ? ' selected' : '') + '>New</option><option' + (l.condition_received === 'Used' ? ' selected' : '') + '>Used</option><option' + (l.condition_received === 'Damaged' ? ' selected' : '') + '>Damaged</option><option' + (l.condition_received === 'Not as described' ? ' selected' : '') + '>Not as described</option></select></td><td><select name="line_' + l.id + '_disposition"><option value=""' + (!l.disposition ? ' selected' : '') + '>Select...</option><option' + (l.disposition === 'Restock' ? ' selected' : '') + '>Restock</option><option' + (l.disposition === 'Return to supplier' ? ' selected' : '') + '>Return to supplier</option><option' + (l.disposition === 'Scrap' ? ' selected' : '') + '>Scrap</option><option' + (l.disposition === 'Customer keeps' ? ' selected' : '') + '>Customer keeps</option></select></td><td><input type="text" name="line_' + l.id + '_notes" value="' + esc(l.notes) + '" style="width:150px;"/></td></tr>').join('');
         html += '</tbody></table><button class="btn btn-gold" style="margin-top:14px;">Save Inspection</button></form></div></div>';
       }
-      const isApprover = (req.adminEmail || '').toLowerCase() === (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
-      if ((ret.status === 'Pending Approval' || ret.status === 'Requested') && isApprover) html += '<div class="alert" style="background:rgba(200,147,42,0.1);border-color:#c8932a;color:#c8932a;"><strong>Approval task:</strong> review the PDF, lines, and documents, then <form method="POST" action="/admin/returns/' + ret.id + '/status" style="display:inline;margin-left:8px;"><input type="hidden" name="status" value="Approved"/><button class="btn btn-gold btn-sm">Approve Return</button></form><form method="POST" action="/admin/returns/' + ret.id + '/status" style="display:inline;margin-left:6px;"><input type="hidden" name="status" value="Rejected"/><input type="hidden" name="note" value="Rejected by owner"/><button class="btn btn-outline btn-sm">Reject</button></form></div>';
-      const nextOptions = (RETURN_NEXT[ret.status] || []).filter(s => (s === 'Approved' || s === 'Rejected') ? isApprover : true);
-      html += '<div class="card"><div class="card-header">Workflow</div><div class="card-body">'
-        + (nextOptions.length
-            ? '<form method="POST" action="/admin/returns/' + ret.id + '/status" class="filter-bar"><select name="status">' + nextOptions.map(s => '<option value="' + s + '">' + s + '</option>').join('') + '</select><input type="text" name="note" placeholder="Status note..."/><button class="btn btn-outline">Save Phase</button></form>'
-            : '<div style="color:#7a8a9a;font-size:.8rem;">No further phase changes available from ' + esc(ret.status) + '.</div>')
-        + (!isApprover && (ret.status === 'Pending Approval' || ret.status === 'Requested') ? '<div style="color:#e0a050;font-size:.8rem;">Awaiting owner approval before processing can continue.</div>' : '')
-        + '<div style="color:#7a8a9a;font-size:.8rem;">Approval is restricted to the designated Owner account.</div></div></div>';
       html += '<div class="card"><div class="card-header">Return Documents</div><div class="card-body"><form id="returnDocForm" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;"><input type="hidden" name="related_to_type" value="return"/><input type="hidden" name="related_to_id" value="' + ret.id + '"/><input type="file" name="file" required/><select name="doc_type"><option value="Return Authorization">Return Authorization</option><option value="Customer Photos">Customer Photos</option><option value="Inspection">Inspection</option><option value="Supplier Credit">Supplier Credit</option><option value="Other">Other</option></select><input type="text" name="notes" placeholder="Notes (optional)"/><button type="button" class="btn btn-outline" onclick="uploadReturnDoc()">Upload</button></form><div id="returnDocStatus" style="margin-top:8px;font-size:.8rem;"></div><div id="returnDocList" style="margin-top:12px;color:#7a8a9a;font-size:.8rem;">Loading documents...</div></div></div>';
-      html += '<script>(function(){window.loadReturnDocs=function(){fetch("/admin/api/documents/return/' + ret.id + '",{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(list){var box=document.getElementById("returnDocList");if(!Array.isArray(list)||!list.length){box.textContent="No return documents uploaded.";return;}box.innerHTML=list.map(function(d){return "<div style=\"padding:6px 0;border-bottom:1px solid #1e2d42;\"><a href=\"/admin/api/documents/"+d.id+"/download\" target=\"_blank\" style=\"color:#c8932a;\">"+(d.file_name||"document")+"</a> <span style=\"color:#7a8a9a;\">"+(d.doc_type||"")+" &middot; "+(d.notes||"")+"</span></div>";}).join("");}).catch(function(){document.getElementById("returnDocList").textContent="Could not load documents.";});};window.uploadReturnDoc=function(){var form=document.getElementById("returnDocForm"),status=document.getElementById("returnDocStatus"),fd=new FormData(form);status.textContent="Uploading...";fetch("/admin/api/documents/upload",{method:"POST",credentials:"same-origin",body:fd}).then(function(r){return r.json().then(function(j){return {ok:r.ok,data:j};});}).then(function(result){if(!result.ok)throw new Error(result.data.error||"Upload failed");status.style.color="#4caf50";status.textContent="Uploaded.";form.reset();loadReturnDocs();}).catch(function(e){status.style.color="#e05050";status.textContent=e.message;});};loadReturnDocs();})();</script>';
-      html += '<div class="card"><div class="card-header">Credit Memo</div><div class="card-body">' + (memos.recordset.length ? memos.recordset.map(m => '<div>' + esc(m.memo_number) + ' &middot; ' + currency(m.amount) + ' &middot; ' + statusBadge(m.status) + '</div>').join('') : '<div style="color:#7a8a9a;">No credit memo created.</div>') + '<form method="POST" action="/admin/returns/' + ret.id + '/credit-memo" style="margin-top:12px;"><button class="btn btn-outline">Create Draft Credit Memo</button></form></div></div>';
+      html += `<script>(function(){
+  var list = document.getElementById('returnDocList');
+  var status = document.getElementById('returnDocStatus');
+  window.loadReturnDocs = function () {
+    fetch('/admin/api/documents/return/${ret.id}', { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (docs) {
+        if (!Array.isArray(docs) || !docs.length) { list.textContent = 'No return documents uploaded yet.'; return; }
+        list.innerHTML = docs.map(function (d) {
+          var kb = d.file_size_bytes ? Math.max(1, Math.round(d.file_size_bytes / 1024)) + ' KB' : '';
+          var when = d.uploaded_at ? new Date(d.uploaded_at).toLocaleString() : '';
+          var meta = [d.doc_type, kb, when, d.notes].filter(Boolean).join('  &middot;  ');
+          return '<div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #1e2d42;">' +
+            '<div><a href="/admin/api/documents/' + d.id + '/download" target="_blank" style="color:#c8932a;">' + (d.file_name || 'document') + '</a>' +
+            '<div style="color:#7a8a9a;font-size:.75rem;margin-top:2px;">' + meta + '</div></div>' +
+            '<a href="/admin/api/documents/' + d.id + '/download" target="_blank" class="btn btn-outline btn-sm" style="align-self:center;">Download</a></div>';
+        }).join('');
+      })
+      .catch(function (e) { list.textContent = 'Could not load documents: ' + e.message; });
+  };
+  window.uploadReturnDoc = function () {
+    var form = document.getElementById('returnDocForm');
+    var fd = new FormData(form);
+    if (!fd.get('file') || !fd.get('file').name) { status.style.color = '#e05050'; status.textContent = 'Choose a file first.'; return; }
+    status.style.color = '#c8932a';
+    status.textContent = 'Uploading...';
+    fetch('/admin/api/documents/upload', { method: 'POST', credentials: 'same-origin', body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.data.error || 'Upload failed');
+        status.style.color = '#4caf50';
+        status.textContent = 'Uploaded.';
+        form.reset();
+        window.loadReturnDocs();
+      })
+      .catch(function (e) { status.style.color = '#e05050'; status.textContent = e.message; });
+  };
+  window.loadReturnDocs();
+})();</script>`;
+      const memoReady = ret.status === 'Inspected' || ret.status === 'Completed';
+      html += '<div class="card"><div class="card-header">Credit Memo</div><div class="card-body">'
+        + (memos.recordset.length
+            ? memos.recordset.map(m => '<div style="padding:6px 0;"><span class="mono text-gold">' + esc(m.memo_number) + '</span> &middot; ' + currency(m.amount) + ' &middot; ' + statusBadge(m.status) + '</div>').join('')
+            : '<div style="color:#7a8a9a;">No credit memo created yet.</div>')
+        + (memos.recordset.length ? '' : (memoReady
+            ? '<div style="color:#7a8a9a;font-size:.8rem;margin:10px 0;">Credit is calculated from the <strong style="color:#eef1f5;">approved</strong> quantities on the inspection: <strong style="color:#c8932a;">' + currency(approvedTotal) + '</strong>.' + (approvedTotal > 0 ? '' : ' No quantities have been approved yet, so this memo would be $0.00 \u2014 set the approved quantities on the inspection first.') + '</div><form method="POST" action="/admin/returns/' + ret.id + '/credit-memo" style="margin-top:12px;"><button class="btn btn-outline">Create Draft Credit Memo</button></form>'
+            : '<div style="color:#7a8a9a;font-size:.8rem;margin-top:12px;">A credit memo can be created once the return has been inspected, so the approved quantities are known.</div>'))
+        + '</div></div>';
       res.send(page('Return ' + ret.rma_number, 'returns', html));
     } catch (err) { res.send(page('Return', 'returns', '<div class="alert alert-error">' + esc(returnError(err)) + '</div>')); }
   });
@@ -272,12 +408,12 @@ export function mountReturnRoutes(router, requireAuth, page) {
     if (!requireAuth(req, res)) return;
     try {
       const pool = await getPool();
-      const approver = (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
-      if ((req.adminEmail || '').toLowerCase() !== approver) throw new Error('Only the return approver can create a credit memo');
-      const ret = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT return_id=id, customer_id, order_id FROM returns WHERE id=@id');
+      const ret = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT id, customer_id, order_id, status FROM returns WHERE id=@id');
       if (!ret.recordset.length) throw new Error('Return not found');
-      const inspected = await pool.request().input('id', sql.BigInt, req.params.id).query("SELECT status FROM returns WHERE id=@id AND status='Inspected'");
-      if (!inspected.recordset.length) throw new Error('Return must be inspected before creating a credit memo');
+      // Approved quantities are only known after inspection; a completed return still needs its memo.
+      if (!['Inspected', 'Completed'].includes(ret.recordset[0].status)) throw new Error('Record the inspection first \u2014 the credit amount comes from the approved quantities.');
+      const dupe = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT TOP 1 memo_number FROM credit_memos WHERE return_id=@id');
+      if (dupe.recordset.length) throw new Error('Credit memo ' + dupe.recordset[0].memo_number + ' already exists for this return.');
       const amount = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(quantity_approved * unit_price),0) AS amount FROM return_lines WHERE return_id=@id');
       const memo = await generateNumber('CM');
       await pool.request().input('rid', sql.BigInt, req.params.id).input('cid', sql.BigInt, ret.recordset[0].customer_id).input('memo', sql.VarChar(30), memo).input('amount', sql.Decimal(12,2), amount.recordset[0].amount).input('by', sql.BigInt, req.adminId).query('INSERT INTO credit_memos (return_id,customer_id,memo_number,amount,created_by) VALUES (@rid,@cid,@memo,@amount,@by)');

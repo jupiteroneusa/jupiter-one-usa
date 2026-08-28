@@ -36,7 +36,8 @@ export function statusBadge(s) {
     'Accepted':'green','Rejected':'red','Expired':'gray','Confirmed':'green',
     'Processing':'blue','Ready to Ship':'gold','Shipped':'gold','Delivered':'green',
     'Paid':'green','Unpaid':'red','Partially Paid':'gold','Overdue':'red',
-    'Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red'
+    'Draft':'gray','Standard':'gray','Urgent':'gold','AOG':'red',
+    'Requested':'gold','Approved':'blue','Received':'blue','Inspected':'gold','Completed':'green'
   };
   const colors = {
     blue:  { color: '#5ab4e8', bg: 'rgba(90,180,232,0.1)' },
