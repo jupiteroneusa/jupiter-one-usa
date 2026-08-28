@@ -10,6 +10,58 @@ import { generateProformaPdf } from '../services/proformaPdfService.js';
 import { generatePackingSlipPdf } from '../services/packingSlipPdfService.js'; /* PACKING_v1 */
 import { generateCcAuthPdf } from '../services/ccAuthPdfService.js';
 import { generateInvoicePdf } from '../services/invoicePdfService.js'; // INVOICE_REDESIGN_v1 // CC_AUTH_PDF_v1
+
+/* INVOICE_PAYMENT_SYNC_v1
+   An invoice's paid state is derived from the payments attached to it, rather than
+   being stamped 'Paid' by whichever route happened to run. Payments recorded against
+   an order before its invoice existed were left with invoice_id NULL and never showed
+   up on the invoice, so orders read Paid while the invoice still read Open. */
+
+// Recalculate amount_paid / balance_due / status for one invoice from its payments.
+async function syncInvoicePayments(pool, invoiceId) {
+  if (!invoiceId) return;
+  const r = await pool.request().input('id', sql.BigInt, invoiceId).query(
+    'SELECT total_amount, status, ISNULL((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=@id),0) AS paid FROM invoices WHERE id=@id');
+  if (!r.recordset.length) return;
+  const row = r.recordset[0];
+  if (row.status === 'Cancelled') return;   // a voided invoice stays voided
+  const total = Number(row.total_amount || 0);
+  const paid = Number(row.paid || 0);
+  const balance = Math.max(0, Math.round((total - paid) * 100) / 100);
+  const status = paid <= 0 ? 'Open' : (balance <= 0.009 ? 'Paid' : 'Partially Paid');
+  await pool.request()
+    .input('id', sql.BigInt, invoiceId)
+    .input('paid', sql.Decimal(12, 2), paid)
+    .input('bal', sql.Decimal(12, 2), balance)
+    .input('st', sql.VarChar(20), status)
+    .query("UPDATE invoices SET amount_paid=@paid, balance_due=@bal, status=@st, paid_date = CASE WHEN @st='Paid' THEN ISNULL(paid_date, CAST(GETDATE() AS DATE)) ELSE NULL END, updated_at=GETDATE() WHERE id=@id");
+}
+
+// Re-derive every invoice on an order (orders can carry one invoice per shipment).
+async function syncOrderInvoices(pool, orderId) {
+  const inv = await pool.request().input('oid', sql.BigInt, orderId).query('SELECT id FROM invoices WHERE order_id=@oid');
+  for (const row of inv.recordset) await syncInvoicePayments(pool, row.id);
+}
+
+// Attach payments taken before this invoice existed, oldest first, without overpaying it.
+async function adoptOrderPayments(pool, orderId, invoiceId) {
+  if (!invoiceId) return;
+  const inv = await pool.request().input('id', sql.BigInt, invoiceId).query(
+    'SELECT total_amount, ISNULL((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=@id),0) AS applied FROM invoices WHERE id=@id');
+  if (!inv.recordset.length) return;
+  let room = Number(inv.recordset[0].total_amount || 0) - Number(inv.recordset[0].applied || 0);
+  if (room <= 0.009) return;
+  const orphans = await pool.request().input('oid', sql.BigInt, orderId).query(
+    'SELECT id, amount FROM payments WHERE order_id=@oid AND invoice_id IS NULL ORDER BY received_at, id');
+  for (const p of orphans.recordset) {
+    const amt = Number(p.amount || 0);
+    if (amt <= 0 || amt > room + 0.009) continue;   // leave it for the next invoice
+    await pool.request().input('pid', sql.BigInt, p.id).input('iid', sql.BigInt, invoiceId)
+      .query('UPDATE payments SET invoice_id=@iid WHERE id=@pid AND invoice_id IS NULL');
+    room -= amt;
+    if (room <= 0.009) break;
+  }
+}
 import crypto from 'crypto';
 // PROFORMA_ROUTES_V1
 import { renderPaymentTab } from './orderPaymentBlock.js';
@@ -939,6 +991,9 @@ export function mountOrderRoutes(router, requireAuth, page) {
               .input('dueDate', sql.Date, _due)
               .query("INSERT INTO invoices (order_id, customer_id, shipment_id, invoice_number, subtotal, shipping_amount, total_amount, amount_paid, balance_due, status, issue_date, due_date) OUTPUT INSERTED.id VALUES (@orderId, @customerId, @shipmentId, @invNumber, @subtotal, 0, @total, 0, @balance, 'Open', @issueDate, @dueDate)");
             const _newInvId = _invR.recordset[0].id;
+            // Payments may predate this invoice (per-shipment invoicing); pull them in.
+            await adoptOrderPayments(pool, req.params.id, _newInvId);
+            await syncInvoicePayments(pool, _newInvId);
             for (const _il of _invLines) {
               await pool.request()
                 .input('invId', sql.BigInt, _newInvId)
@@ -1046,6 +1101,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('rcv', sql.DateTime, receivedAt)
         .input('notes', sql.NVarChar(500), b.notes || null)
         .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
+      await syncInvoicePayments(pool, iid);
       // Recalculate paid total
       const sumR = await pool.request().input('idS', sql.BigInt, req.params.id).query('SELECT ISNULL(SUM(amount),0) AS total_paid FROM payments WHERE order_id=@idS');
       const totalPaid = parseFloat(sumR.recordset[0].total_paid || 0);
@@ -1062,7 +1118,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       await pool.request().input('id', sql.BigInt, req.params.id).input('s', sql.NVarChar(50), newStatus).input('n', sql.NVarChar(500), 'Payment of $'+amount.toFixed(2)+' recorded ('+(b.payment_method||'')+')').query('INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,@s,@n)');
       // If fully paid, mark invoices paid too
       if (isPaid) {
-        await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
+        await syncOrderInvoices(pool, req.params.id);
       }
       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
     } catch(err) { console.error('Record payment error:', err); res.redirect('/admin/orders/'+req.params.id+'?tab=payment&error='+encodeURIComponent(err.message)); }
@@ -1224,7 +1280,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
       } catch(payErr) { console.error('Payment insert error:', payErr.message); }
       await pool.request().input('id', sql.BigInt, req.params.id).input('note', sql.NVarChar(500), note).query("INSERT INTO order_status_log (order_id,new_status,note) VALUES (@id,'Paid',@note)");
       // Mark invoice as Paid too
-      await pool.request().input('id', sql.BigInt, req.params.id).query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
+      await syncOrderInvoices(pool, req.params.id);
       res.redirect('/admin/orders/'+req.params.id+'?tab=payment&saved=1');
     } catch(err) { res.redirect('/admin/orders/'+req.params.id+'?error='+encodeURIComponent(err.message)); }
   });
@@ -1287,9 +1343,12 @@ export function mountOrderRoutes(router, requireAuth, page) {
       /* PAID_IN_FULL_v1: if paid in full, mark invoice paid + record payment + mark order paid */
       if (isPaidInFull) {
         const fullAmt = parseFloat(o.total_amount || 0);
-        await pool.request().input('invId', sql.BigInt, invoiceId)
-          .query("UPDATE invoices SET status='Paid', balance_due=0 WHERE id=@invId");
-        await pool.request()
+        // The order may already carry the payment; adopt it rather than recording it twice.
+        await adoptOrderPayments(pool, req.params.id, invoiceId);
+        const already = await pool.request().input('iid', sql.BigInt, invoiceId)
+          .query('SELECT ISNULL(SUM(amount),0) AS paid FROM payments WHERE invoice_id=@iid');
+        const covered = Number(already.recordset[0].paid || 0) >= fullAmt - 0.009;
+        if (!covered) await pool.request()
           .input('oid', sql.BigInt, req.params.id)
           .input('iid', sql.BigInt, invoiceId)
           .input('cid', sql.BigInt, o.customer_id)
@@ -1299,6 +1358,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
           .input('rcv', sql.DateTime, issueDate)
           .input('notes', sql.NVarChar(500), 'Invoice generated as Paid in Full')
           .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
+        await syncInvoicePayments(pool, invoiceId);
         await pool.request()
           .input('id', sql.BigInt, req.params.id)
           .input('paidAt', sql.DateTime, issueDate)
@@ -1882,6 +1942,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
         .input('rcv', sql.DateTime, now)
         .input('notes', sql.NVarChar(500), fullNote.substring(0, 500))
         .query('INSERT INTO payments (order_id,invoice_id,customer_id,amount,payment_method,payment_reference,received_at,notes) VALUES (@oid,@iid,@cid,@amt,@pm,@pref,@rcv,@notes)');
+      await syncInvoicePayments(pool, iid);
 
       // 4) Recalculate order totals + cascade status
       const sumR = await pool.request().input('idS', sql.BigInt, orderId)
@@ -1900,8 +1961,7 @@ export function mountOrderRoutes(router, requireAuth, page) {
 
       // 5) Cascade invoice to Paid if fully paid
       if (isPaid && iid) {
-        await pool.request().input('id', sql.BigInt, orderId)
-          .query("UPDATE invoices SET status='Paid', paid_date=CAST(GETDATE() AS DATE), balance_due=0, updated_at=GETDATE() WHERE order_id=@id AND status<>'Paid'");
+        await syncOrderInvoices(pool, orderId);
       }
 
       // 6) Status log
