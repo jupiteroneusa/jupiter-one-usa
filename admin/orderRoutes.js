@@ -678,58 +678,30 @@ export function mountOrderRoutes(router, requireAuth, page) {
         });
       }
 
-      // Validate: every row must have a supplier_id and qty > 0
+      // Validate populated rows. An empty submission is valid when the user is
+      // deleting all non-PO'd sources.
       const validRows = submitted.filter(function(r){ return r.supplier_id && r.qty > 0; });
-      if (validRows.length === 0) {
+      if (validRows.length === 0 && submitted.length > 0) {
         return res.redirect('/admin/orders/' + orderId + '?tab=lines&error=No+sources');
       }
 
-      // SOURCES_REPLACE_ALL_v1: stale-id-proof rebuild.
-      // The form's submitted ids can be stale (a prior save renumbered rows), so we do NOT use
-      // them to decide keep-vs-delete. Instead: protect PO'd rows, wipe the rest, re-insert the form.
       const existR = await pool.request().input('lineId', sql.BigInt, lineId)
         .query('SELECT id, supplier_po_line_id FROM order_line_sources WHERE order_line_id=@lineId');
       const existing = existR.recordset || [];
-      // Real ids that are PO'd (protected) - these actually exist in the DB right now.
-      const protectedIds = new Set(existing.filter(function(row){ return row.supplier_po_line_id; }).map(function(row){ return row.id; }));
+      const existingById = new Map(existing.map(function(row){ return [String(row.id), row]; }));
+      const submittedIds = new Set(validRows.filter(function(row){ return row.id && existingById.has(String(row.id)); }).map(function(row){ return String(row.id); }));
 
       let totalQty = 0, totalCost = 0;
       let nextSort = 0;
 
-      /* SOURCES_CLEAN_v1: delete-first, then claim protected by id-or-supplier. Duplication-proof. */
-      // 1) DELETE all non-protected rows FIRST (clean slate of editable rows).
-      for (let d = 0; d < existing.length; d++) {
-        if (!protectedIds.has(existing[d].id)) {
-          await pool.request()
-            .input('delId', sql.BigInt, existing[d].id)
-            .query('DELETE FROM order_line_sources WHERE id=@delId');
-        }
-      }
-
-      // 2) Build supplier -> [protected ids] map so a PO'd row whose id was lost in the form
-      //    can still be matched by supplier and UPDATED (never re-inserted).
-      const _protRows = existing.filter(function(row){ return row.supplier_po_line_id; });
-      const _claimed = new Set();
-      const _protBySup = {};
-      _protRows.forEach(function(row){ if (!_protBySup[row.supplier_id]) _protBySup[row.supplier_id] = []; _protBySup[row.supplier_id].push(row.id); });
-
-      // 3) Process submitted rows: UPDATE a claimed protected row, else INSERT fresh.
-      for (let k = 0; k < validRows.length; k++) {
-        const r = validRows[k];
+      // Update rows by their stable database id, insert only genuinely new rows.
+      for (const r of validRows) {
         totalQty += r.qty;
         totalCost += r.qty * r.cost;
         nextSort += 1;
-        let _claimId = null;
-        if (r.id && protectedIds.has(r.id) && !_claimed.has(r.id)) {
-          _claimId = r.id;
-        } else if (r.supplier_id && _protBySup[r.supplier_id]) {
-          const _avail = _protBySup[r.supplier_id].filter(function(pid){ return !_claimed.has(pid); });
-          if (_avail.length) _claimId = _avail[0];
-        }
-        if (_claimId) {
-          _claimed.add(_claimId);
+        if (r.id && existingById.has(String(r.id))) {
           await pool.request()
-            .input('id', sql.BigInt, _claimId)
+            .input('id', sql.BigInt, r.id)
             .input('sup', sql.BigInt, r.supplier_id)
             .input('qty', sql.Int, r.qty)
             .input('cost', sql.Decimal(10, 2), r.cost)
@@ -739,6 +711,14 @@ export function mountOrderRoutes(router, requireAuth, page) {
             .input('ht', sql.Bit, r.ht)
             .input('sortO', sql.Int, nextSort)
             .query("UPDATE order_line_sources SET supplier_id=@sup, allocated_qty=@qty, unit_cost=@cost, lead_time_text=@lead, has_8130_required=@h8, has_coc_required=@hc, has_trace_required=@ht, sort_order=@sortO, updated_at=GETDATE() WHERE id=@id");
+          if (existingById.get(String(r.id)).supplier_po_line_id) {
+            await pool.request()
+              .input('poLineId', sql.BigInt, existingById.get(String(r.id)).supplier_po_line_id)
+              .input('qty', sql.Int, r.qty)
+              .input('cost', sql.Decimal(10, 2), r.cost)
+              .input('total', sql.Decimal(12, 2), r.qty * r.cost)
+              .query('UPDATE supplier_po_lines SET quantity=@qty, unit_cost=@cost, line_total=@total WHERE id=@poLineId');
+          }
         } else {
           await pool.request()
             .input('olId', sql.BigInt, lineId)
@@ -754,12 +734,42 @@ export function mountOrderRoutes(router, requireAuth, page) {
         }
       }
 
-      // Recompute line's supplier_cost (weighted average across remaining sources)
-      const newLineUnitCost = totalQty > 0 ? totalCost / totalQty : 0;
+      // Delete only rows omitted from the form and not already represented on a PO.
+      for (const row of existing) {
+        if (!submittedIds.has(String(row.id)) && !row.supplier_po_line_id) {
+          await pool.request().input('delId', sql.BigInt, row.id)
+            .query('DELETE FROM order_line_sources WHERE id=@delId');
+        }
+      }
+
+      // Recompute from the rows that remain in the database, including PO'd rows.
       await pool.request()
         .input('id', sql.BigInt, lineId)
-        .input('uc', sql.Decimal(10, 2), newLineUnitCost)
-        .query('UPDATE order_lines SET supplier_cost=@uc WHERE id=@id');
+        .query(`UPDATE ol SET supplier_cost = costs.weighted_cost
+          FROM order_lines ol
+          CROSS APPLY (
+            SELECT CAST(CASE WHEN SUM(allocated_qty) > 0
+              THEN SUM(allocated_qty * unit_cost) / SUM(allocated_qty) ELSE 0 END AS DECIMAL(10,2)) AS weighted_cost
+            FROM order_line_sources WHERE order_line_id = @id
+          ) costs
+          WHERE ol.id = @id`);
+
+      // Recompute totals for supplier POs linked to this order line.
+      await pool.request()
+        .input('lineId', sql.BigInt, lineId)
+        .query(`UPDATE p SET subtotal = totals.subtotal,
+                              total = totals.subtotal + ISNULL(p.shipping_cost, 0),
+                              updated_at = GETDATE()
+          FROM supplier_pos p
+          CROSS APPLY (
+            SELECT CAST(ISNULL(SUM(pl.line_total), 0) AS DECIMAL(12,2)) AS subtotal
+            FROM supplier_po_lines pl
+            WHERE pl.supplier_po_id = p.id
+          ) totals
+          WHERE EXISTS (
+            SELECT 1 FROM supplier_po_lines linked
+            WHERE linked.supplier_po_id = p.id AND linked.order_line_id = @lineId
+          )`);
 
       const summary = 'Sources+saved+%28' + validRows.length + '+source%28s%29%29'; /* SOURCES_REPLACE_ALL_v1 */
       res.redirect('/admin/orders/' + orderId + '?tab=lines&saved=' + summary);
