@@ -34,6 +34,26 @@ function returnError(err) {
     : err.message;
 }
 
+const RETURN_NEXT = {
+  'Draft':            ['Pending Approval'],
+  'Pending Approval': ['Approved', 'Rejected'],
+  'Requested':        ['Approved', 'Rejected'],
+  'Approved':         ['Received', 'Completed', 'Rejected'],
+  'Received':         ['Inspected', 'Completed', 'Rejected'],
+  'Inspected':        ['Completed', 'Rejected'],
+  'Completed':        [],
+  'Rejected':         [],
+};
+
+const APPROVED_OR_LATER = ['Approved', 'Received', 'Inspected', 'Completed'];
+
+function alertBanner(req) {
+  let out = '';
+  if (req.query.saved) out += '<div class="alert alert-success">Saved.</div>';
+  if (req.query.error) out += '<div class="alert alert-error">' + esc(req.query.error) + '</div>';
+  return out;
+}
+
 export function mountReturnRoutes(router, requireAuth, page) {
   router.get('/returns', async (req, res) => {
     if (!requireAuth(req, res)) return;
@@ -89,45 +109,22 @@ export function mountReturnRoutes(router, requireAuth, page) {
           draftLineR.recordset.forEach(line => { draftLines[line.order_line_id] = line; });
         }
       }
-      let html = '<div class="page-title">Create Return / RMA</div><div class="page-sub">Choose an order, then select the shipped quantities being returned.</div>';
+      let html = '<div class="page-title">Create Return / RMA</div><div class="page-sub">Choose an order, then select the shipped quantities being returned.</div>' + alertBanner(req);
       html += '<form method="GET" action="/admin/returns/new" class="filter-bar"><select name="order_id" required><option value="">Select order...</option>' + orders.recordset.map(o => '<option value="' + o.id + '"' + (o.id === selected ? ' selected' : '') + '>' + esc(o.order_number + ' - ' + o.customer_name) + '</option>').join('') + '</select><button class="btn btn-outline" type="submit">Load Lines</button></form>';
       if (selected) {
         const lines = await pool.request().input('id', sql.BigInt, selected).query("SELECT o.id AS order_id, o.order_number, o.customer_id, ol.id, ol.line_number, ol.nsn, ol.part_number, ol.item_name, ol.quantity_shipped, ol.unit_price, ISNULL((SELECT SUM(rl.quantity_requested) FROM return_lines rl JOIN returns r ON r.id=rl.return_id WHERE rl.order_line_id=ol.id AND r.status NOT IN ('Draft','Rejected')),0) AS quantity_already_returned, ISNULL(ol.quantity_shipped,0)-ISNULL((SELECT SUM(rl.quantity_requested) FROM return_lines rl JOIN returns r ON r.id=rl.return_id WHERE rl.order_line_id=ol.id AND r.status NOT IN ('Draft','Rejected')),0) AS quantity_available FROM orders o JOIN order_lines ol ON ol.order_id=o.id WHERE o.id=@id AND ISNULL(ol.quantity_shipped,0)>0 ORDER BY ol.line_number");
         if (!lines.recordset.length) return res.send(page('Create Return / RMA', 'returns', html + '<div class="alert alert-error">No shipped lines found for this order.</div>'));
         html += '<form method="POST" action="/admin/returns/create" id="returnForm"><input type="hidden" name="order_id" value="' + selected + '"/><input type="hidden" name="return_id" value="' + (draft ? draft.id : '') + '"/><input type="hidden" name="workflow_action" id="workflowAction" value="submit"/><div class="card"><div class="card-body"><label>Reason <input type="text" name="reason" value="' + esc(draft && draft.reason) + '" placeholder="Damaged, incorrect item, customer request..." required style="width:100%;margin:6px 0 14px;"/></label><label>Notes <textarea name="notes" rows="3" style="width:100%;margin:6px 0 14px;">' + esc(draft && draft.notes) + '</textarea></label><table><thead><tr><th>Return?</th><th>Line</th><th>NSN/Part</th><th>Shipped</th><th>Qty to Return</th><th>Unit Price</th><th>Extended Price</th></tr></thead><tbody>';
         html = html.replace('id="returnForm"', 'id="returnForm" enctype="multipart/form-data"');
-        html += lines.recordset.map(l => { const dl = draftLines[l.id]; const available = Number(l.quantity_available || 0) + Number(dl ? dl.quantity_requested : 0); const selectedQty = dl ? dl.quantity_requested : 1; return '<tr><td><input type="checkbox" name="line_' + l.id + '_selected" value="1"' + (dl ? ' checked' : '') + '/></td><td>' + l.line_number + '<input type="hidden" name="line_' + l.id + '_id" value="' + l.id + '"/></td><td>' + esc(l.nsn || l.part_number || l.item_name) + '</td><td>' + l.quantity_shipped + '</td><td>' + l.quantity_already_returned + '</td><td><input class="return-qty" type="number" name="line_' + l.id + '_qty" min="1" max="' + available + '" value="' + selectedQty + '" data-unit-price="' + Number(l.unit_price || 0).toFixed(2) + '" style="width:90px;"/></td><td>' + currency(l.unit_price) + '</td><td class="return-extended" style="font-weight:600;">' + currency(dl ? dl.quantity_requested * l.unit_price : 0) + '</td></tr>'; }).join('');
-        html = html.replace('<button type="button" class="btn btn-outline" id="previewReturn">Preview Return PDF</button>', '<button type="submit" formaction="/admin/returns/preview" formmethod="post" formtarget="_blank" class="btn btn-outline" id="previewReturn">Preview Return PDF</button>');
+        html += lines.recordset.map(l => { const dl = draftLines[l.id]; const available = Number(l.quantity_available || 0) + Number(dl ? dl.quantity_requested : 0); const selectedQty = dl ? dl.quantity_requested : (available > 0 ? 1 : 0); return '<tr><td><input type="checkbox" name="line_' + l.id + '_selected" value="1"' + (dl ? ' checked' : '') + (available > 0 ? '' : ' disabled title="Fully returned"') + '/></td><td>' + l.line_number + '<input type="hidden" name="line_' + l.id + '_id" value="' + l.id + '"/></td><td>' + esc(l.nsn || l.part_number || l.item_name) + '</td><td>' + l.quantity_shipped + '</td><td>' + l.quantity_already_returned + '</td><td><input class="return-qty" type="number" name="line_' + l.id + '_qty" min="0" max="' + available + '" value="' + selectedQty + '" data-unit-price="' + Number(l.unit_price || 0).toFixed(2) + '" style="width:90px;"/></td><td>' + currency(l.unit_price) + '</td><td class="return-extended" style="font-weight:600;">' + currency(dl ? dl.quantity_requested * l.unit_price : 0) + '</td></tr>'; }).join('');
         const priorOrders = await pool.request().input('customerId', sql.BigInt, lines.recordset[0].customer_id).input('orderId', sql.BigInt, selected).query('SELECT TOP 10 id, order_number, status, total_amount, confirmed_at FROM orders WHERE customer_id=@customerId AND id<>@orderId ORDER BY confirmed_at DESC');
         html = html.replace('<th>Qty to Return</th><th>Unit Price</th>', '<th>Already Returned</th><th>Qty to Return</th><th>Unit Price</th>');
-        html = html.replace('<button type="button" class="btn btn-outline" id="previewReturn">Preview Return PDF</button>', '<button type="submit" formaction="/admin/returns/preview" formmethod="post" formtarget="_blank" class="btn btn-outline" id="previewReturn">Preview Return PDF</button>');
-        html += '</tbody></table><div id="returnPreview" style="display:none;margin-top:16px;padding:14px;background:#0a1628;border:1px solid #1e2d42;"></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;"><button type="button" class="btn btn-outline" id="previewReturn">Preview Return PDF</button><button type="submit" class="btn btn-outline" onclick="document.getElementById(\'workflowAction\').value=\'draft\';">Save Draft</button><button type="submit" class="btn btn-gold" onclick="document.getElementById(\'workflowAction\').value=\'submit\';">Submit Return for Approval</button><label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:#7a8a9a;">Document <input type="file" name="return_document"/></label></div></div></div></form>';
+        html += '</tbody></table><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;"><button type="submit" class="btn btn-outline" onclick="document.getElementById(\'workflowAction\').value=\'draft\';">Save Draft</button><button type="submit" class="btn btn-gold" onclick="document.getElementById(\'workflowAction\').value=\'submit\';">Submit Return for Approval</button><label style="display:flex;align-items:center;gap:6px;font-size:.8rem;color:#7a8a9a;">Document <input type="file" name="return_document"/></label></div></div></div></form>';
         html += '<div class="card" style="margin-top:18px;"><div class="card-header">Previous Orders for Reference</div><div class="card-body">' + (priorOrders.recordset.length ? '<table><thead><tr><th>Order</th><th>Status</th><th>Total</th><th>Date</th></tr></thead><tbody>' + priorOrders.recordset.map(o => '<tr><td><a href="/admin/orders/' + o.id + '" class="text-gold">' + esc(o.order_number) + '</a></td><td>' + statusBadge(o.status) + '</td><td>' + currency(o.total_amount) + '</td><td class="text-muted">' + new Date(o.confirmed_at).toLocaleDateString() + '</td></tr>').join('') + '</tbody></table>' : '<span style="color:#7a8a9a;">No previous orders found.</span>') + '</div></div>';
-        html += '<script>(function(){function money(n){return "$" + Number(n||0).toFixed(2);}function recalc(){var total=0;document.querySelectorAll(".return-qty").forEach(function(input){var row=input.closest("tr");var checked=row.querySelector("input[type=checkbox]").checked;var ext=checked?(Number(input.value||0)*Number(input.dataset.unitPrice||0)):0;row.querySelector(".return-extended").textContent=money(ext);total+=ext;});return total;}document.querySelectorAll(".return-qty, input[type=checkbox]").forEach(function(el){el.addEventListener("input",recalc);el.addEventListener("change",recalc);});document.getElementById("previewReturn").addEventListener("click",function(){var total=recalc(),box=document.getElementById("returnPreview");box.innerHTML="<strong>Return PDF Preview</strong><br/><strong>Requested return total: "+money(total)+"</strong><br/><span style=\"color:#7a8a9a;font-size:.8rem;\">Use Save Draft to generate a full PDF preview without submitting.</span>";box.style.display="block";});recalc();})();</script>';
-        html = html.replace('<button type="button" class="btn btn-outline" id="previewReturn">Preview Return PDF</button>', '<button type="submit" formaction="/admin/returns/preview" formmethod="post" formtarget="_blank" class="btn btn-outline" id="previewReturn">Preview Return PDF</button>');
+        html += '<script>(function(){function money(n){return "$" + Number(n||0).toFixed(2);}function recalc(){var total=0;document.querySelectorAll(".return-qty").forEach(function(input){var row=input.closest("tr");var checked=row.querySelector("input[type=checkbox]").checked;var ext=checked?(Number(input.value||0)*Number(input.dataset.unitPrice||0)):0;row.querySelector(".return-extended").textContent=money(ext);total+=ext;});return total;}document.querySelectorAll(".return-qty, input[type=checkbox]").forEach(function(el){el.addEventListener("input",recalc);el.addEventListener("change",recalc);});recalc();})();</script>';
       }
       res.send(page('Create Return / RMA', 'returns', html));
     } catch (err) { res.send(page('Create Return / RMA', 'returns', '<div class="alert alert-error">' + esc(returnError(err)) + '</div>')); }
-  });
-
-  router.post('/returns/preview', returnUpload.any(), async (req, res) => {
-    if (!requireAuth(req, res)) return;
-    try {
-      const pool = await getPool();
-      const orderR = await pool.request().input('id', sql.BigInt, req.body.order_id).query('SELECT o.*, c.first_name, c.last_name, c.email, c.company FROM orders o JOIN customers c ON c.id=o.customer_id WHERE o.id=@id');
-      if (!orderR.recordset.length) return res.status(404).send('Order not found');
-      const lineIds = Object.keys(req.body).filter(key => /^line_\d+_selected$/.test(key)).map(key => parseInt(key.match(/^line_(\d+)_/)[1]));
-      if (!lineIds.length) return res.status(400).send('Select at least one line to preview');
-      const lines = [];
-      for (const lineId of lineIds) {
-        const lineR = await pool.request().input('id', sql.BigInt, lineId).input('orderId', sql.BigInt, req.body.order_id).query('SELECT ol.*, ol.line_number, ol.quantity_shipped FROM order_lines ol WHERE ol.id=@id AND ol.order_id=@orderId');
-        if (lineR.recordset.length) lines.push({ ...lineR.recordset[0], quantity_requested: parseInt(req.body['line_' + lineId + '_qty']) || 0 });
-      }
-      const buffer = generateReturnPdf({ returnRecord: { rma_number: 'Preview', status: 'Preview', reason: req.body.reason }, order: orderR.recordset[0], customer: orderR.recordset[0], lines });
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'inline; filename="return-preview.pdf"');
-      res.send(buffer);
-    } catch (err) { res.status(500).send(returnError(err)); }
   });
 
   router.post('/returns/create', returnUpload.single('return_document'), async (req, res) => {
@@ -191,9 +188,9 @@ export function mountReturnRoutes(router, requireAuth, page) {
       const lines = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT rl.*, ol.line_number, ol.nsn, ol.part_number, ol.item_name FROM return_lines rl JOIN order_lines ol ON ol.id=rl.order_line_id WHERE rl.return_id=@id ORDER BY ol.line_number');
       const memos = await pool.request().input('id', sql.BigInt, req.params.id).query('SELECT * FROM credit_memos WHERE return_id=@id ORDER BY created_at DESC');
       let html = '<div class="page-title">' + esc(ret.rma_number) + '</div><div class="page-sub">Order <a class="text-gold" href="/admin/orders/' + ret.order_id + '">' + esc(ret.order_number) + '</a> &middot; ' + esc(ret.customer_name) + '</div>';
-      if (req.query.saved) html += '<div class="alert alert-success">Saved.</div>';
+      html += alertBanner(req);
       if (ret.status === 'Draft') html += '<div style="margin-bottom:16px;"><a href="/admin/returns/new?order_id=' + ret.order_id + '&draft_id=' + ret.id + '" class="btn btn-gold">Edit Draft Return</a></div>';
-      html += '<div style="margin-bottom:16px;"><a href="/admin/returns/' + ret.id + '/pdf" target="_blank" class="btn btn-outline">Preview / Print Return Slip</a></div>';
+      if (APPROVED_OR_LATER.includes(ret.status)) html += '<div style="margin-bottom:16px;"><a href="/admin/returns/' + ret.id + '/pdf" target="_blank" class="btn btn-outline">Print Return Slip (PDF)</a></div>';
       html += '<div class="detail-grid"><div class="detail-item"><div class="detail-label">Status</div><div class="detail-value">' + statusBadge(ret.status) + '</div></div><div class="detail-item"><div class="detail-label">Reason</div><div class="detail-value">' + esc(ret.reason) + '</div></div></div>';
       const requestedTotal = lines.recordset.reduce((sum, l) => sum + (Number(l.quantity_requested || 0) * Number(l.unit_price || 0)), 0);
       const approvedTotal = lines.recordset.reduce((sum, l) => sum + (Number(l.quantity_approved || 0) * Number(l.unit_price || 0)), 0);
@@ -207,7 +204,13 @@ export function mountReturnRoutes(router, requireAuth, page) {
       }
       const isApprover = (req.adminEmail || '').toLowerCase() === (process.env.RETURN_APPROVER_EMAIL || process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com').toLowerCase();
       if ((ret.status === 'Pending Approval' || ret.status === 'Requested') && isApprover) html += '<div class="alert" style="background:rgba(200,147,42,0.1);border-color:#c8932a;color:#c8932a;"><strong>Approval task:</strong> review the PDF, lines, and documents, then <form method="POST" action="/admin/returns/' + ret.id + '/status" style="display:inline;margin-left:8px;"><input type="hidden" name="status" value="Approved"/><button class="btn btn-gold btn-sm">Approve Return</button></form><form method="POST" action="/admin/returns/' + ret.id + '/status" style="display:inline;margin-left:6px;"><input type="hidden" name="status" value="Rejected"/><input type="hidden" name="note" value="Rejected by owner"/><button class="btn btn-outline btn-sm">Reject</button></form></div>';
-      html += '<div class="card"><div class="card-header">Workflow</div><div class="card-body">' + (ret.status === 'Requested' && isApprover ? '<form method="POST" action="/admin/returns/' + ret.id + '/status" style="margin-bottom:12px;"><input type="hidden" name="status" value="Approved"/><input type="text" name="note" placeholder="Approval note (optional)"/><button class="btn btn-gold">Approve Return</button></form>' : '') + (ret.status !== 'Draft' && ret.status !== 'Requested' && ret.status !== 'Approved' || (ret.status === 'Approved' && isApprover) ? '<form method="POST" action="/admin/returns/' + ret.id + '/status" class="filter-bar"><select name="status">' + ['Received','Inspected','Completed','Rejected'].map(s => '<option value="' + s + '">' + s + '</option>').join('') + '</select><input type="text" name="note" placeholder="Status note..."/><button class="btn btn-outline">Save Phase</button></form>' : '') + (!isApprover && ret.status === 'Requested' ? '<div style="color:#e0a050;font-size:.8rem;">Awaiting Nicolle’s approval before processing can continue.</div>' : '') + '<div style="color:#7a8a9a;font-size:.8rem;">Approval is restricted to the designated Owner account.</div></div></div>';
+      const nextOptions = (RETURN_NEXT[ret.status] || []).filter(s => (s === 'Approved' || s === 'Rejected') ? isApprover : true);
+      html += '<div class="card"><div class="card-header">Workflow</div><div class="card-body">'
+        + (nextOptions.length
+            ? '<form method="POST" action="/admin/returns/' + ret.id + '/status" class="filter-bar"><select name="status">' + nextOptions.map(s => '<option value="' + s + '">' + s + '</option>').join('') + '</select><input type="text" name="note" placeholder="Status note..."/><button class="btn btn-outline">Save Phase</button></form>'
+            : '<div style="color:#7a8a9a;font-size:.8rem;">No further phase changes available from ' + esc(ret.status) + '.</div>')
+        + (!isApprover && (ret.status === 'Pending Approval' || ret.status === 'Requested') ? '<div style="color:#e0a050;font-size:.8rem;">Awaiting owner approval before processing can continue.</div>' : '')
+        + '<div style="color:#7a8a9a;font-size:.8rem;">Approval is restricted to the designated Owner account.</div></div></div>';
       html += '<div class="card"><div class="card-header">Return Documents</div><div class="card-body"><form id="returnDocForm" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;"><input type="hidden" name="related_to_type" value="return"/><input type="hidden" name="related_to_id" value="' + ret.id + '"/><input type="file" name="file" required/><select name="doc_type"><option value="Return Authorization">Return Authorization</option><option value="Customer Photos">Customer Photos</option><option value="Inspection">Inspection</option><option value="Supplier Credit">Supplier Credit</option><option value="Other">Other</option></select><input type="text" name="notes" placeholder="Notes (optional)"/><button type="button" class="btn btn-outline" onclick="uploadReturnDoc()">Upload</button></form><div id="returnDocStatus" style="margin-top:8px;font-size:.8rem;"></div><div id="returnDocList" style="margin-top:12px;color:#7a8a9a;font-size:.8rem;">Loading documents...</div></div></div>';
       html += '<script>(function(){window.loadReturnDocs=function(){fetch("/admin/api/documents/return/' + ret.id + '",{credentials:"same-origin"}).then(function(r){return r.json();}).then(function(list){var box=document.getElementById("returnDocList");if(!Array.isArray(list)||!list.length){box.textContent="No return documents uploaded.";return;}box.innerHTML=list.map(function(d){return "<div style=\"padding:6px 0;border-bottom:1px solid #1e2d42;\"><a href=\"/admin/api/documents/"+d.id+"/download\" target=\"_blank\" style=\"color:#c8932a;\">"+(d.file_name||"document")+"</a> <span style=\"color:#7a8a9a;\">"+(d.doc_type||"")+" &middot; "+(d.notes||"")+"</span></div>";}).join("");}).catch(function(){document.getElementById("returnDocList").textContent="Could not load documents.";});};window.uploadReturnDoc=function(){var form=document.getElementById("returnDocForm"),status=document.getElementById("returnDocStatus"),fd=new FormData(form);status.textContent="Uploading...";fetch("/admin/api/documents/upload",{method:"POST",credentials:"same-origin",body:fd}).then(function(r){return r.json().then(function(j){return {ok:r.ok,data:j};});}).then(function(result){if(!result.ok)throw new Error(result.data.error||"Upload failed");status.style.color="#4caf50";status.textContent="Uploaded.";form.reset();loadReturnDocs();}).catch(function(e){status.style.color="#e05050";status.textContent=e.message;});};loadReturnDocs();})();</script>';
       html += '<div class="card"><div class="card-header">Credit Memo</div><div class="card-body">' + (memos.recordset.length ? memos.recordset.map(m => '<div>' + esc(m.memo_number) + ' &middot; ' + currency(m.amount) + ' &middot; ' + statusBadge(m.status) + '</div>').join('') : '<div style="color:#7a8a9a;">No credit memo created.</div>') + '<form method="POST" action="/admin/returns/' + ret.id + '/credit-memo" style="margin-top:12px;"><button class="btn btn-outline">Create Draft Credit Memo</button></form></div></div>';
@@ -228,8 +231,10 @@ export function mountReturnRoutes(router, requireAuth, page) {
       if ((nextStatus === 'Approved' || nextStatus === 'Rejected') && (!approver || currentAdmin !== approver)) {
         throw new Error('Only the configured return approver can approve returns');
       }
-      if (!['Pending Approval', 'Requested', 'Approved', 'Rejected'].includes(nextStatus) && oldStatus !== 'Approved') {
-        throw new Error('Return must be approved before it can enter this phase');
+      const allowedNext = RETURN_NEXT[oldStatus];
+      if (!allowedNext) throw new Error('Unknown return status: ' + oldStatus);
+      if (!allowedNext.includes(nextStatus)) {
+        throw new Error('Cannot move a return from ' + oldStatus + ' to ' + nextStatus + (allowedNext.length ? '. Allowed next: ' + allowedNext.join(', ') : '. This return is already final.'));
       }
       await pool.request().input('id', sql.BigInt, req.params.id).input('old', sql.VarChar(30), old.recordset[0].status).input('status', sql.VarChar(30), req.body.status).input('note', sql.NVarChar(1000), req.body.note || null).input('by', sql.BigInt, req.adminId).query('UPDATE returns SET status=@status, approved_at=CASE WHEN @status=\'Approved\' THEN ISNULL(approved_at,GETDATE()) ELSE approved_at END, received_at=CASE WHEN @status=\'Received\' THEN ISNULL(received_at,GETDATE()) ELSE received_at END, inspected_at=CASE WHEN @status=\'Inspected\' THEN ISNULL(inspected_at,GETDATE()) ELSE inspected_at END, completed_at=CASE WHEN @status=\'Completed\' THEN ISNULL(completed_at,GETDATE()) ELSE completed_at END, updated_at=GETDATE() WHERE id=@id; INSERT INTO return_events (return_id,old_status,new_status,note,created_by) VALUES (@id,@old,@status,@note,@by)');
       try {
