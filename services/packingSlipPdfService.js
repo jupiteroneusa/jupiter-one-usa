@@ -8,7 +8,7 @@ const COMPANY = {
   addr1: '400 N Tampa St, Suite 1550',
   addr2: 'Tampa, FL 33602',
   phone: '+1 (347) 821-7412',
-  email: 'DTorchia@jupiteroneusa.com',
+  email: 'nicolle@jupiteroneusa.com',
   web: 'www.jupiteroneusa.com'
 };
 const NAVY = [10, 22, 40];

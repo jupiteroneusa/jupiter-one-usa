@@ -221,7 +221,7 @@ router.post('/cc-auth/:token', async (req, res) => {
         secure: false,
         auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
       });
-      const adminEmail = process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com';
+      const adminEmail = process.env.ADMIN_EMAIL || 'nicolle@jupiteroneusa.com';
       const baseUrl = process.env.PUBLIC_URL || 'https://jupiteroneusa.com';
       const adminHtml =
         '<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;">' +

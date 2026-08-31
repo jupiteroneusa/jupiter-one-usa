@@ -829,7 +829,7 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
       const smtpUser = process.env.SMTP_USER || 'apikey';
       const smtpPass = process.env.SMTP_PASS;
       // SendGrid requires a verified sender. ADMIN_EMAIL is the verified one.
-      const fromAddr = process.env.ADMIN_EMAIL || process.env.RFQ_NOTIFY_EMAIL || 'DTorchia@jupiteroneusa.com';
+      const fromAddr = process.env.ADMIN_EMAIL || process.env.RFQ_NOTIFY_EMAIL || 'nicolle@jupiteroneusa.com';
 
       if (!smtpPass) {
         throw new Error('SMTP_PASS not configured in environment');
@@ -866,10 +866,10 @@ export function mountSupplierPoRoutes(router, requireAuth, page) {
 
       // SENDGRID_LOG_V1: capture response to log/verify delivery
       const sendResult = await transporter.sendMail({
-        from: '"Derek Torchia - Jupiter One USA" <' + fromAddr + '>',
+        from: '"Jupiter One USA" <' + fromAddr + '>',
         to: emailTo,
         cc: [...new Set([...(emailCcArr || []), process.env.ADMIN_COPY_EMAIL || 'nicolle@jupiteroneusa.com'].filter(function(e){ return e && e.toLowerCase() !== String(emailTo).toLowerCase(); }))], /* PO_CC_COMMA_v1 */
-        bcc: 'DTorchia@JupiterOneUSA.com',
+        bcc: 'nicolle@jupiteroneusa.com',
         subject: 'Jupiter One USA - Purchase Order ' + po.po_number,
         html: htmlBody,
         attachments: [{

@@ -14,13 +14,13 @@ const transporter = nodemailer.createTransport({
 });
 
 // ✅ FIXED: FROM must be your verified sender domain, not SMTP_USER ("apikey")
-const FROM = `"Jupiter One USA" <DTorchia@jupiteroneusa.com>`;
+const FROM = `"Jupiter One USA" <nicolle@jupiteroneusa.com>`;
 
 const COMPANY = {
   name:    'Jupiter One USA LLC',
   address: '400 N Tampa St, Suite 1550, Tampa FL',
   phone:   '+1 (347) 821-7412',
-  email:   'DTorchia@jupiteroneusa.com',
+  email:   'nicolle@jupiteroneusa.com',
 };
 
 // ── Log email to DB ───────────────────────────────────────────

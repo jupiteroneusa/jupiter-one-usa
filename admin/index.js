@@ -2591,7 +2591,7 @@ html += '</div>';
               .filter(function(s){ return s && s.indexOf('@') > -1; });
             
             const mailOptions = {
-              from: process.env.ADMIN_EMAIL || 'DTorchia@jupiteroneusa.com',
+              from: process.env.ADMIN_EMAIL || 'nicolle@jupiteroneusa.com',
               to: q.email,
               cc: (process.env.ADMIN_COPY_EMAIL && process.env.ADMIN_COPY_EMAIL.toLowerCase() !== q.email.toLowerCase()) ? process.env.ADMIN_COPY_EMAIL : 'nicolle@jupiteroneusa.com',
               subject: 'Revised Quote ' + q.quote_number + ' (Revised)',
