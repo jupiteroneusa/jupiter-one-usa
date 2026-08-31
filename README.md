@@ -191,4 +191,4 @@ http://localhost:3000/api/health
 ---
 
 ## Questions?
-Contact: DTorchia@jupiteroneusa.com
+Contact: nicolle@jupiteroneusa.com

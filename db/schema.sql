@@ -954,7 +954,7 @@ CREATE TABLE admin_users (
 
 -- Seed the owner account (password set via app on first run)
 INSERT INTO admin_users (first_name, last_name, email, password_hash, role)
-VALUES ('Derek', 'Torchia', 'DTorchia@jupiteroneusa.com', 'SET_ON_FIRST_LOGIN', 'Owner');
+VALUES ('Nicolle', 'Khan', 'nicolle@jupiteroneusa.com', 'SET_ON_FIRST_LOGIN', 'Owner');
 
 CREATE TABLE admin_sessions (
     id              BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -1051,11 +1051,11 @@ INSERT INTO system_settings (setting_key, setting_value, description) VALUES
 ('invoice_number_prefix','INV', 'Prefix for invoice numbers'),
 ('shipment_number_prefix','SHP','Prefix for shipment numbers'),
 ('quote_validity_days', '30',   'Default quote validity in days'),
-('rfq_notify_email', 'DTorchia@jupiteroneusa.com', 'Email for RFQ notifications'),
+('rfq_notify_email', 'nicolle@jupiteroneusa.com', 'Email for RFQ notifications'),
 ('company_name',     'Jupiter One USA LLC',        'Company name for docs'),
 ('company_address',  '400 N Tampa St, Suite 1550, Tampa FL', 'Company address'),
 ('company_phone',    '+1 (347) 821-7412',          'Company phone'),
-('company_email',    'DTorchia@jupiteroneusa.com', 'Company email'),
+('company_email',    'nicolle@jupiteroneusa.com', 'Company email'),
 ('quote_footer_text','This quotation is valid for 30 days from the date of issue. Prices are subject to availability at time of order confirmation.', 'Quote PDF footer text');
 
 -- Returns / RMAs are added by db/returns.sql so existing installations can be migrated safely.
